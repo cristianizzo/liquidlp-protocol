@@ -66,7 +66,10 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
         address _interestRateModel,
         address _core,
         address _lendingEngine
-    ) external initializer {
+    )
+        external
+        initializer
+    {
         require(_core != address(0), "ZERO_CORE");
         require(_interestRateModel != address(0), "ZERO_IRM");
         config = _config;
@@ -108,7 +111,10 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
         uint256 _liquidationBonus,
         uint256 _haircut,
         uint256 _borrowCap
-    ) external onlyOwner {
+    )
+        external
+        onlyOwner
+    {
         require(_maxLtv <= 9500, "LTV_TOO_HIGH");
         require(_liquidationThreshold <= 9800, "THRESHOLD_TOO_HIGH");
         require(_maxLtv < _liquidationThreshold, "LTV_MUST_BE_BELOW_LIQ_THRESHOLD");
@@ -116,8 +122,12 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
         require(_haircut <= 5000, "HAIRCUT_TOO_HIGH");
 
         if (_maxLtv != config.maxLtv) emit MarketConfigUpdated("maxLtv", config.maxLtv, _maxLtv);
-        if (_liquidationThreshold != config.liquidationThreshold) emit MarketConfigUpdated("liquidationThreshold", config.liquidationThreshold, _liquidationThreshold);
-        if (_liquidationBonus != config.liquidationBonus) emit MarketConfigUpdated("liquidationBonus", config.liquidationBonus, _liquidationBonus);
+        if (_liquidationThreshold != config.liquidationThreshold) {
+            emit MarketConfigUpdated("liquidationThreshold", config.liquidationThreshold, _liquidationThreshold);
+        }
+        if (_liquidationBonus != config.liquidationBonus) {
+            emit MarketConfigUpdated("liquidationBonus", config.liquidationBonus, _liquidationBonus);
+        }
         if (_haircut != config.haircut) emit MarketConfigUpdated("haircut", config.haircut, _haircut);
         if (_borrowCap != config.borrowCap) emit MarketConfigUpdated("borrowCap", config.borrowCap, _borrowCap);
 
@@ -164,10 +174,7 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
         require(amount > 0, "ZERO_AMOUNT");
         accrueInterest();
 
-        require(
-            IERC20(config.borrowAsset).transferFrom(msg.sender, address(this), amount),
-            "SUPPLY_TRANSFER_FAILED"
-        );
+        require(IERC20(config.borrowAsset).transferFrom(msg.sender, address(this), amount), "SUPPLY_TRANSFER_FAILED");
 
         if (totalShares == 0) {
             require(amount > DEAD_SHARES, "BELOW_MINIMUM_DEPOSIT");
@@ -202,10 +209,7 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
         totalShares -= sharesToBurn;
         state.totalSupply -= amount;
 
-        require(
-            IERC20(config.borrowAsset).transfer(msg.sender, amount),
-            "WITHDRAW_TRANSFER_FAILED"
-        );
+        require(IERC20(config.borrowAsset).transfer(msg.sender, amount), "WITHDRAW_TRANSFER_FAILED");
 
         emit Withdraw(msg.sender, amount, sharesToBurn);
     }

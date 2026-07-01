@@ -28,7 +28,11 @@ contract AerodromeAdapter is ILPAdapter {
         uint256 tokenId,
         uint256 amount,
         address from
-    ) external onlyProtocol returns (LPInfo memory info) {
+    )
+        external
+        onlyProtocol
+        returns (LPInfo memory info)
+    {
         // Aerodrome has two types:
         // 1. V2-style pools: ERC-20 LP tokens (amount > 0, tokenId == 0)
         // 2. Concentrated liquidity: ERC-721 NFTs (tokenId > 0, amount == 0)
@@ -51,7 +55,11 @@ contract AerodromeAdapter is ILPAdapter {
         address lpToken,
         uint256 tokenId,
         uint128 liquidityToRemove
-    ) external onlyProtocol returns (uint256 amount0, uint256 amount1) {
+    )
+        external
+        onlyProtocol
+        returns (uint256 amount0, uint256 amount1)
+    {
         // For V2-style: use router.removeLiquidity()
         // For concentrated: use nftManager.decreaseLiquidity() + collect()
     }

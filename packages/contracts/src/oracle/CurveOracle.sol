@@ -62,13 +62,19 @@ contract CurveOracle is ILPOracle {
     /// @inheritdoc ILPOracle
     function getPrice(address, uint256, uint256) external view returns (ILPOracleHub.PriceResult memory result) {
         result = ILPOracleHub.PriceResult({
-            totalValue: 0, principalValue: 0, feeValue: 0,
-            haircut: defaultHaircutBps, confidence: 10_000, timestamp: block.timestamp
+            totalValue: 0,
+            principalValue: 0,
+            feeValue: 0,
+            haircut: defaultHaircutBps,
+            confidence: 10_000,
+            timestamp: block.timestamp
         });
     }
 
     /// @inheritdoc ILPOracle
-    function getRawPrice(address, uint256, uint256) external view returns (uint256) { return 0; }
+    function getRawPrice(address, uint256, uint256) external view returns (uint256) {
+        return 0;
+    }
 
     /// @inheritdoc ILPOracle
     function isHealthy() external view returns (bool) {

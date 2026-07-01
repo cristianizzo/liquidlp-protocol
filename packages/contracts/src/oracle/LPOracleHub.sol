@@ -27,7 +27,6 @@ contract LPOracleHub is ILPOracleHub, Initializable, UUPSUpgradeable {
     }
 
     function initialize(address _core) external initializer {
-
         core = ProtocolCore(_core);
     }
 
@@ -41,8 +40,15 @@ contract LPOracleHub is ILPOracleHub, Initializable, UUPSUpgradeable {
 
     /// @inheritdoc ILPOracleHub
     function getPrice(
-        address lpToken, uint256 tokenId, uint256 amount, ILPAdapter.LPType lpType
-    ) external view returns (PriceResult memory result) {
+        address lpToken,
+        uint256 tokenId,
+        uint256 amount,
+        ILPAdapter.LPType lpType
+    )
+        external
+        view
+        returns (PriceResult memory result)
+    {
         address oracle = oracles[lpType];
         require(oracle != address(0), "NO_ORACLE");
         result = ILPOracle(oracle).getPrice(lpToken, tokenId, amount);
@@ -50,8 +56,15 @@ contract LPOracleHub is ILPOracleHub, Initializable, UUPSUpgradeable {
 
     /// @inheritdoc ILPOracleHub
     function getRawPrice(
-        address lpToken, uint256 tokenId, uint256 amount, ILPAdapter.LPType lpType
-    ) external view returns (uint256) {
+        address lpToken,
+        uint256 tokenId,
+        uint256 amount,
+        ILPAdapter.LPType lpType
+    )
+        external
+        view
+        returns (uint256)
+    {
         address oracle = oracles[lpType];
         require(oracle != address(0), "NO_ORACLE");
         return ILPOracle(oracle).getRawPrice(lpToken, tokenId, amount);

@@ -30,7 +30,11 @@ contract UniswapV2Adapter is ILPAdapter {
         uint256, /* tokenId — unused for ERC-20 */
         uint256 amount,
         address from
-    ) external onlyProtocol returns (LPInfo memory info) {
+    )
+        external
+        onlyProtocol
+        returns (LPInfo memory info)
+    {
         require(amount > 0, "ZERO_AMOUNT");
 
         // Verify this is a valid Uniswap V2 pair
@@ -57,7 +61,16 @@ contract UniswapV2Adapter is ILPAdapter {
     }
 
     /// @inheritdoc ILPAdapter
-    function unlock(address lpToken, uint256, /* tokenId */ uint256 amount, address to) external onlyProtocol {
+    function unlock(
+        address lpToken,
+        uint256,
+        /* tokenId */
+        uint256 amount,
+        address to
+    )
+        external
+        onlyProtocol
+    {
         // IERC20(lpToken).transfer(to, amount);
         // lockedBalances[lpToken][to] -= amount;
     }
@@ -67,7 +80,11 @@ contract UniswapV2Adapter is ILPAdapter {
         address lpToken,
         uint256, /* tokenId */
         uint128 liquidityToRemove
-    ) external onlyProtocol returns (uint256 amount0, uint256 amount1) {
+    )
+        external
+        onlyProtocol
+        returns (uint256 amount0, uint256 amount1)
+    {
         // Approve router to spend LP tokens
         // IERC20(lpToken).approve(router, uint256(liquidityToRemove));
 

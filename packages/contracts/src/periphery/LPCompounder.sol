@@ -33,9 +33,8 @@ contract LPCompounder {
         // Only V3-style positions have collectable fees
         // V2 and Curve auto-compound natively
         if (
-            pos.lpType != ILPAdapter.LPType.UniswapV3 &&
-            pos.lpType != ILPAdapter.LPType.PancakeSwapV3 &&
-            pos.lpType != ILPAdapter.LPType.Aerodrome
+            pos.lpType != ILPAdapter.LPType.UniswapV3 && pos.lpType != ILPAdapter.LPType.PancakeSwapV3
+                && pos.lpType != ILPAdapter.LPType.Aerodrome
         ) {
             return;
         }

@@ -49,7 +49,11 @@ contract RiskManager {
         uint256 currentDebt,
         uint256 maxLtv,
         ILPAdapter.LPType lpType
-    ) external view returns (bool valid, string memory reason) {
+    )
+        external
+        view
+        returns (bool valid, string memory reason)
+    {
         // Check 1: Borrow cooldown
         if (block.number <= depositBlock + borrowCooldown) {
             return (false, "BORROW_COOLDOWN");

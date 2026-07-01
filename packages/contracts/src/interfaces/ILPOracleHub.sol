@@ -26,7 +26,10 @@ interface ILPOracleHub {
         uint256 tokenId,
         uint256 amount,
         ILPAdapter.LPType lpType
-    ) external view returns (PriceResult memory result);
+    )
+        external
+        view
+        returns (PriceResult memory result);
 
     /// @notice Get raw price without haircut (for display only)
     function getRawPrice(
@@ -34,7 +37,10 @@ interface ILPOracleHub {
         uint256 tokenId,
         uint256 amount,
         ILPAdapter.LPType lpType
-    ) external view returns (uint256 value);
+    )
+        external
+        view
+        returns (uint256 value);
 
     /// @notice Register a new oracle for an LP type
     function registerOracle(ILPAdapter.LPType lpType, address oracle) external;

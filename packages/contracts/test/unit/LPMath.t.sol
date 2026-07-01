@@ -28,11 +28,11 @@ contract LPMathTest is Test {
 
         // 5% haircut
         uint256 result = LPMath.applyHaircut(value, 500);
-        assertEq(result, 9_500e18);
+        assertEq(result, 9500e18);
 
         // 10% haircut
         result = LPMath.applyHaircut(value, 1000);
-        assertEq(result, 9_000e18);
+        assertEq(result, 9000e18);
 
         // 0% haircut
         result = LPMath.applyHaircut(value, 0);
@@ -67,8 +67,8 @@ contract LPMathTest is Test {
         // Each LP token should be worth ~$400 (200K + 200K = 400K / 1000)
         // 10 LP tokens = ~$4000
         // With sqrt method the value should be close
-        assertGt(value, 3_500e18);
-        assertLt(value, 4_500e18);
+        assertGt(value, 3500e18);
+        assertLt(value, 4500e18);
     }
 
     function testFuzz_haircutNeverExceedsValue(uint256 value, uint256 haircutBps) public pure {

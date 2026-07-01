@@ -32,10 +32,8 @@ contract Deploy is Script {
 
         // 2. LPOracleHub (UUPS proxy)
         LPOracleHub oracleHubImpl = new LPOracleHub();
-        ERC1967Proxy oracleHubProxy = new ERC1967Proxy(
-            address(oracleHubImpl),
-            abi.encodeCall(LPOracleHub.initialize, (address(core)))
-        );
+        ERC1967Proxy oracleHubProxy =
+            new ERC1967Proxy(address(oracleHubImpl), abi.encodeCall(LPOracleHub.initialize, (address(core))));
         LPOracleHub oracleHub = LPOracleHub(address(oracleHubProxy));
 
         // 3. PositionManager (UUPS proxy)
@@ -58,7 +56,9 @@ contract Deploy is Script {
         LiquidationEngine liquidationEngineImpl = new LiquidationEngine();
         ERC1967Proxy liquidationEngineProxy = new ERC1967Proxy(
             address(liquidationEngineImpl),
-            abi.encodeCall(LiquidationEngine.initialize, (address(core), address(positionManager), address(lendingEngine)))
+            abi.encodeCall(
+                LiquidationEngine.initialize, (address(core), address(positionManager), address(lendingEngine))
+            )
         );
         LiquidationEngine liquidationEngine = LiquidationEngine(address(liquidationEngineProxy));
 
@@ -87,9 +87,8 @@ contract Deploy is Script {
 
         // 10. Periphery (not proxied — stateless helpers)
         Router router = new Router(address(positionManager), address(lendingEngine));
-        PositionViewer positionViewer = new PositionViewer(
-            address(core), address(positionManager), address(lendingEngine)
-        );
+        PositionViewer positionViewer =
+            new PositionViewer(address(core), address(positionManager), address(lendingEngine));
 
         // 11. Authorize contracts
         positionManager.setAuthorized(address(lendingEngine), true);

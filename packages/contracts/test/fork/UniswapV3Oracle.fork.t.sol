@@ -5,7 +5,11 @@ import "forge-std/Test.sol";
 import {ProtocolCore} from "../../src/core/ProtocolCore.sol";
 import {UniswapV3Oracle, IAggregatorV3, TickMathLib, LiquidityAmountsLib} from "../../src/oracle/UniswapV3Oracle.sol";
 import {ILPOracleHub} from "../../src/interfaces/ILPOracleHub.sol";
-import {INonfungiblePositionManager, IUniswapV3Pool, IUniswapV3Factory} from "../../src/interfaces/external/IUniswapV3.sol";
+import {
+    INonfungiblePositionManager,
+    IUniswapV3Pool,
+    IUniswapV3Factory
+} from "../../src/interfaces/external/IUniswapV3.sol";
 import {IERC20} from "../../src/interfaces/IERC20.sol";
 
 /// @title UniswapV3OracleForkTest
@@ -52,7 +56,7 @@ contract UniswapV3OracleForkTest is Test {
         oracle.setPriceFeed(WBTC, CL_BTC_USD);
         oracle.setPriceFeed(DAI, CL_DAI_USD);
         // Use generous staleness for fork testing (node may not be fully synced)
-        oracle.setMaxStaleness(86400); // 24 hours
+        oracle.setMaxStaleness(86_400); // 24 hours
         vm.stopPrank();
     }
 
@@ -65,22 +69,30 @@ contract UniswapV3OracleForkTest is Test {
         address token0Expected,
         address token1Expected,
         uint24 feeExpected
-    ) internal view returns (uint256 tokenId, bool found) {
+    )
+        internal
+        view
+        returns (uint256 tokenId, bool found)
+    {
         // Scan backwards from a high token ID to find an active position
         // NFT IDs are sequential, recent ones are more likely to have liquidity
-        uint256 startId = 800000; // Recent-ish range
+        uint256 startId = 800_000; // Recent-ish range
         for (uint256 i = startId; i > startId - 5000; i--) {
             try nftManager.positions(i) returns (
-                uint96, address, address token0, address token1, uint24 fee,
-                int24, int24, uint128 liquidity,
-                uint256, uint256, uint128, uint128
+                uint96,
+                address,
+                address token0,
+                address token1,
+                uint24 fee,
+                int24,
+                int24,
+                uint128 liquidity,
+                uint256,
+                uint256,
+                uint128,
+                uint128
             ) {
-                if (
-                    liquidity > 0 &&
-                    token0 == token0Expected &&
-                    token1 == token1Expected &&
-                    fee == feeExpected
-                ) {
+                if (liquidity > 0 && token0 == token0Expected && token1 == token1Expected && fee == feeExpected) {
                     return (i, true);
                 }
             } catch {
@@ -154,9 +166,8 @@ contract UniswapV3OracleForkTest is Test {
         emit log_named_uint("Computed sqrtPriceX96", computedSqrtPrice);
 
         // Should be very close (within 0.01%)
-        uint256 diff = poolSqrtPrice > computedSqrtPrice
-            ? poolSqrtPrice - computedSqrtPrice
-            : computedSqrtPrice - poolSqrtPrice;
+        uint256 diff =
+            poolSqrtPrice > computedSqrtPrice ? poolSqrtPrice - computedSqrtPrice : computedSqrtPrice - poolSqrtPrice;
         uint256 tolerance = poolSqrtPrice / 10_000; // 0.01%
         assertLe(diff, tolerance, "TickMathLib must match pool's sqrtPrice");
     }
@@ -178,9 +189,8 @@ contract UniswapV3OracleForkTest is Test {
         uint160 sqrtA = TickMathLib.getSqrtRatioAtTick(tickLower);
         uint160 sqrtB = TickMathLib.getSqrtRatioAtTick(tickUpper);
 
-        (uint256 amount0, uint256 amount1) = LiquidityAmountsLib.getAmountsForLiquidity(
-            sqrtPriceX96, sqrtA, sqrtB, liquidity
-        );
+        (uint256 amount0, uint256 amount1) =
+            LiquidityAmountsLib.getAmountsForLiquidity(sqrtPriceX96, sqrtA, sqrtB, liquidity);
 
         emit log_named_uint("amount0 (USDC, 6 dec)", amount0);
         emit log_named_uint("amount1 (WETH, 18 dec)", amount1);
@@ -213,9 +223,15 @@ contract UniswapV3OracleForkTest is Test {
 
         // Read position details
         (
-            ,, address token0, address token1, uint24 fee,
-            int24 tickLower, int24 tickUpper, uint128 liquidity,
-            ,, uint128 tokensOwed0, uint128 tokensOwed1
+            ,,
+            address token0,
+            address token1,
+            uint24 fee,
+            int24 tickLower,
+            int24 tickUpper,
+            uint128 liquidity,,,
+            uint128 tokensOwed0,
+            uint128 tokensOwed1
         ) = nftManager.positions(tokenId);
 
         emit log_named_address("token0", token0);

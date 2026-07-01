@@ -27,7 +27,11 @@ contract CurveAdapter is ILPAdapter {
         uint256, /* tokenId */
         uint256 amount,
         address from
-    ) external onlyProtocol returns (LPInfo memory info) {
+    )
+        external
+        onlyProtocol
+        returns (LPInfo memory info)
+    {
         require(amount > 0, "ZERO_AMOUNT");
 
         // Verify LP token is from a registered Curve pool
@@ -62,7 +66,11 @@ contract CurveAdapter is ILPAdapter {
         address lpToken,
         uint256, /* tokenId */
         uint128 liquidityToRemove
-    ) external onlyProtocol returns (uint256 amount0, uint256 amount1) {
+    )
+        external
+        onlyProtocol
+        returns (uint256 amount0, uint256 amount1)
+    {
         // Get pool from LP token
         // address pool = ICurveRegistry(curveRegistry).get_pool_from_lp_token(lpToken);
 

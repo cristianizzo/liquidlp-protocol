@@ -36,7 +36,9 @@ interface ILPAdapter {
         uint256 tokenId,
         uint256 amount,
         address from
-    ) external returns (LPInfo memory info);
+    )
+        external
+        returns (LPInfo memory info);
 
     /// @notice Unlock and return LP position to owner
     /// @param lpToken Address of LP token or NFT manager
@@ -55,17 +57,16 @@ interface ILPAdapter {
         address lpToken,
         uint256 tokenId,
         uint128 liquidityToRemove
-    ) external returns (uint256 amount0, uint256 amount1);
+    )
+        external
+        returns (uint256 amount0, uint256 amount1);
 
     /// @notice Collect accumulated trading fees from LP position
     /// @param lpToken Address of LP token or NFT manager
     /// @param tokenId NFT token ID
     /// @return fees0 Fees collected in token0
     /// @return fees1 Fees collected in token1
-    function collectFees(
-        address lpToken,
-        uint256 tokenId
-    ) external returns (uint256 fees0, uint256 fees1);
+    function collectFees(address lpToken, uint256 tokenId) external returns (uint256 fees0, uint256 fees1);
 
     /// @notice Get the LP type this adapter handles
     function lpType() external view returns (LPType);

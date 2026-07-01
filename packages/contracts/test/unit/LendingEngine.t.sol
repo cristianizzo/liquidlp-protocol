@@ -50,21 +50,29 @@ contract LendingEngineTest is Test {
 
         // Deploy OracleHub (UUPS proxy)
         LPOracleHub ohImpl = new LPOracleHub();
-        oracleHub = LPOracleHub(address(new ERC1967Proxy(
-            address(ohImpl), abi.encodeCall(LPOracleHub.initialize, (address(core)))
-        )));
+        oracleHub = LPOracleHub(
+            address(new ERC1967Proxy(address(ohImpl), abi.encodeCall(LPOracleHub.initialize, (address(core)))))
+        );
 
         // Deploy PositionManager (UUPS proxy)
         PositionManager pmImpl = new PositionManager();
-        pm = PositionManager(address(new ERC1967Proxy(
-            address(pmImpl), abi.encodeCall(PositionManager.initialize, (address(core), address(oracleHub)))
-        )));
+        pm = PositionManager(
+            address(
+                new ERC1967Proxy(
+                    address(pmImpl), abi.encodeCall(PositionManager.initialize, (address(core), address(oracleHub)))
+                )
+            )
+        );
 
         // Deploy LendingEngine (UUPS proxy)
         LendingEngine leImpl = new LendingEngine();
-        le = LendingEngine(address(new ERC1967Proxy(
-            address(leImpl), abi.encodeCall(LendingEngine.initialize, (address(core), address(pm)))
-        )));
+        le = LendingEngine(
+            address(
+                new ERC1967Proxy(
+                    address(leImpl), abi.encodeCall(LendingEngine.initialize, (address(core), address(pm)))
+                )
+            )
+        );
 
         // Deploy mocks
         adapter = new MockLPAdapter(ILPAdapter.LPType.UniswapV3);
@@ -142,7 +150,7 @@ contract LendingEngineTest is Test {
 
         vm.startPrank(alice);
         le.borrow(posId, 10_000e18);
-        le.borrow(posId, 5_000e18);
+        le.borrow(posId, 5000e18);
         vm.stopPrank();
 
         assertEq(le.getDebt(posId), 15_000e18);
@@ -244,13 +252,13 @@ contract LendingEngineTest is Test {
         uint256 posId = _depositAndBorrow(alice, 20_000e18);
 
         vm.prank(alice);
-        usdc.approve(address(market), 5_000e18);
+        usdc.approve(address(market), 5000e18);
 
         vm.expectEmit(true, true, false, true);
-        emit Repaid(posId, alice, 5_000e18, 15_000e18);
+        emit Repaid(posId, alice, 5000e18, 15_000e18);
 
         vm.prank(alice);
-        le.repay(posId, 5_000e18);
+        le.repay(posId, 5000e18);
     }
 
     function test_repay_revertsNoDebt() public {
@@ -280,7 +288,7 @@ contract LendingEngineTest is Test {
 
         vm.prank(alice);
         vm.expectRevert("PAUSED");
-        le.repay(posId, 5_000e18);
+        le.repay(posId, 5000e18);
     }
 
     // ========== repayOnBehalf ==========
@@ -304,7 +312,7 @@ contract LendingEngineTest is Test {
 
         vm.prank(bob);
         vm.expectRevert("NOT_AUTHORIZED");
-        le.repayOnBehalf(posId, 5_000e18);
+        le.repayOnBehalf(posId, 5000e18);
     }
 
     // ========== PM-5: Borrow Cooldown ==========
@@ -518,8 +526,8 @@ contract LendingEngineTest is Test {
 
         // Borrow again
         vm.prank(alice);
-        le.borrow(posId, 5_000e18);
-        assertEq(le.getDebt(posId), 5_000e18);
+        le.borrow(posId, 5000e18);
+        assertEq(le.getDebt(posId), 5000e18);
     }
 
     // ========== Fuzz Tests ==========

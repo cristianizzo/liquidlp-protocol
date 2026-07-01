@@ -25,8 +25,7 @@ contract CircuitBreaker {
 
     modifier onlyGuardianOrKeeper() {
         require(
-            msg.sender == core.guardian() || msg.sender == core.owner() || core.keepers(msg.sender),
-            "NOT_AUTHORIZED"
+            msg.sender == core.guardian() || msg.sender == core.owner() || core.keepers(msg.sender), "NOT_AUTHORIZED"
         );
         _;
     }

@@ -82,9 +82,18 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
 
     /// @inheritdoc IPositionManager
     function deposit(
-        address lpToken, uint256 tokenId, uint256 amount, uint256 marketId
-    ) external whenNotPaused nonReentrant returns (uint256 positionId) {
+        address lpToken,
+        uint256 tokenId,
+        uint256 amount,
+        uint256 marketId
+    )
+        external
+        whenNotPaused
+        nonReentrant
+        returns (uint256 positionId)
+    {
         require(lpToken != address(0), "ZERO_LP_TOKEN");
+        require(amount > 0 || tokenId > 0, "ZERO_AMOUNT"); // V2: amount > 0, V3: tokenId > 0
         require(core.markets(marketId) != address(0), "INVALID_MARKET");
 
         // Auto-detect LP type by querying each registered adapter
@@ -147,10 +156,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     /// @notice Update position debt (called by LendingEngine)
     function updateDebt(uint256 positionId, uint256 newDebt) external onlyAuthorized positionExists(positionId) {
         Position storage pos = _positions[positionId];
-        require(
-            pos.status == PositionStatus.Active || pos.status == PositionStatus.Borrowed,
-            "POSITION_NOT_BORROWABLE"
-        );
+        require(pos.status == PositionStatus.Active || pos.status == PositionStatus.Borrowed, "POSITION_NOT_BORROWABLE");
 
         positionDebt[positionId] = newDebt;
         if (newDebt > 0 && pos.status == PositionStatus.Active) {
@@ -164,8 +170,13 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     /// @param positionId The position to update
     /// @param amountRemoved How much liquidity was unwound and removed
     function reducePositionAmount(
-        uint256 positionId, uint256 amountRemoved
-    ) external onlyAuthorized positionExists(positionId) {
+        uint256 positionId,
+        uint256 amountRemoved
+    )
+        external
+        onlyAuthorized
+        positionExists(positionId)
+    {
         Position storage pos = _positions[positionId];
         require(amountRemoved > 0, "ZERO_AMOUNT");
         require(amountRemoved <= pos.amount, "EXCEEDS_POSITION_AMOUNT");
@@ -175,8 +186,14 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
 
     /// @notice Mark position as liquidated (called by LiquidationEngine)
     function markLiquidated(
-        uint256 positionId, address liquidator, uint256 debtRepaid
-    ) external onlyAuthorized positionExists(positionId) {
+        uint256 positionId,
+        address liquidator,
+        uint256 debtRepaid
+    )
+        external
+        onlyAuthorized
+        positionExists(positionId)
+    {
         require(liquidator != address(0), "ZERO_LIQUIDATOR");
         _positions[positionId].status = PositionStatus.Liquidated;
         positionDebt[positionId] = 0;
@@ -199,21 +216,15 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     function getPositionValue(uint256 positionId) public view returns (uint256) {
         Position memory pos = _positions[positionId];
         if (pos.owner == address(0)) return 0;
-        ILPOracleHub.PriceResult memory price = oracleHub.getPrice(
-            pos.lpToken, pos.tokenId, pos.amount, pos.lpType
-        );
+        ILPOracleHub.PriceResult memory price = oracleHub.getPrice(pos.lpToken, pos.tokenId, pos.amount, pos.lpType);
         return price.totalValue;
     }
 
     /// @inheritdoc IPositionManager
     function getHealthFactor(uint256 positionId) external view returns (uint256) {
         // Use interest-accrued debt from LendingEngine (not stale positionDebt)
-        uint256 debt;
-        if (address(lendingEngine) != address(0)) {
-            debt = lendingEngine.getDebt(positionId);
-        } else {
-            debt = positionDebt[positionId]; // Fallback if LE not set yet
-        }
+        require(address(lendingEngine) != address(0), "LENDING_ENGINE_NOT_SET");
+        uint256 debt = lendingEngine.getDebt(positionId);
         if (debt == 0) return type(uint256).max;
 
         uint256 collateralValue = getPositionValue(positionId);

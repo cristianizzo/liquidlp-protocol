@@ -75,8 +75,8 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
         PositionManager.Position memory pos = positionManager.getPosition(positionId);
         require(pos.owner == msg.sender, "NOT_POSITION_OWNER");
         require(
-            pos.status != IPositionManager.PositionStatus.Liquidated &&
-            pos.status != IPositionManager.PositionStatus.Closed,
+            pos.status != IPositionManager.PositionStatus.Liquidated
+                && pos.status != IPositionManager.PositionStatus.Closed,
             "POSITION_NOT_ACTIVE"
         );
 
@@ -102,10 +102,9 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
         }
 
         // Update debt tracking — snapshot Market's current borrowIndex
-        debtInfo[positionId] = DebtInfo({
-            principal: newTotalDebt,
-            borrowIndex: market.borrowIndex()
-        });
+        uint256 currentBorrowIndex = market.borrowIndex();
+        require(currentBorrowIndex > 0, "MARKET_NOT_INITIALIZED");
+        debtInfo[positionId] = DebtInfo({principal: newTotalDebt, borrowIndex: currentBorrowIndex});
 
         // Update position manager status
         positionManager.updateDebt(positionId, newTotalDebt);
@@ -124,9 +123,7 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
     /// @notice Repay debt on behalf of a borrower (used by LiquidationEngine)
     /// @dev Payer must be msg.sender itself — prevents draining arbitrary approved addresses.
     ///      The calling contract (e.g., LiquidationEngine) must hold the tokens and be the payer.
-    function repayOnBehalf(
-        uint256 positionId, uint256 repayAmount
-    ) external whenNotPaused nonReentrant {
+    function repayOnBehalf(uint256 positionId, uint256 repayAmount) external whenNotPaused nonReentrant {
         require(positionManager.authorized(msg.sender), "NOT_AUTHORIZED");
         _repayInternal(positionId, repayAmount, msg.sender);
     }
@@ -173,10 +170,7 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
         uint256 remainingDebt = currentDebt - repayAmount;
 
         // Update debt tracking with current Market borrowIndex
-        debtInfo[positionId] = DebtInfo({
-            principal: remainingDebt,
-            borrowIndex: market.borrowIndex()
-        });
+        debtInfo[positionId] = DebtInfo({principal: remainingDebt, borrowIndex: market.borrowIndex()});
 
         // Update position manager status
         positionManager.updateDebt(positionId, remainingDebt);

@@ -45,9 +45,7 @@ contract EdgeCasesTest is Test {
     // ========================================================
     // Helper: deploy full protocol with a specific borrow token
     // ========================================================
-    function _deployWithToken(
-        MockERC20 borrowToken
-    ) internal returns (Market market, uint256 marketId) {
+    function _deployWithToken(MockERC20 borrowToken) internal returns (Market market, uint256 marketId) {
         InterestRateModel irm = new InterestRateModel(200, 600, 10_000, 8000);
 
         IMarket.MarketConfig memory mConfig = IMarket.MarketConfig({
@@ -62,10 +60,14 @@ contract EdgeCasesTest is Test {
             minPoolAge: 0
         });
 
-        market = Market(address(new ERC1967Proxy(
-            address(new Market()),
-            abi.encodeCall(Market.initialize, (mConfig, address(irm), address(core), address(le)))
-        )));
+        market = Market(
+            address(
+                new ERC1967Proxy(
+                    address(new Market()),
+                    abi.encodeCall(Market.initialize, (mConfig, address(irm), address(core), address(le)))
+                )
+            )
+        );
 
         vm.prank(owner);
         marketId = core.registerMarket(address(market));
@@ -79,25 +81,37 @@ contract EdgeCasesTest is Test {
     function setUp() public {
         core = new ProtocolCore(owner, guardian);
 
-        oracleHub = LPOracleHub(address(new ERC1967Proxy(
-            address(new LPOracleHub()),
-            abi.encodeCall(LPOracleHub.initialize, (address(core)))
-        )));
+        oracleHub = LPOracleHub(
+            address(
+                new ERC1967Proxy(address(new LPOracleHub()), abi.encodeCall(LPOracleHub.initialize, (address(core))))
+            )
+        );
 
-        pm = PositionManager(address(new ERC1967Proxy(
-            address(new PositionManager()),
-            abi.encodeCall(PositionManager.initialize, (address(core), address(oracleHub)))
-        )));
+        pm = PositionManager(
+            address(
+                new ERC1967Proxy(
+                    address(new PositionManager()),
+                    abi.encodeCall(PositionManager.initialize, (address(core), address(oracleHub)))
+                )
+            )
+        );
 
-        le = LendingEngine(address(new ERC1967Proxy(
-            address(new LendingEngine()),
-            abi.encodeCall(LendingEngine.initialize, (address(core), address(pm)))
-        )));
+        le = LendingEngine(
+            address(
+                new ERC1967Proxy(
+                    address(new LendingEngine()), abi.encodeCall(LendingEngine.initialize, (address(core), address(pm)))
+                )
+            )
+        );
 
-        liq = LiquidationEngine(address(new ERC1967Proxy(
-            address(new LiquidationEngine()),
-            abi.encodeCall(LiquidationEngine.initialize, (address(core), address(pm), address(le)))
-        )));
+        liq = LiquidationEngine(
+            address(
+                new ERC1967Proxy(
+                    address(new LiquidationEngine()),
+                    abi.encodeCall(LiquidationEngine.initialize, (address(core), address(pm), address(le)))
+                )
+            )
+        );
 
         fc = new FeeCollector(address(core), treasury, insurance);
 
@@ -224,10 +238,14 @@ contract EdgeCasesTest is Test {
             minPoolTvl: 0,
             minPoolAge: 0
         });
-        Market m = Market(address(new ERC1967Proxy(
-            address(new Market()),
-            abi.encodeCall(Market.initialize, (mConfig2, address(irm2), address(core), address(le)))
-        )));
+        Market m = Market(
+            address(
+                new ERC1967Proxy(
+                    address(new Market()),
+                    abi.encodeCall(Market.initialize, (mConfig2, address(irm2), address(core), address(le)))
+                )
+            )
+        );
         vm.prank(owner);
         uint256 mId = core.registerMarket(address(m));
         token.mint(address(this), 100_000_000e18);
@@ -337,11 +355,11 @@ contract EdgeCasesTest is Test {
         assertEq(le.getDebt(posId), 20_000e18);
 
         // Partial repay $5K
-        token.mint(alice, 5_000e18);
+        token.mint(alice, 5000e18);
         vm.prank(alice);
-        token.approve(address(m), 5_000e18);
+        token.approve(address(m), 5000e18);
         vm.prank(alice);
-        le.repay(posId, 5_000e18);
+        le.repay(posId, 5000e18);
         assertEq(le.getDebt(posId), 15_000e18);
 
         // Borrow $10K more (total debt = $25K)

@@ -17,7 +17,7 @@ interface ILiquidationEngine {
     /// @param positionId The position to liquidate
     /// @param repayAmount Amount of debt to repay
     /// @return profit The liquidator's profit in borrow asset
-    function liquidate(uint256 positionId, uint256 repayAmount) external returns (uint256 profit);
+    function liquidate(uint256 positionId, uint256 repayAmount, uint256 deadline) external returns (uint256 profit);
 
     /// @notice Check if a position is liquidatable
     /// @param positionId The position to check

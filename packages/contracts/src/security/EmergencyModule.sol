@@ -75,11 +75,8 @@ contract EmergencyModule {
 
     /// @notice Queue a timelocked action
     function queueAction(bytes32 actionHash) external onlyOwner {
-        timelockActions[actionHash] = TimelockAction({
-            actionHash: actionHash,
-            executeAfter: block.timestamp + timelockDelay,
-            executed: false
-        });
+        timelockActions[actionHash] =
+            TimelockAction({actionHash: actionHash, executeAfter: block.timestamp + timelockDelay, executed: false});
         emit ActionQueued(actionHash, block.timestamp + timelockDelay);
     }
 

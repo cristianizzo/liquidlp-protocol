@@ -135,13 +135,13 @@ contract FeeCollectorTest is Test {
         fc.collectFee(address(usdc), 10_000e6, source, "interest");
 
         vm.expectEmit(true, false, false, true);
-        emit FeesDistributed(address(usdc), 9_000e6, 1_000e6);
+        emit FeesDistributed(address(usdc), 9000e6, 1000e6);
 
         vm.prank(keeper);
         fc.distribute(address(usdc));
 
-        assertEq(usdc.balanceOf(treasury), 9_000e6);
-        assertEq(usdc.balanceOf(insurance), 1_000e6);
+        assertEq(usdc.balanceOf(treasury), 9000e6);
+        assertEq(usdc.balanceOf(insurance), 1000e6);
         assertEq(usdc.balanceOf(address(fc)), 0); // FeeCollector empty
         assertEq(fc.accumulatedFees(address(usdc)), 0);
     }
@@ -171,17 +171,17 @@ contract FeeCollectorTest is Test {
 
         // Round 1
         vm.prank(keeper);
-        fc.collectFee(address(usdc), 5_000e6, source, "interest");
+        fc.collectFee(address(usdc), 5000e6, source, "interest");
         vm.prank(keeper);
         fc.distribute(address(usdc));
 
         // Round 2
         vm.prank(keeper);
-        fc.collectFee(address(usdc), 3_000e6, source, "liquidation");
+        fc.collectFee(address(usdc), 3000e6, source, "liquidation");
         vm.prank(keeper);
         fc.distribute(address(usdc));
 
-        assertEq(usdc.balanceOf(treasury), 4_500e6 + 2_700e6); // 7200
+        assertEq(usdc.balanceOf(treasury), 4500e6 + 2700e6); // 7200
         assertEq(usdc.balanceOf(insurance), 500e6 + 300e6); // 800
     }
 
@@ -190,22 +190,22 @@ contract FeeCollectorTest is Test {
     function test_calculateInterestSplit_curvePool() public view {
         // Curve reserve factor = 10%
         (uint256 protocolShare, uint256 lenderShare) = fc.calculateInterestSplit(10_000e18, ILPAdapter.LPType.Curve);
-        assertEq(protocolShare, 1_000e18); // 10%
-        assertEq(lenderShare, 9_000e18); // 90%
+        assertEq(protocolShare, 1000e18); // 10%
+        assertEq(lenderShare, 9000e18); // 90%
     }
 
     function test_calculateInterestSplit_uniswapV3() public view {
         // UniswapV3 reserve factor = 20%
         (uint256 protocolShare, uint256 lenderShare) = fc.calculateInterestSplit(10_000e18, ILPAdapter.LPType.UniswapV3);
-        assertEq(protocolShare, 2_000e18);
-        assertEq(lenderShare, 8_000e18);
+        assertEq(protocolShare, 2000e18);
+        assertEq(lenderShare, 8000e18);
     }
 
     function test_calculateInterestSplit_aerodrome() public view {
         // Aerodrome reserve factor = 25%
         (uint256 protocolShare, uint256 lenderShare) = fc.calculateInterestSplit(10_000e18, ILPAdapter.LPType.Aerodrome);
-        assertEq(protocolShare, 2_500e18);
-        assertEq(lenderShare, 7_500e18);
+        assertEq(protocolShare, 2500e18);
+        assertEq(lenderShare, 7500e18);
     }
 
     function test_calculateInterestSplit_sumEqualsTotal() public view {
@@ -217,14 +217,14 @@ contract FeeCollectorTest is Test {
 
     function test_calculateLiquidationFee_defaultTenPercent() public view {
         // Default liquidation fee = 10%
-        (uint256 protocolFee, uint256 liquidatorNet) = fc.calculateLiquidationFee(5_000e18);
+        (uint256 protocolFee, uint256 liquidatorNet) = fc.calculateLiquidationFee(5000e18);
         assertEq(protocolFee, 500e18); // 10%
-        assertEq(liquidatorNet, 4_500e18); // 90%
+        assertEq(liquidatorNet, 4500e18); // 90%
     }
 
     function test_calculateLiquidationFee_sumEqualsInput() public view {
-        (uint256 fee, uint256 net) = fc.calculateLiquidationFee(7_777e18);
-        assertEq(fee + net, 7_777e18);
+        (uint256 fee, uint256 net) = fc.calculateLiquidationFee(7777e18);
+        assertEq(fee + net, 7777e18);
     }
 
     function test_calculateLiquidationFee_zeroInput() public view {
