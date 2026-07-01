@@ -145,8 +145,9 @@ abstract contract ForkTestBase is Test {
         oracleHub.registerOracle(ILPAdapter.LPType.UniswapV2, address(v2Oracle));
 
         // 9. Adapters
-        v3Adapter =
-            new UniswapV3Adapter(Constants.UNI_V3_NFT_MANAGER, Constants.UNI_V3_FACTORY, address(positionManager));
+        v3Adapter = new UniswapV3Adapter(
+            Constants.UNI_V3_NFT_MANAGER, Constants.UNI_V3_FACTORY, address(core), address(positionManager)
+        );
         v2Adapter = new UniswapV2Adapter(Constants.UNI_V2_FACTORY, Constants.UNI_V2_ROUTER, address(positionManager));
 
         // Register adapters

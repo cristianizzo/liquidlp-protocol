@@ -2,80 +2,134 @@
 pragma solidity ^0.8.26;
 
 import {ILPAdapter} from "../interfaces/ILPAdapter.sol";
+import {INonfungiblePositionManager, IUniswapV3Factory} from "../interfaces/external/IUniswapV3.sol";
+import {ProtocolCore} from "../core/ProtocolCore.sol";
 
 /// @title UniswapV3Adapter
 /// @notice Handles Uniswap V3 NFT position deposits, withdrawals, and unwinding
+/// @dev Real implementation — interacts with Uniswap V3 NonfungiblePositionManager.
+///      Uses ProtocolCore for ownership. Protocol address updatable if PositionManager migrates.
+///
+///      Design notes:
+///      - unwind() collects decreased liquidity + accumulated fees together (intentional).
+///        Fees are part of collateral value in the oracle, so they should be seized during liquidation.
+///      - collectFees() calls decreaseLiquidity(1 wei) to trigger fee accounting update,
+///        then collects all owed tokens. The 1 wei of liquidity loss is negligible.
+///      - amount0Min/amount1Min are 0 in decreaseLiquidity because slippage protection is
+///        handled at the LiquidationEngine level via oracle-based post-swap validation.
 contract UniswapV3Adapter is ILPAdapter {
-    // Uniswap V3 contracts (set per chain in constructor)
-    address public immutable nftManager; // INonfungiblePositionManager
-    address public immutable factory; // IUniswapV3Factory
+    INonfungiblePositionManager public immutable nftManager;
+    IUniswapV3Factory public immutable v3Factory;
+    ProtocolCore public immutable core;
 
-    address public protocol; // Only LiquidLP protocol can call
+    /// @notice Address authorized to call adapter functions (PositionManager proxy)
+    address public protocol;
+
+    // --- Events ---
+    event PositionLocked(uint256 indexed tokenId, address indexed from, address pool, uint128 liquidity);
+    event PositionUnlocked(uint256 indexed tokenId, address indexed to);
+    event LiquidityUnwound(uint256 indexed tokenId, uint128 liquidityRemoved, uint256 amount0, uint256 amount1);
+    event FeesCollected(uint256 indexed tokenId, uint256 fees0, uint256 fees1);
+    event ProtocolUpdated(address indexed oldProtocol, address indexed newProtocol);
 
     modifier onlyProtocol() {
         require(msg.sender == protocol, "NOT_PROTOCOL");
         _;
     }
 
-    constructor(address _nftManager, address _factory, address _protocol) {
-        nftManager = _nftManager;
-        factory = _factory;
+    modifier onlyOwner() {
+        require(msg.sender == core.owner(), "NOT_OWNER");
+        _;
+    }
+
+    constructor(address _nftManager, address _factory, address _core, address _protocol) {
+        require(
+            _nftManager != address(0) && _factory != address(0) && _core != address(0) && _protocol != address(0),
+            "ZERO_ADDRESS"
+        );
+        nftManager = INonfungiblePositionManager(_nftManager);
+        v3Factory = IUniswapV3Factory(_factory);
+        core = ProtocolCore(_core);
         protocol = _protocol;
     }
+
+    // --- Admin ---
+
+    /// @notice Update protocol address (if PositionManager is redeployed)
+    function setProtocol(address _protocol) external onlyOwner {
+        require(_protocol != address(0), "ZERO_ADDRESS");
+        emit ProtocolUpdated(protocol, _protocol);
+        protocol = _protocol;
+    }
+
+    // --- ILPAdapter Implementation ---
 
     /// @inheritdoc ILPAdapter
     function validateAndLock(
         address lpToken,
         uint256 tokenId,
-        uint256, /* amount — unused for NFTs */
+        uint256, /* amount */
         address from
     )
         external
         onlyProtocol
         returns (LPInfo memory info)
     {
-        require(lpToken == nftManager, "NOT_UNISWAP_V3");
+        require(lpToken == address(nftManager), "NOT_UNISWAP_V3");
+        require(from != address(0), "ZERO_FROM");
 
-        // Get position data from NFT manager
-        // (,, token0, token1, fee, tickLower, tickUpper, liquidity,,,,)
-        //     = INonfungiblePositionManager(nftManager).positions(tokenId);
+        // Read position data
+        (,, address token0, address token1, uint24 fee, int24 tickLower, int24 tickUpper, uint128 liquidity,,,,) =
+            nftManager.positions(tokenId);
 
-        // Verify position has liquidity
-        // require(liquidity > 0, "NO_LIQUIDITY");
+        require(liquidity > 0, "NO_LIQUIDITY");
 
-        // Transfer NFT from user to this contract
-        // IERC721(nftManager).transferFrom(from, address(this), tokenId);
+        // Transfer NFT from user to adapter
+        nftManager.transferFrom(from, address(this), tokenId);
+        require(nftManager.ownerOf(tokenId) == address(this), "TRANSFER_FAILED");
 
         // Get pool address
-        // address pool = IUniswapV3Factory(factory).getPool(token0, token1, fee);
+        address pool = v3Factory.getPool(token0, token1, fee);
+        require(pool != address(0), "POOL_NOT_FOUND");
 
-        // info = LPInfo({
-        //     lpType: LPType.UniswapV3,
-        //     token0: token0,
-        //     token1: token1,
-        //     feeTier: fee,
-        //     tickLower: tickLower,
-        //     tickUpper: tickUpper,
-        //     liquidity: liquidity,
-        //     pool: pool
-        // });
+        info = LPInfo({
+            lpType: LPType.UniswapV3,
+            token0: token0,
+            token1: token1,
+            feeTier: fee,
+            tickLower: tickLower,
+            tickUpper: tickUpper,
+            liquidity: liquidity,
+            pool: pool
+        });
+
+        emit PositionLocked(tokenId, from, pool, liquidity);
     }
 
     /// @inheritdoc ILPAdapter
     function unlock(
         address, /* lpToken */
         uint256 tokenId,
-        uint256, /* amount — unused for NFTs */
+        uint256, /* amount */
         address to
     )
         external
         onlyProtocol
     {
-        // Transfer NFT back to user
-        // IERC721(nftManager).transferFrom(address(this), to, tokenId);
+        require(to != address(0), "ZERO_RECIPIENT");
+        require(to != address(this), "CANNOT_UNLOCK_TO_SELF");
+        require(nftManager.ownerOf(tokenId) == address(this), "NOT_HELD");
+
+        nftManager.transferFrom(address(this), to, tokenId);
+
+        emit PositionUnlocked(tokenId, to);
     }
 
     /// @inheritdoc ILPAdapter
+    /// @dev Decreases liquidity, then collects all available tokens (decreased + fees).
+    ///      Fees are intentionally included — they're part of collateral value in the oracle.
+    ///      Slippage on decreaseLiquidity is 0 because protection is at the LiquidationEngine
+    ///      level via oracle-based post-swap validation (SWAP_SLIPPAGE_EXCEEDED check).
     function unwind(
         address, /* lpToken */
         uint256 tokenId,
@@ -85,29 +139,31 @@ contract UniswapV3Adapter is ILPAdapter {
         onlyProtocol
         returns (uint256 amount0, uint256 amount1)
     {
-        // Step 1: Decrease liquidity
-        // INonfungiblePositionManager(nftManager).decreaseLiquidity(
-        //     INonfungiblePositionManager.DecreaseLiquidityParams({
-        //         tokenId: tokenId,
-        //         liquidity: liquidityToRemove,
-        //         amount0Min: 0,
-        //         amount1Min: 0,
-        //         deadline: block.timestamp
-        //     })
-        // );
+        require(liquidityToRemove > 0, "ZERO_LIQUIDITY");
+        require(nftManager.ownerOf(tokenId) == address(this), "NOT_HELD");
 
-        // Step 2: Collect tokens
-        // (amount0, amount1) = INonfungiblePositionManager(nftManager).collect(
-        //     INonfungiblePositionManager.CollectParams({
-        //         tokenId: tokenId,
-        //         recipient: msg.sender,
-        //         amount0Max: type(uint128).max,
-        //         amount1Max: type(uint128).max
-        //     })
-        // );
+        // Decrease liquidity
+        nftManager.decreaseLiquidity(
+            INonfungiblePositionManager.DecreaseLiquidityParams({
+                tokenId: tokenId, liquidity: liquidityToRemove, amount0Min: 0, amount1Min: 0, deadline: block.timestamp
+            })
+        );
+
+        // Collect all (decreased liquidity + fees)
+        (amount0, amount1) = nftManager.collect(
+            INonfungiblePositionManager.CollectParams({
+                tokenId: tokenId, recipient: msg.sender, amount0Max: type(uint128).max, amount1Max: type(uint128).max
+            })
+        );
+
+        emit LiquidityUnwound(tokenId, liquidityToRemove, amount0, amount1);
     }
 
     /// @inheritdoc ILPAdapter
+    /// @dev Collects accumulated trading fees without meaningfully removing liquidity.
+    ///      Calls decreaseLiquidity(1) to trigger fee accounting update in the pool
+    ///      (Uniswap V3 requires a burn to sync tokensOwed with feeGrowthInside).
+    ///      The 1 wei of liquidity removed is negligible.
     function collectFees(
         address, /* lpToken */
         uint256 tokenId
@@ -116,13 +172,28 @@ contract UniswapV3Adapter is ILPAdapter {
         onlyProtocol
         returns (uint256 fees0, uint256 fees1)
     {
-        // Collect without decreasing liquidity (fees only)
-        // First decrease 0 liquidity to update fee tracking
-        // INonfungiblePositionManager(nftManager).decreaseLiquidity(
-        //     DecreaseLiquidityParams(tokenId, 0, 0, 0, block.timestamp)
-        // );
-        // Then collect
-        // (fees0, fees1) = INonfungiblePositionManager(nftManager).collect(...)
+        require(nftManager.ownerOf(tokenId) == address(this), "NOT_HELD");
+
+        // Check if position has liquidity (can't decrease if already 0)
+        (,,,,,,, uint128 currentLiquidity,,,,) = nftManager.positions(tokenId);
+
+        if (currentLiquidity > 0) {
+            // Burn 1 wei of liquidity to trigger fee accounting sync
+            nftManager.decreaseLiquidity(
+                INonfungiblePositionManager.DecreaseLiquidityParams({
+                    tokenId: tokenId, liquidity: 1, amount0Min: 0, amount1Min: 0, deadline: block.timestamp
+                })
+            );
+        }
+
+        // Collect all owed tokens (fees + the 1 wei of liquidity)
+        (fees0, fees1) = nftManager.collect(
+            INonfungiblePositionManager.CollectParams({
+                tokenId: tokenId, recipient: msg.sender, amount0Max: type(uint128).max, amount1Max: type(uint128).max
+            })
+        );
+
+        emit FeesCollected(tokenId, fees0, fees1);
     }
 
     /// @inheritdoc ILPAdapter
@@ -132,6 +203,11 @@ contract UniswapV3Adapter is ILPAdapter {
 
     /// @inheritdoc ILPAdapter
     function isSupported(address lpToken) external view returns (bool) {
-        return lpToken == nftManager;
+        return lpToken == address(nftManager);
+    }
+
+    /// @notice Required to receive ERC721 tokens via safeTransferFrom
+    function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
+        return this.onERC721Received.selector;
     }
 }
