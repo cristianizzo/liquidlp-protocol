@@ -206,8 +206,11 @@ contract UniswapV3Adapter is ILPAdapter {
         return lpToken == address(nftManager);
     }
 
-    /// @notice Required to receive ERC721 tokens via safeTransferFrom
-    function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
+    /// @notice Only accept NFTs from the Uniswap V3 NFT manager during validateAndLock
+    /// @dev Prevents random NFTs from being sent directly to this adapter and getting stuck
+    function onERC721Received(address operator, address, uint256, bytes calldata) external view returns (bytes4) {
+        require(msg.sender == address(nftManager), "ONLY_V3_NFT");
+        require(operator == address(this) || operator == protocol, "UNEXPECTED_OPERATOR");
         return this.onERC721Received.selector;
     }
 }
