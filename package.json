@@ -1,0 +1,38 @@
+{
+  "name": "liquidlp-protocol",
+  "private": true,
+  "scripts": {
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "dev:frontend": "pnpm --filter @liquidlp/frontend dev",
+    "dev:backend": "pnpm --filter @liquidlp/backend dev",
+    "dev:contracts": "cd packages/contracts && forge test --watch",
+    "forge:build": "cd packages/contracts && forge build",
+    "forge:test": "cd packages/contracts && forge test -vvv",
+    "forge:test:fork": "cd packages/contracts && forge test --fork-url $ETH_RPC_URL -vvv",
+    "forge:gas": "cd packages/contracts && forge test --gas-report",
+    "forge:snapshot": "cd packages/contracts && forge snapshot",
+    "forge:coverage": "cd packages/contracts && forge coverage",
+    "generate:abis": "pnpm --filter @liquidlp/shared generate-abis",
+    "deploy:local": "cd packages/contracts && forge script script/Deploy.s.sol --rpc-url http://localhost:8545 --broadcast",
+    "deploy:testnet": "cd packages/contracts && forge script script/Deploy.s.sol --rpc-url $SEPOLIA_RPC_URL --broadcast --verify",
+    "subgraph:build": "pnpm --filter @liquidlp/subgraph build",
+    "subgraph:deploy": "pnpm --filter @liquidlp/subgraph deploy",
+    "docker:up": "cd packages/backend && docker-compose up -d",
+    "docker:down": "cd packages/backend && docker-compose down",
+    "clean": "turbo run clean && rm -rf node_modules"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.0",
+    "prettier": "^3.5.0",
+    "prettier-plugin-solidity": "^1.4.0",
+    "eslint": "^9.0.0",
+    "typescript": "^5.8.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@10.20.0"
+}

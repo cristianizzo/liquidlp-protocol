@@ -1,0 +1,20 @@
+{
+  "name": "@liquidlp/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "forge build",
+    "test": "forge test --match-path 'test/unit/**' -vvv",
+    "test:fork": "forge test --match-path 'test/fork/**' --fork-url $ETH_RPC_URL -vvv",
+    "test:invariant": "forge test --match-path 'test/invariant/**' -vvv",
+    "test:all": "forge test -vvv",
+    "test:all:fork": "forge test --fork-url $ETH_RPC_URL -vvv",
+    "test:gas": "forge test --gas-report",
+    "test:coverage": "forge coverage",
+    "fork:local": "anvil --fork-url $ETH_RPC_URL --block-time 12",
+    "fork:base": "anvil --fork-url $BASE_RPC_URL --block-time 2",
+    "fork:arb": "anvil --fork-url $ARB_RPC_URL --block-time 1",
+    "snapshot": "forge snapshot",
+    "clean": "forge clean"
+  }
+}

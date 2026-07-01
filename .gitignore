@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+.next/
+out/
+build/
+
+# Foundry
+packages/contracts/out/
+packages/contracts/cache/
+packages/contracts/lib/
+
+# Environment
+.env
+.env.local
+.env.production
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Turbo
+.turbo/
+
+# Coverage
+coverage/
+lcov.info
+
+# Logs
+*.log
+
+# Database
+pgdata/
+
+# Docker
+docker-compose.override.yml

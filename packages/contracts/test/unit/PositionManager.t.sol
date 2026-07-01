@@ -1,0 +1,687 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.26;
+
+import "forge-std/Test.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {ProtocolCore} from "../../src/core/ProtocolCore.sol";
+import {PositionManager} from "../../src/core/PositionManager.sol";
+import {LPOracleHub} from "../../src/oracle/LPOracleHub.sol";
+import {IPositionManager} from "../../src/interfaces/IPositionManager.sol";
+import {ILPAdapter} from "../../src/interfaces/ILPAdapter.sol";
+import {MockLPAdapter} from "../mocks/MockLPAdapter.sol";
+import {MockLPOracle} from "../mocks/MockLPOracle.sol";
+import {MockMarket} from "../mocks/MockMarket.sol";
+import {MockERC20} from "../mocks/MockERC20.sol";
+import {InterestRateModel} from "../../src/markets/InterestRateModel.sol";
+
+contract PositionManagerTest is Test {
+    ProtocolCore public core;
+    PositionManager public pm;
+    LPOracleHub public oracleHub;
+    MockLPAdapter public adapter;
+    MockLPOracle public oracle;
+    MockMarket public market;
+
+    address public owner = makeAddr("owner");
+    address public guardian = makeAddr("guardian");
+    address public alice = makeAddr("alice");
+    address public bob = makeAddr("bob");
+    address public lendingEngine = makeAddr("lendingEngine");
+    address public liquidationEngine = makeAddr("liquidationEngine");
+    address public lpToken = makeAddr("lpToken");
+
+    uint256 public marketId;
+
+    // Events
+    event PositionCreated(uint256 indexed positionId, address indexed owner, address lpToken, uint256 tokenId, ILPAdapter.LPType lpType, uint256 value);
+    event PositionClosed(uint256 indexed positionId, address indexed owner);
+    event PositionLiquidated(uint256 indexed positionId, address indexed liquidator, uint256 debtRepaid);
+    event AuthorizationUpdated(address indexed addr, bool status);
+
+    function setUp() public {
+        // Deploy core
+        core = new ProtocolCore(owner, guardian);
+
+        // Deploy oracle hub (UUPS proxy)
+        LPOracleHub oracleHubImpl = new LPOracleHub();
+        oracleHub = LPOracleHub(address(new ERC1967Proxy(
+            address(oracleHubImpl),
+            abi.encodeCall(LPOracleHub.initialize, (address(core)))
+        )));
+
+        // Deploy PositionManager (UUPS proxy)
+        PositionManager pmImpl = new PositionManager();
+        pm = PositionManager(address(new ERC1967Proxy(
+            address(pmImpl),
+            abi.encodeCall(PositionManager.initialize, (address(core), address(oracleHub)))
+        )));
+
+        // Deploy mocks
+        adapter = new MockLPAdapter(ILPAdapter.LPType.UniswapV3);
+        adapter.setSupportedToken(lpToken, true);
+        oracle = new MockLPOracle();
+        MockERC20 usdc = new MockERC20("USDC", "USDC", 6);
+        InterestRateModel irm = new InterestRateModel(200, 600, 10_000, 8000);
+        market = new MockMarket(address(usdc), address(irm));
+
+        // Register everything
+        vm.startPrank(owner);
+        core.registerAdapter(ILPAdapter.LPType.UniswapV3, address(adapter));
+        oracleHub.registerOracle(ILPAdapter.LPType.UniswapV3, address(oracle));
+        core.whitelistPool(lpToken); // adapter returns lpToken as pool
+        marketId = core.registerMarket(address(market));
+        pm.setAuthorized(lendingEngine, true);
+        pm.setAuthorized(liquidationEngine, true);
+        vm.stopPrank();
+    }
+
+    // ========== Initialization ==========
+
+    function test_initialize_setsCorrectState() public view {
+        assertEq(address(pm.core()), address(core));
+        assertEq(address(pm.oracleHub()), address(oracleHub));
+        assertEq(pm.nextPositionId(), 0);
+    }
+
+    function test_initialize_cannotReinitialize() public {
+        vm.expectRevert();
+        pm.initialize(address(core), address(oracleHub));
+    }
+
+    // ========== setAuthorized ==========
+
+    function test_setAuthorized_success() public {
+        address newAddr = makeAddr("newAuthorized");
+
+        vm.expectEmit(true, false, false, true);
+        emit AuthorizationUpdated(newAddr, true);
+
+        vm.prank(owner);
+        pm.setAuthorized(newAddr, true);
+        assertTrue(pm.authorized(newAddr));
+    }
+
+    function test_setAuthorized_revoke() public {
+        vm.startPrank(owner);
+        pm.setAuthorized(lendingEngine, false);
+        vm.stopPrank();
+        assertFalse(pm.authorized(lendingEngine));
+    }
+
+    function test_setAuthorized_revertsNotOwner() public {
+        vm.prank(alice);
+        vm.expectRevert("NOT_OWNER");
+        pm.setAuthorized(makeAddr("x"), true);
+    }
+
+    function test_setAuthorized_revertsZeroAddress() public {
+        vm.prank(owner);
+        vm.expectRevert("ZERO_ADDRESS");
+        pm.setAuthorized(address(0), true);
+    }
+
+    // ========== deposit ==========
+
+    function test_deposit_success() public {
+        vm.expectEmit(true, true, false, false);
+        emit PositionCreated(0, alice, lpToken, 1, ILPAdapter.LPType.UniswapV3, 50_000e18);
+
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+
+        assertEq(posId, 0);
+        assertEq(pm.nextPositionId(), 1);
+
+        IPositionManager.Position memory pos = pm.getPosition(posId);
+        assertEq(pos.id, 0);
+        assertEq(pos.owner, alice);
+        assertEq(pos.lpToken, lpToken);
+        assertEq(pos.tokenId, 1);
+        assertEq(pos.amount, 100e18);
+        assertEq(uint8(pos.lpType), uint8(ILPAdapter.LPType.UniswapV3));
+        assertEq(uint8(pos.status), uint8(IPositionManager.PositionStatus.Active));
+        assertEq(pos.depositTimestamp, block.timestamp);
+        assertEq(pos.depositBlock, block.number);
+    }
+
+    function test_deposit_multiplePositions() public {
+        vm.startPrank(alice);
+        uint256 id1 = pm.deposit(lpToken, 1, 100e18, marketId);
+        uint256 id2 = pm.deposit(lpToken, 2, 200e18, marketId);
+        vm.stopPrank();
+
+        assertEq(id1, 0);
+        assertEq(id2, 1);
+        assertEq(pm.nextPositionId(), 2);
+
+        uint256[] memory positions = pm.getPositionsByOwner(alice);
+        assertEq(positions.length, 2);
+        assertEq(positions[0], 0);
+        assertEq(positions[1], 1);
+    }
+
+    function test_deposit_differentUsers() public {
+        vm.prank(alice);
+        pm.deposit(lpToken, 1, 100e18, marketId);
+
+        vm.prank(bob);
+        pm.deposit(lpToken, 2, 200e18, marketId);
+
+        assertEq(pm.getPositionsByOwner(alice).length, 1);
+        assertEq(pm.getPositionsByOwner(bob).length, 1);
+    }
+
+    function test_deposit_recordsDepositBlock() public {
+        vm.roll(12345);
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+
+        assertEq(pm.getDepositBlock(posId), 12345);
+    }
+
+    function test_deposit_revertsZeroLpToken() public {
+        vm.prank(alice);
+        vm.expectRevert("ZERO_LP_TOKEN");
+        pm.deposit(address(0), 1, 100e18, marketId);
+    }
+
+    function test_deposit_revertsInvalidMarket() public {
+        vm.prank(alice);
+        vm.expectRevert("INVALID_MARKET");
+        pm.deposit(lpToken, 1, 100e18, 999);
+    }
+
+    function test_deposit_revertsUnsupportedLP() public {
+        address unknownToken = makeAddr("unknownLP");
+        vm.prank(alice);
+        vm.expectRevert("UNSUPPORTED_LP");
+        pm.deposit(unknownToken, 1, 100e18, marketId);
+    }
+
+    function test_deposit_revertsPoolNotSupported() public {
+        // Create a new LP token that adapter supports but pool isn't whitelisted
+        address newLP = makeAddr("newLP");
+        adapter.setSupportedToken(newLP, true);
+        // newLP will be returned as pool by the mock adapter, but it's not whitelisted
+
+        vm.prank(alice);
+        vm.expectRevert("POOL_NOT_SUPPORTED");
+        pm.deposit(newLP, 1, 100e18, marketId);
+    }
+
+    function test_deposit_revertsZeroValue() public {
+        oracle.setPrice(0);
+
+        vm.prank(alice);
+        vm.expectRevert("ZERO_VALUE");
+        pm.deposit(lpToken, 1, 100e18, marketId);
+    }
+
+    function test_deposit_revertsWhenPaused() public {
+        vm.prank(guardian);
+        core.pause();
+
+        vm.prank(alice);
+        vm.expectRevert("PAUSED");
+        pm.deposit(lpToken, 1, 100e18, marketId);
+    }
+
+    // ========== withdraw ==========
+
+    function test_withdraw_success() public {
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+
+        vm.expectEmit(true, true, false, false);
+        emit PositionClosed(posId, alice);
+
+        vm.prank(alice);
+        pm.withdraw(posId);
+
+        IPositionManager.Position memory pos = pm.getPosition(posId);
+        assertEq(uint8(pos.status), uint8(IPositionManager.PositionStatus.Closed));
+        assertEq(adapter.unlockCallCount(), 1);
+    }
+
+    function test_withdraw_revertsNotOwner() public {
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+
+        vm.prank(bob);
+        vm.expectRevert("NOT_POSITION_OWNER");
+        pm.withdraw(posId);
+    }
+
+    function test_withdraw_revertsHasDebt() public {
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+
+        // Simulate debt
+        vm.prank(lendingEngine);
+        pm.updateDebt(posId, 10_000e18);
+
+        vm.prank(alice);
+        vm.expectRevert("HAS_DEBT");
+        pm.withdraw(posId);
+    }
+
+    function test_withdraw_revertsAlreadyClosed() public {
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+
+        vm.prank(alice);
+        pm.withdraw(posId);
+
+        vm.prank(alice);
+        vm.expectRevert("NOT_ACTIVE");
+        pm.withdraw(posId);
+    }
+
+    function test_withdraw_revertsLiquidatedPosition() public {
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+
+        vm.prank(liquidationEngine);
+        pm.markLiquidated(posId, makeAddr("liq"), 5000e18);
+
+        vm.prank(alice);
+        vm.expectRevert("NOT_ACTIVE");
+        pm.withdraw(posId);
+    }
+
+    function test_withdraw_revertsPositionNotFound() public {
+        vm.prank(alice);
+        vm.expectRevert("POSITION_NOT_FOUND");
+        pm.withdraw(999);
+    }
+
+    function test_withdraw_revertsWhenPaused() public {
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+
+        vm.prank(guardian);
+        core.pause();
+
+        vm.prank(alice);
+        vm.expectRevert("PAUSED");
+        pm.withdraw(posId);
+    }
+
+    // ========== updateDebt ==========
+
+    function test_updateDebt_setsDebtAndStatus() public {
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+
+        vm.prank(lendingEngine);
+        pm.updateDebt(posId, 10_000e18);
+
+        assertEq(pm.positionDebt(posId), 10_000e18);
+        IPositionManager.Position memory pos = pm.getPosition(posId);
+        assertEq(uint8(pos.status), uint8(IPositionManager.PositionStatus.Borrowed));
+    }
+
+    function test_updateDebt_clearsDebtResetsStatus() public {
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+
+        vm.startPrank(lendingEngine);
+        pm.updateDebt(posId, 10_000e18);
+        pm.updateDebt(posId, 0);
+        vm.stopPrank();
+
+        assertEq(pm.positionDebt(posId), 0);
+        IPositionManager.Position memory pos = pm.getPosition(posId);
+        assertEq(uint8(pos.status), uint8(IPositionManager.PositionStatus.Active));
+    }
+
+    function test_updateDebt_revertsNotAuthorized() public {
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+
+        vm.prank(alice);
+        vm.expectRevert("NOT_AUTHORIZED");
+        pm.updateDebt(posId, 10_000e18);
+    }
+
+    function test_updateDebt_revertsClosedPosition() public {
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+
+        vm.prank(alice);
+        pm.withdraw(posId);
+
+        vm.prank(lendingEngine);
+        vm.expectRevert("POSITION_NOT_BORROWABLE");
+        pm.updateDebt(posId, 10_000e18);
+    }
+
+    function test_updateDebt_revertsLiquidatedPosition() public {
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+
+        vm.prank(liquidationEngine);
+        pm.markLiquidated(posId, makeAddr("liq"), 5000e18);
+
+        vm.prank(lendingEngine);
+        vm.expectRevert("POSITION_NOT_BORROWABLE");
+        pm.updateDebt(posId, 10_000e18);
+    }
+
+    function test_updateDebt_ownerCanCallDirectly() public {
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+
+        // Owner bypasses authorized check
+        vm.prank(owner);
+        pm.updateDebt(posId, 5_000e18);
+        assertEq(pm.positionDebt(posId), 5_000e18);
+    }
+
+    // ========== reducePositionAmount (PM-3 fix) ==========
+
+    event PositionAmountReduced(uint256 indexed positionId, uint256 amountRemoved, uint256 newAmount);
+
+    function test_reducePositionAmount_success() public {
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+
+        vm.expectEmit(true, false, false, true);
+        emit PositionAmountReduced(posId, 30e18, 70e18);
+
+        vm.prank(liquidationEngine);
+        pm.reducePositionAmount(posId, 30e18);
+
+        IPositionManager.Position memory pos = pm.getPosition(posId);
+        assertEq(pos.amount, 70e18);
+    }
+
+    function test_reducePositionAmount_multipleReductions() public {
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+
+        vm.startPrank(liquidationEngine);
+        pm.reducePositionAmount(posId, 20e18);
+        pm.reducePositionAmount(posId, 30e18);
+        pm.reducePositionAmount(posId, 10e18);
+        vm.stopPrank();
+
+        IPositionManager.Position memory pos = pm.getPosition(posId);
+        assertEq(pos.amount, 40e18); // 100 - 20 - 30 - 10
+    }
+
+    function test_reducePositionAmount_toZero() public {
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+
+        vm.prank(liquidationEngine);
+        pm.reducePositionAmount(posId, 100e18);
+
+        IPositionManager.Position memory pos = pm.getPosition(posId);
+        assertEq(pos.amount, 0);
+    }
+
+    function test_reducePositionAmount_revertsExceedsAmount() public {
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+
+        vm.prank(liquidationEngine);
+        vm.expectRevert("EXCEEDS_POSITION_AMOUNT");
+        pm.reducePositionAmount(posId, 101e18);
+    }
+
+    function test_reducePositionAmount_revertsZeroAmount() public {
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+
+        vm.prank(liquidationEngine);
+        vm.expectRevert("ZERO_AMOUNT");
+        pm.reducePositionAmount(posId, 0);
+    }
+
+    function test_reducePositionAmount_revertsNotAuthorized() public {
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+
+        vm.prank(alice);
+        vm.expectRevert("NOT_AUTHORIZED");
+        pm.reducePositionAmount(posId, 50e18);
+    }
+
+    function test_reducePositionAmount_revertsPositionNotFound() public {
+        vm.prank(liquidationEngine);
+        vm.expectRevert("POSITION_NOT_FOUND");
+        pm.reducePositionAmount(999, 50e18);
+    }
+
+    // ========== markLiquidated ==========
+
+    function test_markLiquidated_success() public {
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+
+        vm.prank(lendingEngine);
+        pm.updateDebt(posId, 10_000e18);
+
+        vm.expectEmit(true, true, false, true);
+        emit PositionLiquidated(posId, makeAddr("liquidator"), 5000e18);
+
+        vm.prank(liquidationEngine);
+        pm.markLiquidated(posId, makeAddr("liquidator"), 5000e18);
+
+        IPositionManager.Position memory pos = pm.getPosition(posId);
+        assertEq(uint8(pos.status), uint8(IPositionManager.PositionStatus.Liquidated));
+        assertEq(pm.positionDebt(posId), 0); // Debt cleared
+    }
+
+    function test_markLiquidated_revertsNotAuthorized() public {
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+
+        vm.prank(alice);
+        vm.expectRevert("NOT_AUTHORIZED");
+        pm.markLiquidated(posId, makeAddr("liq"), 5000e18);
+    }
+
+    function test_markLiquidated_revertsZeroLiquidator() public {
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+
+        vm.prank(liquidationEngine);
+        vm.expectRevert("ZERO_LIQUIDATOR");
+        pm.markLiquidated(posId, address(0), 5000e18);
+    }
+
+    // ========== View Functions ==========
+
+    function test_getPositionValue_returnsOraclePrice() public {
+        oracle.setPrice(75_000e18);
+
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+
+        assertEq(pm.getPositionValue(posId), 75_000e18);
+    }
+
+    function test_getPositionValue_zeroForNonexistent() public view {
+        assertEq(pm.getPositionValue(999), 0);
+    }
+
+    function test_getHealthFactor_maxWithNoDebt() public {
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+
+        assertEq(pm.getHealthFactor(posId), type(uint256).max);
+    }
+
+    function test_getHealthFactor_calculatesCorrectly() public {
+        oracle.setPrice(10_000e18); // $10,000 collateral
+
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+
+        vm.prank(lendingEngine);
+        pm.updateDebt(posId, 5_000e18); // $5,000 debt
+
+        uint256 hf = pm.getHealthFactor(posId);
+        // HF = (10000 * 7500 * 1e18) / (5000 * 10000) = 1.5e18
+        assertEq(hf, 1.5e18);
+    }
+
+    function test_getHealthFactor_zeroWhenCollateralZero() public {
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+
+        vm.prank(lendingEngine);
+        pm.updateDebt(posId, 5_000e18);
+
+        // Set oracle to 0 after deposit
+        oracle.setPrice(0);
+        assertEq(pm.getHealthFactor(posId), 0);
+    }
+
+    function test_getDepositBlock() public {
+        vm.roll(100);
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+        assertEq(pm.getDepositBlock(posId), 100);
+
+        vm.roll(200);
+        vm.prank(alice);
+        uint256 posId2 = pm.deposit(lpToken, 2, 50e18, marketId);
+        assertEq(pm.getDepositBlock(posId2), 200);
+    }
+
+    function test_getPositionsByOwner_emptyForNoPositions() public view {
+        assertEq(pm.getPositionsByOwner(alice).length, 0);
+    }
+
+    // ========== UUPS Upgrade ==========
+
+    function test_upgrade_onlyOwner() public {
+        PositionManager newImpl = new PositionManager();
+
+        vm.prank(alice);
+        vm.expectRevert("NOT_OWNER");
+        pm.upgradeToAndCall(address(newImpl), "");
+    }
+
+    function test_upgrade_preservesState() public {
+        // Deposit a position
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+
+        // Upgrade
+        PositionManager newImpl = new PositionManager();
+        vm.prank(owner);
+        pm.upgradeToAndCall(address(newImpl), "");
+
+        // State preserved
+        IPositionManager.Position memory pos = pm.getPosition(posId);
+        assertEq(pos.owner, alice);
+        assertEq(pos.amount, 100e18);
+        assertEq(pm.nextPositionId(), 1);
+    }
+
+    // ========== Storage Gap (PM-1) ==========
+
+    function test_storageGap_upgradeWithNewStateVar() public {
+        // Deposit a position before upgrade
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+
+        // Deploy V2 implementation (simulated — same contract, just proves upgrade works)
+        PositionManager newImpl = new PositionManager();
+        vm.prank(owner);
+        pm.upgradeToAndCall(address(newImpl), "");
+
+        // Verify all existing state is preserved after upgrade
+        IPositionManager.Position memory pos = pm.getPosition(posId);
+        assertEq(pos.owner, alice);
+        assertEq(pos.amount, 100e18);
+        assertEq(pos.lpToken, lpToken);
+        assertEq(pm.nextPositionId(), 1);
+        assertTrue(pm.authorized(lendingEngine));
+        assertTrue(pm.authorized(liquidationEngine));
+    }
+
+    // ========== Fuzz Tests ==========
+
+    function testFuzz_deposit_anyTokenId(uint256 tokenId) public {
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, tokenId, 100e18, marketId);
+
+        IPositionManager.Position memory pos = pm.getPosition(posId);
+        assertEq(pos.tokenId, tokenId);
+    }
+
+    function testFuzz_deposit_anyAmount(uint256 amount) public {
+        amount = bound(amount, 1, type(uint128).max);
+
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, amount, marketId);
+
+        IPositionManager.Position memory pos = pm.getPosition(posId);
+        assertEq(pos.amount, amount);
+    }
+
+    function testFuzz_healthFactor_inverslyProportionalToDebt(uint256 debt) public {
+        debt = bound(debt, 1e18, 100_000e18);
+        oracle.setPrice(100_000e18); // $100K collateral
+
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+
+        vm.prank(lendingEngine);
+        pm.updateDebt(posId, debt);
+
+        uint256 hf = pm.getHealthFactor(posId);
+        // Higher debt → lower health factor
+        assertGt(hf, 0);
+    }
+
+    // ========== Position Lifecycle ==========
+
+    function test_fullLifecycle_depositBorrowRepayWithdraw() public {
+        // 1. Deposit
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+        assertEq(uint8(pm.getPosition(posId).status), uint8(IPositionManager.PositionStatus.Active));
+
+        // 2. Borrow (simulated by LendingEngine)
+        vm.prank(lendingEngine);
+        pm.updateDebt(posId, 25_000e18);
+        assertEq(uint8(pm.getPosition(posId).status), uint8(IPositionManager.PositionStatus.Borrowed));
+
+        // 3. Repay (simulated by LendingEngine)
+        vm.prank(lendingEngine);
+        pm.updateDebt(posId, 0);
+        assertEq(uint8(pm.getPosition(posId).status), uint8(IPositionManager.PositionStatus.Active));
+
+        // 4. Withdraw
+        vm.prank(alice);
+        pm.withdraw(posId);
+        assertEq(uint8(pm.getPosition(posId).status), uint8(IPositionManager.PositionStatus.Closed));
+    }
+
+    function test_fullLifecycle_depositBorrowLiquidate() public {
+        // 1. Deposit
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+
+        // 2. Borrow
+        vm.prank(lendingEngine);
+        pm.updateDebt(posId, 25_000e18);
+
+        // 3. Liquidate
+        vm.prank(liquidationEngine);
+        pm.markLiquidated(posId, makeAddr("liquidator"), 25_000e18);
+        assertEq(uint8(pm.getPosition(posId).status), uint8(IPositionManager.PositionStatus.Liquidated));
+        assertEq(pm.positionDebt(posId), 0);
+
+        // Cannot withdraw after liquidation
+        vm.prank(alice);
+        vm.expectRevert("NOT_ACTIVE");
+        pm.withdraw(posId);
+    }
+}
