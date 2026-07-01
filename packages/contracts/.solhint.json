@@ -5,7 +5,6 @@
     "func-visibility": ["warn", { "ignoreConstructors": true }],
     "max-line-length": ["warn", 120],
     "no-empty-blocks": "off",
-    "no-unused-vars": "warn",
     "reason-string": ["warn", { "maxLength": 64 }],
     "no-global-import": "off",
     "no-console": "off",

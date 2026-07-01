@@ -75,7 +75,7 @@ abstract contract ForkTestBase is Test {
 
     function setUp() public virtual {
         // Fork Ethereum mainnet
-        string memory rpcUrl = vm.envOr("ETH_RPC_URL", string("https://eth.llamarpc.com"));
+        string memory rpcUrl = vm.envOr("ETH_RPC_URL", string("https://ethereum-rpc.publicnode.com"));
         forkId = vm.createSelectFork(rpcUrl);
 
         vm.startPrank(deployer);

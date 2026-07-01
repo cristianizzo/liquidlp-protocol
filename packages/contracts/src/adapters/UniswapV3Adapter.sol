@@ -206,8 +206,10 @@ contract UniswapV3Adapter is ILPAdapter {
         return lpToken == address(nftManager);
     }
 
-    /// @notice Only accept NFTs from the Uniswap V3 NFT manager during validateAndLock
-    /// @dev Prevents random NFTs from being sent directly to this adapter and getting stuck
+    /// @notice ERC721 receiver hook — restricts safeTransferFrom to prevent stuck NFTs
+    /// @dev validateAndLock uses transferFrom (not safeTransferFrom) so this hook only fires
+    ///      if someone calls safeTransferFrom directly. Restricted to V3 NFT manager only,
+    ///      initiated by this adapter or the protocol contract.
     function onERC721Received(address operator, address, uint256, bytes calldata) external view returns (bytes4) {
         require(msg.sender == address(nftManager), "ONLY_V3_NFT");
         require(operator == address(this) || operator == protocol, "UNEXPECTED_OPERATOR");

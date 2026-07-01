@@ -5,11 +5,7 @@ import "forge-std/Test.sol";
 import {ProtocolCore} from "../../src/core/ProtocolCore.sol";
 import {UniswapV3Adapter} from "../../src/adapters/UniswapV3Adapter.sol";
 import {ILPAdapter} from "../../src/interfaces/ILPAdapter.sol";
-import {
-    INonfungiblePositionManager,
-    IUniswapV3Factory,
-    IUniswapV3Pool
-} from "../../src/interfaces/external/IUniswapV3.sol";
+import {INonfungiblePositionManager} from "../../src/interfaces/external/IUniswapV3.sol";
 import {IERC20} from "../../src/interfaces/IERC20.sol";
 
 /// @title UniswapV3AdapterForkTest
