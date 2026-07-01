@@ -95,17 +95,18 @@ contract LiquidationEngineTest is Test {
         liq.setSwapRouter(address(swapRouter));
         vm.stopPrank();
 
-        // Configure adapter to return real token addresses
-        // token0 = WETH (needs swapping), token1 = USDC (borrow asset, no swap needed)
+        // Configure realistic values consistent with oracle price ($50K for 100 units):
+        // Position has 25 WETH + 25,000 USDC for 100 units
+        // WETH swap rate: 1 WETH = 1000 USDC
+        // Total value: 25*1000 + 25,000 = $50,000 ≈ oracle price
         adapter.setTokenReturns(address(weth), address(usdc));
-        // When LP is unwound, adapter returns 1 WETH + 2000 USDC
-        adapter.setUnwindAmounts(1e18, 2000e18);
+        adapter.setUnwindAmounts(25e18, 25_000e18); // Per 100 units total
+        adapter.setTotalLiquidity(100e18); // Match deposit amount
+        swapRouter.setExchangeRate(address(weth), 1000e18); // 1 WETH = 1000 USDC
 
-        // Fund market with USDC
+        // Fund
         usdc.mint(address(market), 1_000_000e18);
-        // Fund swap router with USDC (for swap output when converting WETH→USDC)
         usdc.mint(address(swapRouter), 1_000_000e18);
-        // Fund adapter with tokens it will "unwind" (return to LiquidationEngine)
         weth.mint(address(adapter), 1_000_000e18);
         usdc.mint(address(adapter), 1_000_000e18);
     }
@@ -815,15 +816,14 @@ contract LiquidationEngineTest is Test {
     // ========== Swap Path Coverage ==========
 
     function test_liquidate_bothTokensNeedSwap() public {
-        // Both tokens are non-USDC, both need swapping
+        // Both tokens are WETH, both need swapping
+        // 100 units = 25 WETH + 25 WETH, swap rate 1000 USDC/WETH → $50K total
         adapter.setTokenReturns(address(weth), address(weth));
-        adapter.setUnwindAmounts(1e18, 1e18);
+        adapter.setUnwindAmounts(25e18, 25e18);
 
-        // Re-deposit with new adapter config
         oracle.setPrice(50_000e18);
         vm.prank(alice);
         uint256 posId = pm.deposit(lpToken, 2, 100e18, marketId);
-        vm.roll(block.number + 2);
         vm.roll(block.number + 2);
         vm.prank(alice);
         le.borrow(posId, 30_000e18);
@@ -834,8 +834,7 @@ contract LiquidationEngineTest is Test {
         vm.prank(liquidator);
         usdc.approve(address(liq), maxRepay);
 
-        // Fund adapter for new position unwind
-        weth.mint(address(adapter), 100e18);
+        weth.mint(address(adapter), 1_000_000e18);
 
         vm.prank(liquidator);
         liq.liquidate(posId, maxRepay);
@@ -843,13 +842,13 @@ contract LiquidationEngineTest is Test {
 
     function test_liquidate_token0IsBorrowAsset() public {
         // token0 = USDC (borrow asset), token1 = WETH (needs swap)
+        // 100 units = 25K USDC + 25 WETH → $50K total at 1000 USDC/WETH
         adapter.setTokenReturns(address(usdc), address(weth));
-        adapter.setUnwindAmounts(2000e18, 1e18);
+        adapter.setUnwindAmounts(25_000e18, 25e18); // 25K USDC + 25 WETH per 100 units
 
         oracle.setPrice(50_000e18);
         vm.prank(alice);
         uint256 posId = pm.deposit(lpToken, 3, 100e18, marketId);
-        vm.roll(block.number + 2);
         vm.roll(block.number + 2);
         vm.prank(alice);
         le.borrow(posId, 30_000e18);
@@ -860,8 +859,8 @@ contract LiquidationEngineTest is Test {
         vm.prank(liquidator);
         usdc.approve(address(liq), maxRepay);
 
-        usdc.mint(address(adapter), 10_000e18);
-        weth.mint(address(adapter), 100e18);
+        usdc.mint(address(adapter), 1_000_000e18);
+        weth.mint(address(adapter), 1_000_000e18);
 
         vm.prank(liquidator);
         liq.liquidate(posId, maxRepay);

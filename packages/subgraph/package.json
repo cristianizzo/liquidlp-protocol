@@ -1,0 +1,17 @@
+{
+  "name": "@liquidlp/subgraph",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "codegen": "graph codegen",
+    "build": "graph codegen && graph build",
+    "deploy": "graph deploy liquidlp/liquidlp-protocol",
+    "test": "graph test",
+    "clean": "rm -rf build generated"
+  },
+  "devDependencies": {
+    "@graphprotocol/graph-cli": "^0.93.0",
+    "@graphprotocol/graph-ts": "^0.35.0",
+    "matchstick-as": "^0.6.0"
+  }
+}

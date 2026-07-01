@@ -122,7 +122,7 @@ abstract contract ForkTestBase is Test {
         priceValidator = new PriceValidator(address(core));
 
         // 8. Oracles
-        v3Oracle = new UniswapV3Oracle(address(core));
+        v3Oracle = new UniswapV3Oracle(address(core), Constants.UNI_V3_NFT_MANAGER);
         v2Oracle = new UniswapV2Oracle(address(core));
 
         // Set Chainlink price feeds

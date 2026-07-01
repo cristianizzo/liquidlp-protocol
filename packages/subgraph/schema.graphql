@@ -1,0 +1,74 @@
+type Position @entity {
+  id: ID!
+  owner: Bytes!
+  lpToken: Bytes!
+  tokenId: BigInt
+  amount: BigInt
+  lpType: String!
+  pool: Bytes!
+  token0: Bytes!
+  token1: Bytes!
+  market: Market!
+  depositValue: BigDecimal!
+  currentDebt: BigDecimal!
+  status: String!
+  depositTimestamp: BigInt!
+  updatedAt: BigInt!
+  borrows: [BorrowEvent!]! @derivedFrom(field: "position")
+  repays: [RepayEvent!]! @derivedFrom(field: "position")
+  liquidations: [LiquidationEvent!]! @derivedFrom(field: "position")
+}
+
+type Market @entity {
+  id: ID!
+  lpType: String!
+  borrowAsset: Bytes!
+  totalSupply: BigDecimal!
+  totalBorrow: BigDecimal!
+  utilization: BigDecimal!
+  supplyRate: BigDecimal!
+  borrowRate: BigDecimal!
+  maxLtv: BigInt!
+  positions: [Position!]! @derivedFrom(field: "market")
+  createdAt: BigInt!
+}
+
+type BorrowEvent @entity(immutable: true) {
+  id: ID!
+  position: Position!
+  borrower: Bytes!
+  amount: BigDecimal!
+  totalDebt: BigDecimal!
+  timestamp: BigInt!
+  txHash: Bytes!
+}
+
+type RepayEvent @entity(immutable: true) {
+  id: ID!
+  position: Position!
+  repayer: Bytes!
+  amount: BigDecimal!
+  remainingDebt: BigDecimal!
+  timestamp: BigInt!
+  txHash: Bytes!
+}
+
+type LiquidationEvent @entity(immutable: true) {
+  id: ID!
+  position: Position!
+  liquidator: Bytes!
+  repayAmount: BigDecimal!
+  collateralSeized: BigDecimal!
+  liquidatorProfit: BigDecimal!
+  timestamp: BigInt!
+  txHash: Bytes!
+}
+
+type ProtocolStats @entity {
+  id: ID!
+  totalTVL: BigDecimal!
+  totalBorrowed: BigDecimal!
+  totalPositions: BigInt!
+  totalLiquidations: BigInt!
+  totalFeesCollected: BigDecimal!
+}

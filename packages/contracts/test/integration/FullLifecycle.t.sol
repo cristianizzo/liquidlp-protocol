@@ -114,7 +114,8 @@ contract FullLifecycleTest is Test {
         adapter = new MockLPAdapter(ILPAdapter.LPType.UniswapV3);
         adapter.setSupportedToken(lpToken, true);
         adapter.setTokenReturns(address(weth), address(usdc));
-        adapter.setUnwindAmounts(1e18, 2000e18);
+        adapter.setUnwindAmounts(25e18, 25_000e18); // 100 units = 25 WETH + 25K USDC
+        adapter.setTotalLiquidity(100e18);
         oracle = new MockLPOracle();
         oracle.setPrice(50_000e18); // $50K collateral value
         swapRouter = new MockSwapRouter(address(usdc));
@@ -133,6 +134,9 @@ contract FullLifecycleTest is Test {
         fc.setAuthorizedCaller(address(liq), true);
         core.setKeeper(address(liq), true);
         vm.stopPrank();
+
+        // Set WETH swap rate: 1 WETH = 1000 USDC (so 25 WETH + 25K USDC ≈ $50K)
+        swapRouter.setExchangeRate(address(weth), 1000e18);
 
         // --- Fund ---
         weth.mint(address(adapter), 1_000_000e18);

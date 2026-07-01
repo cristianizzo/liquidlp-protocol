@@ -64,15 +64,30 @@ contract MockLPAdapter is ILPAdapter {
         unlockCallCount++;
     }
 
-    function unwind(address, uint256, uint128) external override returns (uint256, uint256) {
-        // Actually transfer tokens to the caller (LiquidationEngine)
-        if (unwindAmount0 > 0 && token0Return != address(0)) {
-            IERC20(token0Return).transfer(msg.sender, unwindAmount0);
+    /// @notice Total liquidity the position has (set to match deposit amount for scaling)
+    uint256 public totalLiquidity = 100e18;
+
+    function setTotalLiquidity(uint256 _total) external {
+        totalLiquidity = _total;
+    }
+
+    function unwind(address, uint256, uint128 liquidityToRemove) external override returns (uint256 out0, uint256 out1) {
+        // Scale output proportionally to liquidity removed (realistic behavior)
+        if (totalLiquidity > 0) {
+            out0 = (unwindAmount0 * uint256(liquidityToRemove)) / totalLiquidity;
+            out1 = (unwindAmount1 * uint256(liquidityToRemove)) / totalLiquidity;
+        } else {
+            out0 = unwindAmount0;
+            out1 = unwindAmount1;
         }
-        if (unwindAmount1 > 0 && token1Return != address(0)) {
-            IERC20(token1Return).transfer(msg.sender, unwindAmount1);
+
+        // Transfer tokens to caller
+        if (out0 > 0 && token0Return != address(0)) {
+            IERC20(token0Return).transfer(msg.sender, out0);
         }
-        return (unwindAmount0, unwindAmount1);
+        if (out1 > 0 && token1Return != address(0)) {
+            IERC20(token1Return).transfer(msg.sender, out1);
+        }
     }
 
     function collectFees(address, uint256) external pure override returns (uint256, uint256) {

@@ -3,6 +3,7 @@ pragma solidity ^0.8.26;
 
 import {ILPOracle} from "../interfaces/ILPOracle.sol";
 import {ILPOracleHub} from "../interfaces/ILPOracleHub.sol";
+import {IERC20} from "../interfaces/IERC20.sol";
 import {ProtocolCore} from "../core/ProtocolCore.sol";
 import {LPMath} from "../libraries/LPMath.sol";
 import {INonfungiblePositionManager, IUniswapV3Pool, IUniswapV3Factory} from "../interfaces/external/IUniswapV3.sol";
@@ -57,6 +58,7 @@ library TickMathLib {
 /// @title LiquidityAmountsLib
 /// @notice Computes token amounts from liquidity and sqrt price ranges
 library LiquidityAmountsLib {
+    /// @notice Full-precision 512-bit multiplication then division
     function mulDiv(uint256 a, uint256 b, uint256 denominator) internal pure returns (uint256 result) {
         uint256 prod0;
         uint256 prod1;
@@ -126,16 +128,35 @@ library LiquidityAmountsLib {
 
 /// @title UniswapV3Oracle
 /// @notice Prices Uniswap V3 NFT positions using TWAP + Chainlink cross-validation
-/// @dev Full implementation with 5-layer defense against oracle manipulation.
+/// @dev Full implementation with multi-layer defense against oracle manipulation.
+///
+/// !! IMPORTANT: NOT YET VALIDATED AGAINST REAL MAINNET DATA !!
+///
+/// TODO before mainnet deployment:
+///   [ ] Fork test: price a real ETH/USDC V3 position and compare to known value
+///   [ ] Fork test: price a real WBTC/ETH V3 position (cross-decimal: 8 dec / 18 dec)
+///   [ ] Fork test: verify _validatePriceConsistency with real TWAP vs Chainlink ratio
+///   [ ] Fork test: verify decimal normalization in valuation for 6/8/18 dec tokens
+///   [ ] Fork test: verify out-of-range position pricing (100% one token)
+///   [ ] Fork test: verify narrow range vs wide range haircut selection
+///   [ ] Fork test: verify tokensOwed (fee) calculation against real accumulated fees
+///   [ ] Verify TickMathLib matches Uniswap's canonical TickMath for edge ticks
+///   [ ] Verify LiquidityAmountsLib matches Uniswap's canonical LiquidityAmounts
+///   [ ] Test with Chainlink feeds that return different decimal counts (8 vs 18)
+///   [ ] Test pool.observe() behavior when observation cardinality is insufficient
+///   [ ] Test behavior when TWAP period exceeds pool's observation history
+///   [ ] Stress test mulDiv with extreme values (max liquidity + min tick range)
+///   [ ] Professional audit of oracle math (critical path for protocol security)
 ///
 /// Pricing flow:
 ///   1. Read position from NFT manager (tickLower, tickUpper, liquidity, fees)
-///   2. Get pool, compute 30-min TWAP tick via pool.observe()
+///   2. Get pool, compute TWAP tick via pool.observe()
 ///   3. Convert TWAP tick to sqrtPrice, calculate token amounts
-///   4. Price tokens via Chainlink feeds
-///   5. Cross-validate TWAP vs Chainlink (revert if >3% deviation)
-///   6. Apply position-specific haircut
-///   7. Return safe (haircut-adjusted) value
+///   4. Normalize token amounts to 18 decimals (handles 6/8/18 dec tokens)
+///   5. Price tokens via Chainlink feeds (also normalized to 18 dec)
+///   6. Cross-validate TWAP vs Chainlink (revert if deviation exceeds threshold)
+///   7. Apply position-specific haircut (range width, in/out of range)
+///   8. Return safe (haircut-adjusted) value
 contract UniswapV3Oracle is ILPOracle {
     ProtocolCore public immutable core;
     INonfungiblePositionManager public immutable positionManager;
@@ -149,7 +170,7 @@ contract UniswapV3Oracle is ILPOracle {
     uint256 public defaultHaircutBps = 700; // 7%
     uint256 public narrowRangeHaircutBps = 1000; // 10%
     uint256 public outOfRangeHaircutBps = 1200; // 12%
-    uint256 public volatilityHaircutBps = 500; // +5%
+    uint256 public volatilityHaircutBps = 500; // +5% (additive, for future PriceValidator integration)
     uint256 public maxStaleness = 3600; // 1 hour Chainlink staleness
 
     // --- Absolute Bounds ---
@@ -159,8 +180,6 @@ contract UniswapV3Oracle is ILPOracle {
     uint256 public constant MAX_HAIRCUT_BPS = 3000;
     uint256 public constant MIN_DEVIATION_BPS = 100;
     uint256 public constant MAX_DEVIATION_BPS_CAP = 1000;
-
-    uint256 public lastUpdateTimestamp;
 
     // --- Events ---
     event TwapPeriodUpdated(uint32 oldValue, uint32 newValue);
@@ -178,7 +197,6 @@ contract UniswapV3Oracle is ILPOracle {
         core = ProtocolCore(_core);
         positionManager = INonfungiblePositionManager(_positionManager);
         factory = IUniswapV3Factory(INonfungiblePositionManager(_positionManager).factory());
-        lastUpdateTimestamp = block.timestamp;
     }
 
     // --- Admin ---
@@ -213,6 +231,12 @@ contract UniswapV3Oracle is ILPOracle {
         outOfRangeHaircutBps = _bps;
     }
 
+    function setVolatilityHaircut(uint256 _bps) external onlyOwner {
+        require(_bps >= MIN_HAIRCUT_BPS / 2 && _bps <= MAX_HAIRCUT_BPS, "OUT_OF_BOUNDS");
+        emit HaircutUpdated("volatility", volatilityHaircutBps, _bps);
+        volatilityHaircutBps = _bps;
+    }
+
     function setMaxStaleness(uint256 _maxStaleness) external onlyOwner {
         require(_maxStaleness >= 300 && _maxStaleness <= 86400, "OUT_OF_BOUNDS");
         emit MaxStalenessUpdated(maxStaleness, _maxStaleness);
@@ -229,11 +253,36 @@ contract UniswapV3Oracle is ILPOracle {
 
     /// @inheritdoc ILPOracle
     function getPrice(
-        address, /* lpToken — always the NFT manager */
+        address, /* lpToken */
         uint256 tokenId,
-        uint256 /* amount — unused for NFTs */
+        uint256 /* amount */
     ) external view returns (ILPOracleHub.PriceResult memory result) {
-        // Step 1: Read position data
+        result = _computePrice(tokenId);
+    }
+
+    /// @inheritdoc ILPOracle
+    function getRawPrice(
+        address, /* lpToken */
+        uint256 tokenId,
+        uint256 /* amount */
+    ) external view returns (uint256) {
+        ILPOracleHub.PriceResult memory result = _computePrice(tokenId);
+        // Reverse the haircut to get raw value
+        if (result.haircut >= 10_000) return 0;
+        return (result.totalValue * 10_000) / (10_000 - result.haircut);
+    }
+
+    /// @inheritdoc ILPOracle
+    function isHealthy() external view returns (bool) {
+        // Oracle is healthy if it can respond (always true for a view-only oracle).
+        // Staleness is checked per-feed in _getChainlinkPrice.
+        return true;
+    }
+
+    // --- Internal: Core Pricing Logic ---
+
+    function _computePrice(uint256 tokenId) internal view returns (ILPOracleHub.PriceResult memory result) {
+        // Step 1: Read position data from NFT manager
         (
             , , address token0, address token1, uint24 fee,
             int24 tickLower, int24 tickUpper, uint128 liquidity,
@@ -257,27 +306,37 @@ contract UniswapV3Oracle is ILPOracle {
             sqrtPriceX96, sqrtPriceAX96, sqrtPriceBX96, liquidity
         );
 
-        // Step 4: Get Chainlink prices (18 decimals)
-        uint256 price0 = _getChainlinkPrice(token0);
-        uint256 price1 = _getChainlinkPrice(token1);
+        // Step 4: Get token decimals and Chainlink prices (both normalized to 18 dec)
+        uint8 dec0 = IERC20(token0).decimals();
+        uint8 dec1 = IERC20(token1).decimals();
+        uint256 price0 = _getChainlinkPrice(token0); // 18 decimals USD
+        uint256 price1 = _getChainlinkPrice(token1); // 18 decimals USD
 
         // Step 5: Cross-validate TWAP vs Chainlink
-        _validatePriceConsistency(twapTick, price0, price1, token0, token1);
+        _validatePriceConsistency(twapTick, price0, price1, dec0, dec1);
 
-        // Step 6: Calculate principal value (18 decimals USD)
-        uint8 dec0 = IAggregatorV3(priceFeeds[token0]).decimals();
-        uint8 dec1 = IAggregatorV3(priceFeeds[token1]).decimals();
-        // Normalize token amounts to 18 decimals before multiplying by price
-        uint256 principalValue = (amount0 * price0) / 1e18 + (amount1 * price1) / 1e18;
+        // Step 6: Calculate principal value in USD (18 decimals)
+        // Normalize token amounts to 18 dec before multiplying by 18-dec price
+        // TODO: Verify with real tokens — amount0 from getAmountsForLiquidity is in token0's
+        //       native decimals. Confirm this assumption with fork tests against real V3 positions.
+        uint256 amount0Normalized = _normalizeTo18(amount0, dec0);
+        uint256 amount1Normalized = _normalizeTo18(amount1, dec1);
+
+        uint256 principalValue = (amount0Normalized * price0) / 1e18
+                               + (amount1Normalized * price1) / 1e18;
 
         // Step 7: Calculate fee value (50% discount for safety)
-        uint256 feeValue = ((uint256(tokensOwed0) * price0) / 1e18 + (uint256(tokensOwed1) * price1) / 1e18) / 2;
+        // tokensOwed are in native decimals — normalize before pricing
+        uint256 feeValue = (
+            (_normalizeTo18(uint256(tokensOwed0), dec0) * price0) / 1e18
+          + (_normalizeTo18(uint256(tokensOwed1), dec1) * price1) / 1e18
+        ) / 2;
 
-        // Step 8: Apply haircut
+        // Step 8: Apply haircut based on position characteristics
         uint256 haircut = _computeHaircut(tickLower, tickUpper, twapTick);
         uint256 totalValue = LPMath.applyHaircut(principalValue + feeValue, haircut);
 
-        // Step 9: Compute confidence
+        // Step 9: Compute confidence score
         uint256 confidence = _computeConfidence(tickLower, tickUpper, twapTick);
 
         result = ILPOracleHub.PriceResult({
@@ -290,24 +349,14 @@ contract UniswapV3Oracle is ILPOracle {
         });
     }
 
-    /// @inheritdoc ILPOracle
-    function getRawPrice(
-        address lpToken, uint256 tokenId, uint256 amount
-    ) external view returns (uint256) {
-        ILPOracleHub.PriceResult memory result = this.getPrice(lpToken, tokenId, amount);
-        // Return value without haircut: totalValue / (10000 - haircut) * 10000
-        if (result.haircut >= 10_000) return 0;
-        return (result.totalValue * 10_000) / (10_000 - result.haircut);
-    }
-
-    /// @inheritdoc ILPOracle
-    function isHealthy() external view returns (bool) {
-        return (block.timestamp - lastUpdateTimestamp) < maxStaleness;
-    }
-
-    // --- Internal ---
+    // --- Internal: TWAP ---
 
     /// @notice Get TWAP tick from pool using observe()
+    /// @dev Uses configurable twapPeriod. Rounds towards negative infinity.
+    /// TODO: Fork test — verify pool.observe() works when:
+    ///       - Pool has sufficient observation cardinality for twapPeriod
+    ///       - Pool was recently created (short history)
+    ///       - Pool has low activity (sparse observations)
     function _getTwapTick(address pool) internal view returns (int24 twapTick) {
         uint32[] memory secondsAgos = new uint32[](2);
         secondsAgos[0] = twapPeriod;
@@ -319,13 +368,16 @@ contract UniswapV3Oracle is ILPOracle {
         int56 period = int56(uint56(twapPeriod));
 
         twapTick = int24(tickCumulativesDelta / period);
-        // Round towards negative infinity
+        // Round towards negative infinity for consistency
         if (tickCumulativesDelta < 0 && (tickCumulativesDelta % period != 0)) {
             twapTick--;
         }
     }
 
+    // --- Internal: Chainlink ---
+
     /// @notice Get price from Chainlink feed, normalized to 18 decimals
+    /// @dev Reverts if price is invalid, negative, or stale
     function _getChainlinkPrice(address token) internal view returns (uint256) {
         address feed = priceFeeds[token];
         require(feed != address(0), "NO_PRICE_FEED");
@@ -335,7 +387,6 @@ contract UniswapV3Oracle is ILPOracle {
         require(block.timestamp - updatedAt <= maxStaleness, "STALE_PRICE");
 
         uint8 feedDecimals = IAggregatorV3(feed).decimals();
-        // Normalize to 18 decimals
         if (feedDecimals < 18) {
             return uint256(answer) * (10 ** (18 - feedDecimals));
         } else if (feedDecimals > 18) {
@@ -344,51 +395,63 @@ contract UniswapV3Oracle is ILPOracle {
         return uint256(answer);
     }
 
+    // --- Internal: Cross-Validation ---
+
     /// @notice Cross-validate TWAP-implied price ratio vs Chainlink ratio
+    /// @dev The TWAP gives a token1/token0 ratio in pool-native decimals.
+    ///      We must account for different token decimals when comparing to Chainlink.
+    /// TODO: This is the MOST CRITICAL function to fork-test. The decimal adjustment
+    ///       (twapRatioRaw * 10^(dec0-dec1)) must be verified against real pools:
+    ///       - ETH/USDC pool (18/6 dec) — most common, must work
+    ///       - WBTC/ETH pool (8/18 dec) — reversed decimal relationship
+    ///       - DAI/USDC pool (18/6 dec) — stablecoin pair, ratio near 1.0
     function _validatePriceConsistency(
         int24 twapTick, uint256 price0, uint256 price1,
-        address, /* token0 */ address /* token1 */
+        uint8 dec0, uint8 dec1
     ) internal view {
-        if (price0 == 0 || price1 == 0) return; // Can't validate without both prices
+        if (price0 == 0 || price1 == 0) return;
 
-        // TWAP-implied price ratio: 1.0001^tick
-        // Chainlink ratio: price0 / price1
-        // We compare by checking if sqrtPrice from TWAP is consistent with Chainlink
+        // TWAP ratio: sqrtPrice^2 / 2^192 gives token1/token0 in raw pool units
+        // For a pool with token0=WETH(18dec) and token1=USDC(6dec),
+        // the raw ratio is in USDC_units/WETH_units = (6dec)/(18dec) units
+        // We need to adjust for decimal difference to compare with Chainlink
         uint160 twapSqrtPrice = TickMathLib.getSqrtRatioAtTick(twapTick);
-        // twapPrice = (twapSqrtPrice / 2^96)^2 = twapSqrtPrice^2 / 2^192
-        // This gives token0/token1 price from TWAP
-
-        // Chainlink ratio: price0/price1 (both 18 dec)
-        // TWAP ratio: derived from tick
-        // For validation, compare at a higher level:
-        // twapRatio ≈ price0 / price1
-
-        // Compute TWAP ratio as (sqrtPrice)^2 scaled
-        // twapPrice_token1_per_token0 = (sqrtPriceX96)^2 / 2^192
         uint256 twapPriceSq = uint256(twapSqrtPrice) * uint256(twapSqrtPrice);
-        // Scale: twapPriceSq is in Q192 format. Normalize to 18 decimals:
-        // twapRatio = twapPriceSq * 1e18 / 2^192
-        // 2^192 is very large, use mulDiv for precision
-        uint256 twapRatio = LiquidityAmountsLib.mulDiv(twapPriceSq, 1e18, 1 << 192);
+        // Raw TWAP ratio (token1_raw_per_token0_raw) in Q192 format
+        // Normalize to 18 decimals: mulDiv(twapPriceSq, 1e18, 2^192)
+        // Note: 2^192 fits in uint256 (≈ 6.27e57, max uint256 ≈ 1.16e77)
+        uint256 twapRatioRaw = LiquidityAmountsLib.mulDiv(twapPriceSq, 1e18, uint256(1) << 192);
 
-        // Chainlink ratio (price of token1 in token0 terms)
-        // If price0 = ETH/USD = $2000, price1 = USDC/USD = $1
-        // Then token1/token0 = price0/price1 = 2000 (1 ETH = 2000 USDC)
+        // Adjust for decimal difference:
+        // twapRatioRaw is in (token1_native / token0_native) units
+        // To get a decimal-normalized ratio, multiply by 10^(dec0-dec1)
+        // Example: WETH(18)/USDC(6) → multiply by 10^12 to normalize
+        uint256 twapRatioNormalized;
+        if (dec0 >= dec1) {
+            twapRatioNormalized = twapRatioRaw * (10 ** (dec0 - dec1));
+        } else {
+            twapRatioNormalized = twapRatioRaw / (10 ** (dec1 - dec0));
+        }
+
+        // Chainlink ratio: price0/price1 (both 18 dec USD)
+        // This gives "how many token1-values per token0-value" = token1_per_token0 in USD terms
         uint256 chainlinkRatio = (price0 * 1e18) / price1;
 
-        uint256 deviation = LPMath.deviationBps(twapRatio, chainlinkRatio);
+        uint256 deviation = LPMath.deviationBps(twapRatioNormalized, chainlinkRatio);
         require(deviation <= maxDeviationBps, "ORACLE_DEVIATION");
     }
+
+    // --- Internal: Haircut & Confidence ---
 
     /// @notice Determine haircut based on position characteristics
     function _computeHaircut(
         int24 tickLower, int24 tickUpper, int24 currentTick
     ) internal view returns (uint256) {
-        // Out of range — position is 100% one token
+        // Out of range — position is 100% one token, higher risk
         if (currentTick < tickLower || currentTick >= tickUpper) {
             return outOfRangeHaircutBps;
         }
-        // Narrow range — higher IL risk
+        // Narrow range (< 200 ticks) — higher IL risk
         int24 rangeWidth = tickUpper - tickLower;
         if (rangeWidth < 200) {
             return narrowRangeHaircutBps;
@@ -396,7 +459,7 @@ contract UniswapV3Oracle is ILPOracle {
         return defaultHaircutBps;
     }
 
-    /// @notice Compute oracle confidence based on position state
+    /// @notice Compute oracle confidence based on position state (0-10000 bps)
     function _computeConfidence(
         int24 tickLower, int24 tickUpper, int24 currentTick
     ) internal pure returns (uint256) {
@@ -413,5 +476,14 @@ contract UniswapV3Oracle is ILPOracle {
         if (halfRange == 0) return 8000;
         uint256 centeredness = uint256(int256(halfRange - distFromCenter)) * 2000 / uint256(int256(halfRange));
         return 8000 + centeredness; // 8000-10000
+    }
+
+    // --- Internal: Helpers ---
+
+    /// @notice Normalize a token amount to 18 decimals
+    function _normalizeTo18(uint256 amount, uint8 tokenDecimals) internal pure returns (uint256) {
+        if (tokenDecimals == 18) return amount;
+        if (tokenDecimals < 18) return amount * (10 ** (18 - tokenDecimals));
+        return amount / (10 ** (tokenDecimals - 18));
     }
 }

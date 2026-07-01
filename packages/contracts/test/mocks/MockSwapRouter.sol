@@ -4,11 +4,15 @@ pragma solidity ^0.8.26;
 import {ISwapRouter} from "../../src/interfaces/ISwapRouter.sol";
 import {IERC20} from "../../src/interfaces/IERC20.sol";
 
-/// @notice Mock swap router — swaps at 1:1 rate for testing
+/// @notice Mock swap router with configurable exchange rates per token
 contract MockSwapRouter is ISwapRouter {
-    // tokenOut to mint on swaps (set in test)
     address public outputToken;
     bool public shouldRevert;
+
+    // tokenIn → exchange rate (how many outputToken per 1e18 tokenIn)
+    // e.g., WETH → 2000e18 means 1 WETH = 2000 USDC
+    mapping(address => uint256) public exchangeRate;
+    uint256 public defaultRate = 1e18; // 1:1 default
 
     constructor(address _outputToken) {
         outputToken = _outputToken;
@@ -16,6 +20,11 @@ contract MockSwapRouter is ISwapRouter {
 
     function setShouldRevert(bool _shouldRevert) external {
         shouldRevert = _shouldRevert;
+    }
+
+    /// @notice Set exchange rate for a token (outputToken per 1e18 of tokenIn)
+    function setExchangeRate(address tokenIn, uint256 rate) external {
+        exchangeRate[tokenIn] = rate;
     }
 
     function swap(
@@ -29,10 +38,12 @@ contract MockSwapRouter is ISwapRouter {
         // Pull tokenIn from caller
         IERC20(tokenIn).transferFrom(msg.sender, address(this), amountIn);
 
-        // Send outputToken at 1:1 rate (simplification for testing)
-        amountOut = amountIn;
-        require(amountOut >= amountOutMin, "SLIPPAGE");
+        // Apply exchange rate
+        uint256 rate = exchangeRate[tokenIn];
+        if (rate == 0) rate = defaultRate;
+        amountOut = (amountIn * rate) / 1e18;
 
+        require(amountOut >= amountOutMin, "SLIPPAGE");
         IERC20(outputToken).transfer(msg.sender, amountOut);
     }
 }

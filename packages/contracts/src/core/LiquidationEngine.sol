@@ -169,6 +169,21 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
         // Step 8: Swap non-borrow-asset tokens to borrow asset
         uint256 totalReceived = _swapToBorrowAsset(pos.token0, pos.token1, amount0, amount1, borrowAsset);
 
+        // Step 8b: Validate total received against oracle-expected value (sandwich attack protection)
+        // collateralToSeizeNormalized is the oracle-expected USD value (18 dec) of what was unwound.
+        // totalReceived is in borrow asset decimals. Normalize and compare.
+        // TODO: Fork test — verify this comparison is valid when:
+        //       - Borrow asset is not USD-pegged (e.g., ETH-denominated market)
+        //       - Borrow asset depegs temporarily (USDT, USDC depeg scenario)
+        //       - Large swap creates significant price impact beyond slippage tolerance
+        {
+            uint8 borrowDecimals = IERC20(borrowAsset).decimals();
+            uint256 receivedNormalized = _normalizeTo18(totalReceived, borrowDecimals);
+            // Minimum acceptable: expected value minus slippage tolerance
+            uint256 minAcceptable = (collateralToSeizeNormalized * (10_000 - maxSwapSlippageBps)) / 10_000;
+            require(receivedNormalized >= minAcceptable, "SWAP_SLIPPAGE_EXCEEDED");
+        }
+
         // Step 9: Calculate profit and take protocol fee
         uint256 grossProfit = totalReceived > repayAmount ? totalReceived - repayAmount : 0;
         uint256 protocolFee = 0;

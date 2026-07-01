@@ -1,0 +1,75 @@
+specVersion: 1.0.0
+indexerHints:
+  prune: auto
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum
+    name: PositionManager
+    network: mainnet
+    source:
+      address: "0x0000000000000000000000000000000000000000" # Replace after deployment
+      abi: PositionManager
+      startBlock: 0 # Replace with deployment block
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - Position
+      abis:
+        - name: PositionManager
+          file: ./abis/PositionManager.json
+      eventHandlers:
+        - event: PositionCreated(indexed uint256,indexed address,address,uint256,uint8,uint256)
+          handler: handlePositionCreated
+        - event: PositionClosed(indexed uint256,indexed address)
+          handler: handlePositionClosed
+        - event: PositionLiquidated(indexed uint256,indexed address,uint256)
+          handler: handlePositionLiquidated
+      file: ./src/position-manager.ts
+
+  - kind: ethereum
+    name: LendingEngine
+    network: mainnet
+    source:
+      address: "0x0000000000000000000000000000000000000000"
+      abi: LendingEngine
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - BorrowEvent
+        - RepayEvent
+      abis:
+        - name: LendingEngine
+          file: ./abis/LendingEngine.json
+      eventHandlers:
+        - event: Borrowed(indexed uint256,indexed address,uint256,uint256)
+          handler: handleBorrowed
+        - event: Repaid(indexed uint256,indexed address,uint256,uint256)
+          handler: handleRepaid
+      file: ./src/lending-engine.ts
+
+  - kind: ethereum
+    name: LiquidationEngine
+    network: mainnet
+    source:
+      address: "0x0000000000000000000000000000000000000000"
+      abi: LiquidationEngine
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - LiquidationEvent
+      abis:
+        - name: LiquidationEngine
+          file: ./abis/LiquidationEngine.json
+      eventHandlers:
+        - event: LiquidationExecuted(indexed uint256,indexed address,uint256,uint256,uint256)
+          handler: handleLiquidationExecuted
+      file: ./src/liquidation-engine.ts
