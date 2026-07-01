@@ -5,7 +5,6 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
 import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {IMarket} from "../interfaces/IMarket.sol";
-import {ILPAdapter} from "../interfaces/ILPAdapter.sol";
 import {IERC20} from "../interfaces/IERC20.sol";
 import {InterestRateModel} from "./InterestRateModel.sol";
 import {ProtocolCore} from "../core/ProtocolCore.sol";

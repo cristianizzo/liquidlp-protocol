@@ -5,7 +5,6 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {IMarket} from "../interfaces/IMarket.sol";
 import {ILPAdapter} from "../interfaces/ILPAdapter.sol";
 import {Market} from "./Market.sol";
-import {InterestRateModel} from "./InterestRateModel.sol";
 import {ProtocolCore} from "../core/ProtocolCore.sol";
 
 /// @title MarketFactory

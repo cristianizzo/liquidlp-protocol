@@ -19,6 +19,12 @@
     "gas-indexed-events": "off",
     "gas-increment-by-one": "off",
     "gas-multitoken1155": "off",
-    "use-natspec": "off"
+    "gas-custom-errors": "off",
+    "use-natspec": "off",
+    "no-unused-vars": "off",
+    "no-inline-assembly": "off",
+    "import-path-check": "off",
+    "function-max-lines": "off",
+    "reentrancy": "off"
   }
 }
