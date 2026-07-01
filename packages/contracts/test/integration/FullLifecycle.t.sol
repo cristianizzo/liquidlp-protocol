@@ -64,28 +64,40 @@ contract FullLifecycleTest is Test {
         core = new ProtocolCore(owner, guardian);
 
         // --- OracleHub (UUPS proxy) ---
-        oracleHub = LPOracleHub(address(new ERC1967Proxy(
-            address(new LPOracleHub()),
-            abi.encodeCall(LPOracleHub.initialize, (address(core)))
-        )));
+        oracleHub = LPOracleHub(
+            address(
+                new ERC1967Proxy(address(new LPOracleHub()), abi.encodeCall(LPOracleHub.initialize, (address(core))))
+            )
+        );
 
         // --- PositionManager (UUPS proxy) ---
-        pm = PositionManager(address(new ERC1967Proxy(
-            address(new PositionManager()),
-            abi.encodeCall(PositionManager.initialize, (address(core), address(oracleHub)))
-        )));
+        pm = PositionManager(
+            address(
+                new ERC1967Proxy(
+                    address(new PositionManager()),
+                    abi.encodeCall(PositionManager.initialize, (address(core), address(oracleHub)))
+                )
+            )
+        );
 
         // --- LendingEngine (UUPS proxy) ---
-        le = LendingEngine(address(new ERC1967Proxy(
-            address(new LendingEngine()),
-            abi.encodeCall(LendingEngine.initialize, (address(core), address(pm)))
-        )));
+        le = LendingEngine(
+            address(
+                new ERC1967Proxy(
+                    address(new LendingEngine()), abi.encodeCall(LendingEngine.initialize, (address(core), address(pm)))
+                )
+            )
+        );
 
         // --- LiquidationEngine (UUPS proxy) ---
-        liq = LiquidationEngine(address(new ERC1967Proxy(
-            address(new LiquidationEngine()),
-            abi.encodeCall(LiquidationEngine.initialize, (address(core), address(pm), address(le)))
-        )));
+        liq = LiquidationEngine(
+            address(
+                new ERC1967Proxy(
+                    address(new LiquidationEngine()),
+                    abi.encodeCall(LiquidationEngine.initialize, (address(core), address(pm), address(le)))
+                )
+            )
+        );
 
         // --- FeeCollector ---
         fc = new FeeCollector(address(core), treasury, insurance);
@@ -105,10 +117,14 @@ contract FullLifecycleTest is Test {
             minPoolTvl: 5_000_000e18,
             minPoolAge: 0
         });
-        market = Market(address(new ERC1967Proxy(
-            address(new Market()),
-            abi.encodeCall(Market.initialize, (mConfig, address(irm), address(core), address(le)))
-        )));
+        market = Market(
+            address(
+                new ERC1967Proxy(
+                    address(new Market()),
+                    abi.encodeCall(Market.initialize, (mConfig, address(irm), address(core), address(le)))
+                )
+            )
+        );
 
         // --- Mocks ---
         adapter = new MockLPAdapter(ILPAdapter.LPType.UniswapV3);
@@ -275,7 +291,7 @@ contract FullLifecycleTest is Test {
         uint256 liqBalanceBefore = usdc.balanceOf(liquidator);
 
         vm.prank(liquidator);
-        liq.liquidate(posId, 15_000e18);
+        liq.liquidate(posId, 15_000e18, block.timestamp + 1 hours);
 
         // Debt should be reduced
         uint256 debtAfter = le.getDebt(posId);
@@ -315,7 +331,7 @@ contract FullLifecycleTest is Test {
         uint256 unlocksBefore = adapter.unlockCallCount();
 
         vm.prank(liquidator);
-        liq.liquidate(posId, totalDebt);
+        liq.liquidate(posId, totalDebt, block.timestamp + 1 hours);
 
         // Debt fully repaid
         assertEq(le.getDebt(posId), 0);
@@ -519,7 +535,7 @@ contract FullLifecycleTest is Test {
         vm.prank(liquidator);
         usdc.approve(address(liq), maxRepay1);
         vm.prank(liquidator);
-        liq.liquidate(posId, maxRepay1);
+        liq.liquidate(posId, maxRepay1, block.timestamp + 1 hours);
 
         uint256 debtAfterFirst = le.getDebt(posId);
         uint256 amountAfterFirst = pm.getPosition(posId).amount;
@@ -533,7 +549,7 @@ contract FullLifecycleTest is Test {
             vm.prank(liquidator);
             usdc.approve(address(liq), maxRepay2);
             vm.prank(liquidator);
-            liq.liquidate(posId, maxRepay2);
+            liq.liquidate(posId, maxRepay2, block.timestamp + 1 hours);
 
             // Position further reduced
             assertLt(pm.getPosition(posId).amount, amountAfterFirst);
@@ -564,7 +580,7 @@ contract FullLifecycleTest is Test {
         uint256 treasuryBefore = usdc.balanceOf(treasury);
 
         vm.prank(liquidator);
-        liq.liquidate(posId, totalDebt);
+        liq.liquidate(posId, totalDebt, block.timestamp + 1 hours);
 
         // Check if fees were collected (FeeCollector should have received some)
         uint256 fcBalance = usdc.balanceOf(address(fc));
@@ -596,7 +612,7 @@ contract FullLifecycleTest is Test {
         // Try to borrow again — should fail
         vm.prank(alice);
         vm.expectRevert("POSITION_NOT_ACTIVE");
-        le.borrow(posId, 5_000e18);
+        le.borrow(posId, 5000e18);
     }
 
     // ========================================================

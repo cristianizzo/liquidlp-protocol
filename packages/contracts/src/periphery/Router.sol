@@ -28,7 +28,10 @@ contract Router {
         uint256 amount,
         uint256 marketId,
         uint256 borrowAmount
-    ) external returns (uint256 positionId) {
+    )
+        external
+        returns (uint256 positionId)
+    {
         // User must approve LP token/NFT to this Router first
 
         // Step 1: Deposit LP
@@ -55,11 +58,7 @@ contract Router {
     }
 
     /// @notice Batch operation: repay partial + borrow more (rebalance)
-    function adjustPosition(
-        uint256 positionId,
-        uint256 repayAmount,
-        uint256 borrowAmount
-    ) external {
+    function adjustPosition(uint256 positionId, uint256 repayAmount, uint256 borrowAmount) external {
         if (repayAmount > 0) {
             lendingEngine.repay(positionId, repayAmount);
         }

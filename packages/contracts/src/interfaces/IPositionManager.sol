@@ -43,8 +43,13 @@ interface IPositionManager {
     event PositionLiquidated(uint256 indexed positionId, address indexed liquidator, uint256 debtRepaid);
 
     function deposit(
-        address lpToken, uint256 tokenId, uint256 amount, uint256 marketId
-    ) external returns (uint256 positionId);
+        address lpToken,
+        uint256 tokenId,
+        uint256 amount,
+        uint256 marketId
+    )
+        external
+        returns (uint256 positionId);
 
     function withdraw(uint256 positionId) external;
 

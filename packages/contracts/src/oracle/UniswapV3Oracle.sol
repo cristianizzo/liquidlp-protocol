@@ -10,19 +10,20 @@ import {INonfungiblePositionManager, IUniswapV3Pool, IUniswapV3Factory} from "..
 
 /// @notice Chainlink AggregatorV3 minimal interface
 interface IAggregatorV3 {
-    function latestRoundData() external view returns (
-        uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound
-    );
+    function latestRoundData()
+        external
+        view
+        returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound);
     function decimals() external view returns (uint8);
 }
 
 /// @title TickMathLib
 /// @notice Computes sqrt price for ticks of size 1.0001 (Uniswap V3 canonical implementation)
 library TickMathLib {
-    int24 internal constant MIN_TICK = -887272;
-    int24 internal constant MAX_TICK = 887272;
-    uint160 internal constant MIN_SQRT_RATIO = 4295128739;
-    uint160 internal constant MAX_SQRT_RATIO = 1461446703485210103287273052203988822378723970342;
+    int24 internal constant MIN_TICK = -887_272;
+    int24 internal constant MAX_TICK = 887_272;
+    uint160 internal constant MIN_SQRT_RATIO = 4_295_128_739;
+    uint160 internal constant MAX_SQRT_RATIO = 1_461_446_703_485_210_103_287_273_052_203_988_822_378_723_970_342;
 
     function getSqrtRatioAtTick(int24 tick) internal pure returns (uint160 sqrtPriceX96) {
         uint256 absTick = tick < 0 ? uint256(-int256(tick)) : uint256(int256(tick));
@@ -97,22 +98,41 @@ library LiquidityAmountsLib {
     }
 
     function getAmount0ForLiquidity(
-        uint160 sqrtRatioAX96, uint160 sqrtRatioBX96, uint128 liquidity
-    ) internal pure returns (uint256) {
+        uint160 sqrtRatioAX96,
+        uint160 sqrtRatioBX96,
+        uint128 liquidity
+    )
+        internal
+        pure
+        returns (uint256)
+    {
         if (sqrtRatioAX96 > sqrtRatioBX96) (sqrtRatioAX96, sqrtRatioBX96) = (sqrtRatioBX96, sqrtRatioAX96);
         return mulDiv(uint256(liquidity) << 96, sqrtRatioBX96 - sqrtRatioAX96, sqrtRatioBX96) / sqrtRatioAX96;
     }
 
     function getAmount1ForLiquidity(
-        uint160 sqrtRatioAX96, uint160 sqrtRatioBX96, uint128 liquidity
-    ) internal pure returns (uint256) {
+        uint160 sqrtRatioAX96,
+        uint160 sqrtRatioBX96,
+        uint128 liquidity
+    )
+        internal
+        pure
+        returns (uint256)
+    {
         if (sqrtRatioAX96 > sqrtRatioBX96) (sqrtRatioAX96, sqrtRatioBX96) = (sqrtRatioBX96, sqrtRatioAX96);
         return mulDiv(liquidity, sqrtRatioBX96 - sqrtRatioAX96, 1 << 96);
     }
 
     function getAmountsForLiquidity(
-        uint160 sqrtRatioX96, uint160 sqrtRatioAX96, uint160 sqrtRatioBX96, uint128 liquidity
-    ) internal pure returns (uint256 amount0, uint256 amount1) {
+        uint160 sqrtRatioX96,
+        uint160 sqrtRatioAX96,
+        uint160 sqrtRatioBX96,
+        uint128 liquidity
+    )
+        internal
+        pure
+        returns (uint256 amount0, uint256 amount1)
+    {
         if (sqrtRatioAX96 > sqrtRatioBX96) (sqrtRatioAX96, sqrtRatioBX96) = (sqrtRatioBX96, sqrtRatioAX96);
 
         if (sqrtRatioX96 <= sqrtRatioAX96) {
@@ -238,7 +258,7 @@ contract UniswapV3Oracle is ILPOracle {
     }
 
     function setMaxStaleness(uint256 _maxStaleness) external onlyOwner {
-        require(_maxStaleness >= 300 && _maxStaleness <= 86400, "OUT_OF_BOUNDS");
+        require(_maxStaleness >= 300 && _maxStaleness <= 86_400, "OUT_OF_BOUNDS");
         emit MaxStalenessUpdated(maxStaleness, _maxStaleness);
         maxStaleness = _maxStaleness;
     }
@@ -256,7 +276,11 @@ contract UniswapV3Oracle is ILPOracle {
         address, /* lpToken */
         uint256 tokenId,
         uint256 /* amount */
-    ) external view returns (ILPOracleHub.PriceResult memory result) {
+    )
+        external
+        view
+        returns (ILPOracleHub.PriceResult memory result)
+    {
         result = _computePrice(tokenId);
     }
 
@@ -265,7 +289,11 @@ contract UniswapV3Oracle is ILPOracle {
         address, /* lpToken */
         uint256 tokenId,
         uint256 /* amount */
-    ) external view returns (uint256) {
+    )
+        external
+        view
+        returns (uint256)
+    {
         ILPOracleHub.PriceResult memory result = _computePrice(tokenId);
         // Reverse the haircut to get raw value
         if (result.haircut >= 10_000) return 0;
@@ -284,9 +312,15 @@ contract UniswapV3Oracle is ILPOracle {
     function _computePrice(uint256 tokenId) internal view returns (ILPOracleHub.PriceResult memory result) {
         // Step 1: Read position data from NFT manager
         (
-            , , address token0, address token1, uint24 fee,
-            int24 tickLower, int24 tickUpper, uint128 liquidity,
-            , , uint128 tokensOwed0, uint128 tokensOwed1
+            ,,
+            address token0,
+            address token1,
+            uint24 fee,
+            int24 tickLower,
+            int24 tickUpper,
+            uint128 liquidity,,,
+            uint128 tokensOwed0,
+            uint128 tokensOwed1
         ) = positionManager.positions(tokenId);
 
         require(liquidity > 0, "NO_LIQUIDITY");
@@ -302,9 +336,8 @@ contract UniswapV3Oracle is ILPOracle {
         uint160 sqrtPriceAX96 = TickMathLib.getSqrtRatioAtTick(tickLower);
         uint160 sqrtPriceBX96 = TickMathLib.getSqrtRatioAtTick(tickUpper);
 
-        (uint256 amount0, uint256 amount1) = LiquidityAmountsLib.getAmountsForLiquidity(
-            sqrtPriceX96, sqrtPriceAX96, sqrtPriceBX96, liquidity
-        );
+        (uint256 amount0, uint256 amount1) =
+            LiquidityAmountsLib.getAmountsForLiquidity(sqrtPriceX96, sqrtPriceAX96, sqrtPriceBX96, liquidity);
 
         // Step 4: Get token decimals and Chainlink prices (both normalized to 18 dec)
         uint8 dec0 = IERC20(token0).decimals();
@@ -322,15 +355,15 @@ contract UniswapV3Oracle is ILPOracle {
         uint256 amount0Normalized = _normalizeTo18(amount0, dec0);
         uint256 amount1Normalized = _normalizeTo18(amount1, dec1);
 
-        uint256 principalValue = (amount0Normalized * price0) / 1e18
-                               + (amount1Normalized * price1) / 1e18;
+        uint256 principalValue = (amount0Normalized * price0) / 1e18 + (amount1Normalized * price1) / 1e18;
 
         // Step 7: Calculate fee value (50% discount for safety)
         // tokensOwed are in native decimals — normalize before pricing
-        uint256 feeValue = (
-            (_normalizeTo18(uint256(tokensOwed0), dec0) * price0) / 1e18
-          + (_normalizeTo18(uint256(tokensOwed1), dec1) * price1) / 1e18
-        ) / 2;
+        uint256 feeValue =
+            ((_normalizeTo18(uint256(tokensOwed0), dec0) * price0)
+                    / 1e18
+                    + (_normalizeTo18(uint256(tokensOwed1), dec1) * price1)
+                    / 1e18) / 2;
 
         // Step 8: Apply haircut based on position characteristics
         uint256 haircut = _computeHaircut(tickLower, tickUpper, twapTick);
@@ -406,9 +439,15 @@ contract UniswapV3Oracle is ILPOracle {
     ///       - WBTC/ETH pool (8/18 dec) — reversed decimal relationship
     ///       - DAI/USDC pool (18/6 dec) — stablecoin pair, ratio near 1.0
     function _validatePriceConsistency(
-        int24 twapTick, uint256 price0, uint256 price1,
-        uint8 dec0, uint8 dec1
-    ) internal view {
+        int24 twapTick,
+        uint256 price0,
+        uint256 price1,
+        uint8 dec0,
+        uint8 dec1
+    )
+        internal
+        view
+    {
         if (price0 == 0 || price1 == 0) return;
 
         // TWAP ratio: sqrtPrice^2 / 2^192 gives token1/token0 in raw pool units
@@ -444,9 +483,7 @@ contract UniswapV3Oracle is ILPOracle {
     // --- Internal: Haircut & Confidence ---
 
     /// @notice Determine haircut based on position characteristics
-    function _computeHaircut(
-        int24 tickLower, int24 tickUpper, int24 currentTick
-    ) internal view returns (uint256) {
+    function _computeHaircut(int24 tickLower, int24 tickUpper, int24 currentTick) internal view returns (uint256) {
         // Out of range — position is 100% one token, higher risk
         if (currentTick < tickLower || currentTick >= tickUpper) {
             return outOfRangeHaircutBps;
@@ -460,9 +497,7 @@ contract UniswapV3Oracle is ILPOracle {
     }
 
     /// @notice Compute oracle confidence based on position state (0-10000 bps)
-    function _computeConfidence(
-        int24 tickLower, int24 tickUpper, int24 currentTick
-    ) internal pure returns (uint256) {
+    function _computeConfidence(int24 tickLower, int24 tickUpper, int24 currentTick) internal pure returns (uint256) {
         // Out of range: 70% confidence
         if (currentTick < tickLower || currentTick >= tickUpper) {
             return 7000;

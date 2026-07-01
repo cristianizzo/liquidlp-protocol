@@ -16,14 +16,13 @@ interface ILPOracle {
         address lpToken,
         uint256 tokenId,
         uint256 amount
-    ) external view returns (ILPOracleHub.PriceResult memory result);
+    )
+        external
+        view
+        returns (ILPOracleHub.PriceResult memory result);
 
     /// @notice Get raw price without haircut
-    function getRawPrice(
-        address lpToken,
-        uint256 tokenId,
-        uint256 amount
-    ) external view returns (uint256 value);
+    function getRawPrice(address lpToken, uint256 tokenId, uint256 amount) external view returns (uint256 value);
 
     /// @notice Check if the oracle is returning fresh, valid data
     function isHealthy() external view returns (bool);

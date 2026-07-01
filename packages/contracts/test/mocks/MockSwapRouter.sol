@@ -32,7 +32,11 @@ contract MockSwapRouter is ISwapRouter {
         address, /* tokenOut */
         uint256 amountIn,
         uint256 amountOutMin
-    ) external override returns (uint256 amountOut) {
+    )
+        external
+        override
+        returns (uint256 amountOut)
+    {
         require(!shouldRevert, "SWAP_FAILED");
 
         // Pull tokenIn from caller

@@ -99,7 +99,10 @@ contract PriceValidator {
         uint256 twapPrice,
         uint256 chainlinkPrice,
         uint256 poolTvl
-    ) external returns (bool valid, uint256 adjustedHaircutBps) {
+    )
+        external
+        returns (bool valid, uint256 adjustedHaircutBps)
+    {
         require(!poolPaused[pool], "POOL_CIRCUIT_BREAKER");
 
         adjustedHaircutBps = 0;

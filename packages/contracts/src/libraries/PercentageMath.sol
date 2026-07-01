@@ -5,7 +5,7 @@ pragma solidity ^0.8.26;
 /// @notice Safe percentage math operations using basis points
 library PercentageMath {
     uint256 internal constant BPS = 10_000;
-    uint256 internal constant HALF_BPS = 5_000;
+    uint256 internal constant HALF_BPS = 5000;
 
     /// @notice Calculate percentage of a value
     /// @param value The base value

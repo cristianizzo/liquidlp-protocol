@@ -22,7 +22,9 @@ contract MarketFactory {
     // Pre-deployed interest rate models
     mapping(string => address) public interestRateModels;
 
-    event MarketCreated(uint256 indexed marketId, address proxy, address implementation, ILPAdapter.LPType lpType, address borrowAsset);
+    event MarketCreated(
+        uint256 indexed marketId, address proxy, address implementation, ILPAdapter.LPType lpType, address borrowAsset
+    );
     event MarketImplementationUpdated(address oldImpl, address newImpl);
 
     modifier onlyOwner() {
@@ -47,7 +49,11 @@ contract MarketFactory {
         uint256 minPoolTvl,
         uint256 minPoolAge,
         string calldata rateModelType
-    ) external onlyOwner returns (uint256 marketId, address marketAddr) {
+    )
+        external
+        onlyOwner
+        returns (uint256 marketId, address marketAddr)
+    {
         address rateModel = interestRateModels[rateModelType];
         require(rateModel != address(0), "INVALID_RATE_MODEL");
         require(marketImplementation != address(0), "NO_IMPLEMENTATION");
@@ -65,9 +71,7 @@ contract MarketFactory {
         });
 
         // Deploy ERC1967 proxy pointing to the Market implementation
-        bytes memory initData = abi.encodeCall(
-            Market.initialize, (config, rateModel, address(core), lendingEngine)
-        );
+        bytes memory initData = abi.encodeCall(Market.initialize, (config, rateModel, address(core), lendingEngine));
         ERC1967Proxy proxy = new ERC1967Proxy(marketImplementation, initData);
         marketAddr = address(proxy);
 

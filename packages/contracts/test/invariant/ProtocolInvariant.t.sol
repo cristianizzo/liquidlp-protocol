@@ -40,20 +40,28 @@ contract ProtocolInvariantTest is Test {
         irm = new InterestRateModel(200, 600, 10_000, 8000);
         core = new ProtocolCore(owner, guardian);
 
-        oracleHub = LPOracleHub(address(new ERC1967Proxy(
-            address(new LPOracleHub()),
-            abi.encodeCall(LPOracleHub.initialize, (address(core)))
-        )));
+        oracleHub = LPOracleHub(
+            address(
+                new ERC1967Proxy(address(new LPOracleHub()), abi.encodeCall(LPOracleHub.initialize, (address(core))))
+            )
+        );
 
-        pm = PositionManager(address(new ERC1967Proxy(
-            address(new PositionManager()),
-            abi.encodeCall(PositionManager.initialize, (address(core), address(oracleHub)))
-        )));
+        pm = PositionManager(
+            address(
+                new ERC1967Proxy(
+                    address(new PositionManager()),
+                    abi.encodeCall(PositionManager.initialize, (address(core), address(oracleHub)))
+                )
+            )
+        );
 
-        le = LendingEngine(address(new ERC1967Proxy(
-            address(new LendingEngine()),
-            abi.encodeCall(LendingEngine.initialize, (address(core), address(pm)))
-        )));
+        le = LendingEngine(
+            address(
+                new ERC1967Proxy(
+                    address(new LendingEngine()), abi.encodeCall(LendingEngine.initialize, (address(core), address(pm)))
+                )
+            )
+        );
 
         IMarket.MarketConfig memory mConfig = IMarket.MarketConfig({
             lpType: ILPAdapter.LPType.UniswapV3,
@@ -66,10 +74,14 @@ contract ProtocolInvariantTest is Test {
             minPoolTvl: 0,
             minPoolAge: 0
         });
-        market = Market(address(new ERC1967Proxy(
-            address(new Market()),
-            abi.encodeCall(Market.initialize, (mConfig, address(irm), address(core), address(le)))
-        )));
+        market = Market(
+            address(
+                new ERC1967Proxy(
+                    address(new Market()),
+                    abi.encodeCall(Market.initialize, (mConfig, address(irm), address(core), address(le)))
+                )
+            )
+        );
 
         adapter = new MockLPAdapter(ILPAdapter.LPType.UniswapV3);
         adapter.setSupportedToken(lpToken, true);
@@ -98,9 +110,7 @@ contract ProtocolInvariantTest is Test {
     //              Market.totalBorrow (after accrual)
     // ================================================================
 
-    function testFuzz_debtNeverExceedsMarketBorrow(
-        uint256 price, uint256 borrowAmt, uint256 timeElapsed
-    ) public {
+    function testFuzz_debtNeverExceedsMarketBorrow(uint256 price, uint256 borrowAmt, uint256 timeElapsed) public {
         price = bound(price, 10_000e18, 1_000_000e18);
         oracle.setPrice(price);
 
@@ -215,9 +225,7 @@ contract ProtocolInvariantTest is Test {
     // INVARIANT 5: Market totalSupply >= totalBorrow always
     // ================================================================
 
-    function testFuzz_supplyAlwaysExceedsBorrow(
-        uint256 supplyAmt, uint256 borrowAmt, uint256 timeElapsed
-    ) public {
+    function testFuzz_supplyAlwaysExceedsBorrow(uint256 supplyAmt, uint256 borrowAmt, uint256 timeElapsed) public {
         supplyAmt = bound(supplyAmt, 10_000e18, 1_000_000e18);
         oracle.setPrice(100_000e18);
 
@@ -253,8 +261,7 @@ contract ProtocolInvariantTest is Test {
 
         // INVARIANT
         IMarket.MarketState memory stateAfter = market.getMarketState();
-        assertGe(stateAfter.totalSupply, stateAfter.totalBorrow,
-            "totalSupply must always be >= totalBorrow");
+        assertGe(stateAfter.totalSupply, stateAfter.totalBorrow, "totalSupply must always be >= totalBorrow");
     }
 
     // ================================================================
@@ -291,13 +298,10 @@ contract ProtocolInvariantTest is Test {
 
         // They should be approximately equal (single borrower scenario)
         // Allow 0.01% tolerance for rounding
-        uint256 diff = debtViaIndex > debtViaMarket
-            ? debtViaIndex - debtViaMarket
-            : debtViaMarket - debtViaIndex;
+        uint256 diff = debtViaIndex > debtViaMarket ? debtViaIndex - debtViaMarket : debtViaMarket - debtViaIndex;
         uint256 tolerance = debtViaMarket / 10_000; // 0.01%
 
-        assertLe(diff, tolerance + 1,
-            "BorrowIndex debt must match Market.totalBorrow within 0.01%");
+        assertLe(diff, tolerance + 1, "BorrowIndex debt must match Market.totalBorrow within 0.01%");
     }
 
     // ================================================================
@@ -317,8 +321,7 @@ contract ProtocolInvariantTest is Test {
 
         // Only authorized contracts can reduce amount
         // The amount should never be MORE than what was deposited
-        assertLe(pm.getPosition(posId).amount, depositAmt,
-            "Position amount must never exceed deposit amount");
+        assertLe(pm.getPosition(posId).amount, depositAmt, "Position amount must never exceed deposit amount");
     }
 
     // ================================================================
@@ -350,9 +353,6 @@ contract ProtocolInvariantTest is Test {
 
         // INVARIANT: closed position has zero debt
         assertEq(le.getDebt(posId), 0, "Closed position must have zero debt");
-        assertEq(
-            uint8(pm.getPosition(posId).status),
-            uint8(IPositionManager.PositionStatus.Closed)
-        );
+        assertEq(uint8(pm.getPosition(posId).status), uint8(IPositionManager.PositionStatus.Closed));
     }
 }

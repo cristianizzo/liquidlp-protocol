@@ -66,8 +66,7 @@ contract FeeCollector {
 
     modifier onlyAuthorized() {
         require(
-            msg.sender == core.owner() || core.keepers(msg.sender) || authorizedCallers[msg.sender],
-            "NOT_AUTHORIZED"
+            msg.sender == core.owner() || core.keepers(msg.sender) || authorizedCallers[msg.sender], "NOT_AUTHORIZED"
         );
         _;
     }
@@ -97,9 +96,7 @@ contract FeeCollector {
     /// @param amount Amount of fees to collect
     /// @param from Address to pull tokens from (Market, LiquidationEngine, etc.)
     /// @param feeType Label for event ("interest", "liquidation", "management")
-    function collectFee(
-        address token, uint256 amount, address from, string calldata feeType
-    ) external onlyAuthorized {
+    function collectFee(address token, uint256 amount, address from, string calldata feeType) external onlyAuthorized {
         require(amount > 0, "ZERO_AMOUNT");
         require(token != address(0), "ZERO_TOKEN");
         require(from != address(0), "ZERO_FROM");
@@ -167,8 +164,13 @@ contract FeeCollector {
     /// @return protocolShare Amount that goes to protocol
     /// @return lenderShare Amount that goes to lenders
     function calculateInterestSplit(
-        uint256 totalInterest, ILPAdapter.LPType lpType
-    ) external view returns (uint256 protocolShare, uint256 lenderShare) {
+        uint256 totalInterest,
+        ILPAdapter.LPType lpType
+    )
+        external
+        view
+        returns (uint256 protocolShare, uint256 lenderShare)
+    {
         uint256 rf = reserveFactorBps[lpType];
         if (rf == 0) rf = defaultReserveFactorBps;
 
@@ -180,9 +182,11 @@ contract FeeCollector {
     /// @param liquidatorProfit Total profit the liquidator made
     /// @return protocolFee Amount that goes to protocol
     /// @return liquidatorNet Amount liquidator keeps
-    function calculateLiquidationFee(
-        uint256 liquidatorProfit
-    ) external view returns (uint256 protocolFee, uint256 liquidatorNet) {
+    function calculateLiquidationFee(uint256 liquidatorProfit)
+        external
+        view
+        returns (uint256 protocolFee, uint256 liquidatorNet)
+    {
         protocolFee = (liquidatorProfit * liquidationFeeBps) / 10_000;
         liquidatorNet = liquidatorProfit - protocolFee;
     }

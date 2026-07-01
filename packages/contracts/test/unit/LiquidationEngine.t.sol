@@ -40,7 +40,13 @@ contract LiquidationEngineTest is Test {
     uint256 public marketId;
 
     // Events
-    event LiquidationExecuted(uint256 indexed positionId, address indexed liquidator, uint256 repayAmount, uint256 collateralSeized, uint256 liquidatorProfit);
+    event LiquidationExecuted(
+        uint256 indexed positionId,
+        address indexed liquidator,
+        uint256 repayAmount,
+        uint256 collateralSeized,
+        uint256 liquidatorProfit
+    );
     event MaxLiquidationPortionUpdated(uint256 oldValue, uint256 newValue);
     event MaxSwapSlippageUpdated(uint256 oldValue, uint256 newValue);
     event SwapRouterUpdated(address oldRouter, address newRouter);
@@ -54,27 +60,40 @@ contract LiquidationEngineTest is Test {
 
         // OracleHub proxy
         LPOracleHub ohImpl = new LPOracleHub();
-        oracleHub = LPOracleHub(address(new ERC1967Proxy(
-            address(ohImpl), abi.encodeCall(LPOracleHub.initialize, (address(core)))
-        )));
+        oracleHub = LPOracleHub(
+            address(new ERC1967Proxy(address(ohImpl), abi.encodeCall(LPOracleHub.initialize, (address(core)))))
+        );
 
         // PositionManager proxy
         PositionManager pmImpl = new PositionManager();
-        pm = PositionManager(address(new ERC1967Proxy(
-            address(pmImpl), abi.encodeCall(PositionManager.initialize, (address(core), address(oracleHub)))
-        )));
+        pm = PositionManager(
+            address(
+                new ERC1967Proxy(
+                    address(pmImpl), abi.encodeCall(PositionManager.initialize, (address(core), address(oracleHub)))
+                )
+            )
+        );
 
         // LendingEngine proxy
         LendingEngine leImpl = new LendingEngine();
-        le = LendingEngine(address(new ERC1967Proxy(
-            address(leImpl), abi.encodeCall(LendingEngine.initialize, (address(core), address(pm)))
-        )));
+        le = LendingEngine(
+            address(
+                new ERC1967Proxy(
+                    address(leImpl), abi.encodeCall(LendingEngine.initialize, (address(core), address(pm)))
+                )
+            )
+        );
 
         // LiquidationEngine proxy
         LiquidationEngine liqImpl = new LiquidationEngine();
-        liq = LiquidationEngine(address(new ERC1967Proxy(
-            address(liqImpl), abi.encodeCall(LiquidationEngine.initialize, (address(core), address(pm), address(le)))
-        )));
+        liq = LiquidationEngine(
+            address(
+                new ERC1967Proxy(
+                    address(liqImpl),
+                    abi.encodeCall(LiquidationEngine.initialize, (address(core), address(pm), address(le)))
+                )
+            )
+        );
 
         // Mocks
         adapter = new MockLPAdapter(ILPAdapter.LPType.UniswapV3);
@@ -92,6 +111,7 @@ contract LiquidationEngineTest is Test {
         marketId = core.registerMarket(address(market));
         pm.setAuthorized(address(le), true);
         pm.setAuthorized(address(liq), true);
+        pm.setLendingEngine(address(le));
         liq.setSwapRouter(address(swapRouter));
         vm.stopPrank();
 
@@ -310,13 +330,13 @@ contract LiquidationEngineTest is Test {
         vm.prank(alice);
         le.borrow(posId, 10_000e18); // Healthy position
 
-        usdc.mint(liquidator, 5_000e18);
+        usdc.mint(liquidator, 5000e18);
         vm.prank(liquidator);
-        usdc.approve(address(liq), 5_000e18);
+        usdc.approve(address(liq), 5000e18);
 
         vm.prank(liquidator);
         vm.expectRevert("NOT_LIQUIDATABLE");
-        liq.liquidate(posId, 5_000e18);
+        liq.liquidate(posId, 5000e18, block.timestamp + 1 hours);
     }
 
     function test_liquidate_revertsZeroAmount() public {
@@ -324,7 +344,7 @@ contract LiquidationEngineTest is Test {
 
         vm.prank(liquidator);
         vm.expectRevert("ZERO_AMOUNT");
-        liq.liquidate(posId, 0);
+        liq.liquidate(posId, 0, block.timestamp + 1 hours);
     }
 
     function test_liquidate_revertsExceedsMaxRepay() public {
@@ -338,7 +358,7 @@ contract LiquidationEngineTest is Test {
 
         vm.prank(liquidator);
         vm.expectRevert("EXCEEDS_MAX_REPAY");
-        liq.liquidate(posId, maxRepay + 1);
+        liq.liquidate(posId, maxRepay + 1, block.timestamp + 1 hours);
     }
 
     function test_liquidate_revertsWhenPaused() public {
@@ -349,7 +369,7 @@ contract LiquidationEngineTest is Test {
 
         vm.prank(liquidator);
         vm.expectRevert("PAUSED");
-        liq.liquidate(posId, 1000e18);
+        liq.liquidate(posId, 1000e18, block.timestamp + 1 hours);
     }
 
     function test_liquidate_reducesDebt() public {
@@ -365,7 +385,7 @@ contract LiquidationEngineTest is Test {
         usdc.approve(address(liq), repayAmount);
 
         vm.prank(liquidator);
-        liq.liquidate(posId, repayAmount);
+        liq.liquidate(posId, repayAmount, block.timestamp + 1 hours);
 
         uint256 debtAfter = le.getDebt(posId);
         assertLt(debtAfter, debtBefore);
@@ -384,7 +404,7 @@ contract LiquidationEngineTest is Test {
         vm.recordLogs();
 
         vm.prank(liquidator);
-        liq.liquidate(posId, repayAmount);
+        liq.liquidate(posId, repayAmount, block.timestamp + 1 hours);
 
         Vm.Log[] memory entries = vm.getRecordedLogs();
         // LiquidationExecuted should be the last event
@@ -480,10 +500,14 @@ contract LiquidationEngineTest is Test {
 
         // Deploy fresh liquidation engine without swap router
         LiquidationEngine liqImpl2 = new LiquidationEngine();
-        LiquidationEngine liq2 = LiquidationEngine(address(new ERC1967Proxy(
-            address(liqImpl2),
-            abi.encodeCall(LiquidationEngine.initialize, (address(core), address(pm), address(le)))
-        )));
+        LiquidationEngine liq2 = LiquidationEngine(
+            address(
+                new ERC1967Proxy(
+                    address(liqImpl2),
+                    abi.encodeCall(LiquidationEngine.initialize, (address(core), address(pm), address(le)))
+                )
+            )
+        );
 
         vm.startPrank(owner);
         pm.setAuthorized(address(liq2), true);
@@ -498,7 +522,7 @@ contract LiquidationEngineTest is Test {
 
             vm.prank(liquidator);
             vm.expectRevert("SWAP_ROUTER_NOT_SET");
-            liq2.liquidate(posId, maxRepay);
+            liq2.liquidate(posId, maxRepay, block.timestamp + 1 hours);
         }
     }
 
@@ -609,7 +633,7 @@ contract LiquidationEngineTest is Test {
 
             // This should NOT revert with "ZERO_LIQUIDITY" anymore
             vm.prank(liquidator);
-            liq.liquidate(posId, repayAmount);
+            liq.liquidate(posId, repayAmount, block.timestamp + 1 hours);
 
             // Position amount should have decreased
             IPositionManager.Position memory pos = pm.getPosition(posId);
@@ -644,7 +668,7 @@ contract LiquidationEngineTest is Test {
         uint256 amountBefore = pm.getPosition(posId).amount;
 
         vm.prank(liquidator);
-        liq.liquidate(posId, repayAmount);
+        liq.liquidate(posId, repayAmount, block.timestamp + 1 hours);
 
         uint256 amountAfter = pm.getPosition(posId).amount;
         assertLt(amountAfter, amountBefore, "Must work with 18-dec token too");
@@ -667,7 +691,7 @@ contract LiquidationEngineTest is Test {
         usdc.approve(address(liq), repayAmount);
 
         vm.prank(liquidator);
-        liq.liquidate(posId, repayAmount);
+        liq.liquidate(posId, repayAmount, block.timestamp + 1 hours);
 
         // Position amount should be REDUCED after partial liquidation
         IPositionManager.Position memory posAfter = pm.getPosition(posId);
@@ -686,7 +710,7 @@ contract LiquidationEngineTest is Test {
         vm.prank(liquidator);
         usdc.approve(address(liq), repay1);
         vm.prank(liquidator);
-        liq.liquidate(posId, repay1);
+        liq.liquidate(posId, repay1, block.timestamp + 1 hours);
 
         uint256 amountAfterFirst = pm.getPosition(posId).amount;
         assertLt(amountAfterFirst, 100e18);
@@ -701,7 +725,7 @@ contract LiquidationEngineTest is Test {
             vm.prank(liquidator);
             usdc.approve(address(liq), repay2);
             vm.prank(liquidator);
-            liq.liquidate(posId, repay2);
+            liq.liquidate(posId, repay2, block.timestamp + 1 hours);
 
             uint256 amountAfterSecond = pm.getPosition(posId).amount;
             assertLt(amountAfterSecond, amountAfterFirst, "Amount must decrease further on second liquidation");
@@ -723,7 +747,7 @@ contract LiquidationEngineTest is Test {
         usdc.approve(address(liq), totalDebt);
 
         vm.prank(liquidator);
-        liq.liquidate(posId, totalDebt);
+        liq.liquidate(posId, totalDebt, block.timestamp + 1 hours);
 
         // Verify debt is fully repaid
         assertEq(le.getDebt(posId), 0);
@@ -766,7 +790,7 @@ contract LiquidationEngineTest is Test {
         uint256 unlocksBefore = adapter.unlockCallCount();
 
         vm.prank(liquidator);
-        liq.liquidate(posId, totalDebt);
+        liq.liquidate(posId, totalDebt, block.timestamp + 1 hours);
 
         assertEq(le.getDebt(posId), 0);
 
@@ -799,7 +823,7 @@ contract LiquidationEngineTest is Test {
         uint256 unlocksBefore = adapter.unlockCallCount();
 
         vm.prank(liquidator);
-        liq.liquidate(posId, repayAmount);
+        liq.liquidate(posId, repayAmount, block.timestamp + 1 hours);
 
         // Debt still exists — position should NOT be marked liquidated
         assertGt(le.getDebt(posId), 0);
@@ -837,7 +861,7 @@ contract LiquidationEngineTest is Test {
         weth.mint(address(adapter), 1_000_000e18);
 
         vm.prank(liquidator);
-        liq.liquidate(posId, maxRepay);
+        liq.liquidate(posId, maxRepay, block.timestamp + 1 hours);
     }
 
     function test_liquidate_token0IsBorrowAsset() public {
@@ -863,7 +887,7 @@ contract LiquidationEngineTest is Test {
         weth.mint(address(adapter), 1_000_000e18);
 
         vm.prank(liquidator);
-        liq.liquidate(posId, maxRepay);
+        liq.liquidate(posId, maxRepay, block.timestamp + 1 hours);
     }
 
     // ========== Fuzz Tests ==========

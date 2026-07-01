@@ -43,10 +43,13 @@ contract MarketTest is Test {
         });
 
         Market impl = new Market();
-        market = Market(address(new ERC1967Proxy(
-            address(impl),
-            abi.encodeCall(Market.initialize, (config, address(irm), address(core), le))
-        )));
+        market = Market(
+            address(
+                new ERC1967Proxy(
+                    address(impl), abi.encodeCall(Market.initialize, (config, address(irm), address(core), le))
+                )
+            )
+        );
     }
 
     function _fundAndApprove(address user, uint256 amount) internal {
@@ -91,12 +94,12 @@ contract MarketTest is Test {
 
         usdc.mint(address(market), 10_000e6); // Donation
 
-        _fundAndApprove(bob, 5_000e6);
+        _fundAndApprove(bob, 5000e6);
         vm.prank(bob);
-        uint256 victimShares = market.supply(5_000e6);
+        uint256 victimShares = market.supply(5000e6);
 
         assertGt(victimShares, 0, "Victim must receive shares");
-        assertEq(victimShares, 5_000e6);
+        assertEq(victimShares, 5000e6);
     }
 
     // ========== Normal Supply/Withdraw ==========
@@ -106,10 +109,10 @@ contract MarketTest is Test {
         vm.prank(alice);
         market.supply(10_000e6);
 
-        _fundAndApprove(bob, 5_000e6);
+        _fundAndApprove(bob, 5000e6);
         vm.prank(bob);
-        uint256 bobShares = market.supply(5_000e6);
-        assertEq(bobShares, 5_000e6);
+        uint256 bobShares = market.supply(5000e6);
+        assertEq(bobShares, 5000e6);
     }
 
     function test_supply_revertsZeroAmount() public {
@@ -145,7 +148,7 @@ contract MarketTest is Test {
         uint256 aliceShares = market.supply(10_000e6);
 
         vm.prank(le);
-        market.transferOut(makeAddr("borrower"), 8_000e6);
+        market.transferOut(makeAddr("borrower"), 8000e6);
 
         vm.prank(alice);
         vm.expectRevert("INSUFFICIENT_LIQUIDITY");
@@ -207,8 +210,8 @@ contract MarketTest is Test {
 
         address borrower = makeAddr("borrower");
         vm.prank(le);
-        market.transferOut(borrower, 5_000e6);
-        assertEq(usdc.balanceOf(borrower), 5_000e6);
+        market.transferOut(borrower, 5000e6);
+        assertEq(usdc.balanceOf(borrower), 5000e6);
     }
 
     function test_transferOut_revertsNotLendingEngine() public {
@@ -233,15 +236,15 @@ contract MarketTest is Test {
         market.supply(10_000e6);
 
         vm.prank(le);
-        market.transferOut(makeAddr("b"), 5_000e6);
+        market.transferOut(makeAddr("b"), 5000e6);
 
         address repayer = makeAddr("repayer");
-        usdc.mint(repayer, 5_000e6);
+        usdc.mint(repayer, 5000e6);
         vm.prank(repayer);
-        usdc.approve(address(market), 5_000e6);
+        usdc.approve(address(market), 5000e6);
 
         vm.prank(le);
-        market.transferIn(repayer, 5_000e6);
+        market.transferIn(repayer, 5000e6);
         assertEq(usdc.balanceOf(repayer), 0);
     }
 

@@ -42,9 +42,11 @@ contract MockLPAdapter is ILPAdapter {
         shouldRevert = _shouldRevert;
     }
 
-    function validateAndLock(
-        address lpToken, uint256, uint256, address
-    ) external override returns (LPInfo memory info) {
+    function validateAndLock(address lpToken, uint256, uint256, address)
+        external
+        override
+        returns (LPInfo memory info)
+    {
         require(!shouldRevert, "MOCK_REVERT");
         lockCallCount++;
         info = LPInfo({
@@ -52,8 +54,8 @@ contract MockLPAdapter is ILPAdapter {
             token0: token0Return,
             token1: token1Return,
             feeTier: 3000,
-            tickLower: -887220,
-            tickUpper: 887220,
+            tickLower: -887_220,
+            tickUpper: 887_220,
             liquidity: 1_000_000,
             pool: lpToken
         });
@@ -71,7 +73,11 @@ contract MockLPAdapter is ILPAdapter {
         totalLiquidity = _total;
     }
 
-    function unwind(address, uint256, uint128 liquidityToRemove) external override returns (uint256 out0, uint256 out1) {
+    function unwind(address, uint256, uint128 liquidityToRemove)
+        external
+        override
+        returns (uint256 out0, uint256 out1)
+    {
         // Scale output proportionally to liquidity removed (realistic behavior)
         if (totalLiquidity > 0) {
             out0 = (unwindAmount0 * uint256(liquidityToRemove)) / totalLiquidity;

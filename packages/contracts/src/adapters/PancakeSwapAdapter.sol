@@ -42,7 +42,11 @@ contract PancakeSwapAdapter is ILPAdapter {
         uint256 tokenId,
         uint256 amount,
         address from
-    ) external onlyProtocol returns (LPInfo memory info) {
+    )
+        external
+        onlyProtocol
+        returns (LPInfo memory info)
+    {
         // PancakeSwap V3 is a fork of Uniswap V3 — same NFT position structure
         // PancakeSwap V2 is a fork of Uniswap V2 — same LP token structure
         // Logic mirrors UniswapV3Adapter / UniswapV2Adapter respectively
@@ -56,7 +60,11 @@ contract PancakeSwapAdapter is ILPAdapter {
         address lpToken,
         uint256 tokenId,
         uint128 liquidityToRemove
-    ) external onlyProtocol returns (uint256, uint256) {
+    )
+        external
+        onlyProtocol
+        returns (uint256, uint256)
+    {
         // Same unwinding logic as Uniswap adapters
         return (0, 0);
     }

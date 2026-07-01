@@ -30,7 +30,11 @@ library LPMath {
         uint256 price0,
         uint256 price1,
         uint256 amount
-    ) internal pure returns (uint256 value) {
+    )
+        internal
+        pure
+        returns (uint256 value)
+    {
         // Fair value = 2 * sqrt(k * price0 * price1) / totalSupply * amount
         // k = reserve0 * reserve1
         uint256 sqrtK = sqrt(reserve0 * reserve1);

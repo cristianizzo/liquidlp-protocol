@@ -21,7 +21,10 @@ contract MigrationHelper {
         uint256 positionId,
         uint256 newMarketId,
         uint256 newBorrowAmount
-    ) external returns (uint256 newPositionId) {
+    )
+        external
+        returns (uint256 newPositionId)
+    {
         PositionManager.Position memory pos = positionManager.getPosition(positionId);
         require(pos.owner == msg.sender, "NOT_OWNER");
 
@@ -35,12 +38,7 @@ contract MigrationHelper {
         positionManager.withdraw(positionId);
 
         // Step 3: Deposit LP into new market
-        newPositionId = positionManager.deposit(
-            pos.lpToken,
-            pos.tokenId,
-            pos.amount,
-            newMarketId
-        );
+        newPositionId = positionManager.deposit(pos.lpToken, pos.tokenId, pos.amount, newMarketId);
 
         // Step 4: Borrow in new market (if requested)
         if (newBorrowAmount > 0) {

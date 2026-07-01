@@ -85,33 +85,42 @@ abstract contract ForkTestBase is Test {
 
         // 2. Deploy LPOracleHub (UUPS proxy)
         LPOracleHub oracleHubImpl = new LPOracleHub();
-        oracleHub = LPOracleHub(address(new ERC1967Proxy(
-            address(oracleHubImpl),
-            abi.encodeCall(LPOracleHub.initialize, (address(core)))
-        )));
+        oracleHub = LPOracleHub(
+            address(new ERC1967Proxy(address(oracleHubImpl), abi.encodeCall(LPOracleHub.initialize, (address(core)))))
+        );
 
         // 3. Deploy PositionManager (UUPS proxy)
         PositionManager pmImpl = new PositionManager();
-        positionManager = PositionManager(address(new ERC1967Proxy(
-            address(pmImpl),
-            abi.encodeCall(PositionManager.initialize, (address(core), address(oracleHub)))
-        )));
+        positionManager = PositionManager(
+            address(
+                new ERC1967Proxy(
+                    address(pmImpl), abi.encodeCall(PositionManager.initialize, (address(core), address(oracleHub)))
+                )
+            )
+        );
 
         // 4. Deploy LendingEngine (UUPS proxy)
         LendingEngine leImpl = new LendingEngine();
-        lendingEngine = LendingEngine(address(new ERC1967Proxy(
-            address(leImpl),
-            abi.encodeCall(LendingEngine.initialize, (address(core), address(positionManager)))
-        )));
+        lendingEngine = LendingEngine(
+            address(
+                new ERC1967Proxy(
+                    address(leImpl), abi.encodeCall(LendingEngine.initialize, (address(core), address(positionManager)))
+                )
+            )
+        );
 
         // 5. Deploy LiquidationEngine (UUPS proxy)
         LiquidationEngine liqImpl = new LiquidationEngine();
-        liquidationEngine = LiquidationEngine(address(new ERC1967Proxy(
-            address(liqImpl),
-            abi.encodeCall(LiquidationEngine.initialize, (
-                address(core), address(positionManager), address(lendingEngine)
-            ))
-        )));
+        liquidationEngine = LiquidationEngine(
+            address(
+                new ERC1967Proxy(
+                    address(liqImpl),
+                    abi.encodeCall(
+                        LiquidationEngine.initialize, (address(core), address(positionManager), address(lendingEngine))
+                    )
+                )
+            )
+        );
 
         // 6. FeeCollector
         feeCollector = new FeeCollector(address(core), deployer, deployer);
@@ -136,16 +145,9 @@ abstract contract ForkTestBase is Test {
         oracleHub.registerOracle(ILPAdapter.LPType.UniswapV2, address(v2Oracle));
 
         // 9. Adapters
-        v3Adapter = new UniswapV3Adapter(
-            Constants.UNI_V3_NFT_MANAGER,
-            Constants.UNI_V3_FACTORY,
-            address(positionManager)
-        );
-        v2Adapter = new UniswapV2Adapter(
-            Constants.UNI_V2_FACTORY,
-            Constants.UNI_V2_ROUTER,
-            address(positionManager)
-        );
+        v3Adapter =
+            new UniswapV3Adapter(Constants.UNI_V3_NFT_MANAGER, Constants.UNI_V3_FACTORY, address(positionManager));
+        v2Adapter = new UniswapV2Adapter(Constants.UNI_V2_FACTORY, Constants.UNI_V2_ROUTER, address(positionManager));
 
         // Register adapters
         core.registerAdapter(ILPAdapter.LPType.UniswapV3, address(v3Adapter));
@@ -165,21 +167,19 @@ abstract contract ForkTestBase is Test {
         (ethUsdcMarketId,) = marketFactory.createMarket(
             ILPAdapter.LPType.UniswapV3,
             Constants.USDC,
-            6500,   // 65% max LTV
-            7500,   // 75% liquidation threshold
-            500,    // 5% liquidation bonus
-            700,    // 7% haircut
+            6500, // 65% max LTV
+            7500, // 75% liquidation threshold
+            500, // 5% liquidation bonus
+            700, // 7% haircut
             10_000_000e6, // $10M borrow cap
             5_000_000e18, // $5M min pool TVL
-            0,      // 0 min pool age (for testing)
+            0, // 0 min pool age (for testing)
             "volatile"
         );
 
         // 12. Periphery
         router = new Router(address(positionManager), address(lendingEngine));
-        positionViewer = new PositionViewer(
-            address(core), address(positionManager), address(lendingEngine)
-        );
+        positionViewer = new PositionViewer(address(core), address(positionManager), address(lendingEngine));
 
         // 13. Authorize
         positionManager.setAuthorized(address(lendingEngine), true);
@@ -222,7 +222,8 @@ abstract contract ForkTestBase is Test {
 
 // Minimal Chainlink interface for price reading
 interface IAggregatorV3 {
-    function latestRoundData() external view returns (
-        uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound
-    );
+    function latestRoundData()
+        external
+        view
+        returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound);
 }

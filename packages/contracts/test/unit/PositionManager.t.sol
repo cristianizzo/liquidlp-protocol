@@ -5,6 +5,7 @@ import "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ProtocolCore} from "../../src/core/ProtocolCore.sol";
 import {PositionManager} from "../../src/core/PositionManager.sol";
+import {LendingEngine} from "../../src/core/LendingEngine.sol";
 import {LPOracleHub} from "../../src/oracle/LPOracleHub.sol";
 import {IPositionManager} from "../../src/interfaces/IPositionManager.sol";
 import {ILPAdapter} from "../../src/interfaces/ILPAdapter.sol";
@@ -26,14 +27,22 @@ contract PositionManagerTest is Test {
     address public guardian = makeAddr("guardian");
     address public alice = makeAddr("alice");
     address public bob = makeAddr("bob");
-    address public lendingEngine = makeAddr("lendingEngine");
+    LendingEngine public le;
+    address public lendingEngine; // Set in setUp to le proxy address
     address public liquidationEngine = makeAddr("liquidationEngine");
     address public lpToken = makeAddr("lpToken");
 
     uint256 public marketId;
 
     // Events
-    event PositionCreated(uint256 indexed positionId, address indexed owner, address lpToken, uint256 tokenId, ILPAdapter.LPType lpType, uint256 value);
+    event PositionCreated(
+        uint256 indexed positionId,
+        address indexed owner,
+        address lpToken,
+        uint256 tokenId,
+        ILPAdapter.LPType lpType,
+        uint256 value
+    );
     event PositionClosed(uint256 indexed positionId, address indexed owner);
     event PositionLiquidated(uint256 indexed positionId, address indexed liquidator, uint256 debtRepaid);
     event AuthorizationUpdated(address indexed addr, bool status);
@@ -44,17 +53,30 @@ contract PositionManagerTest is Test {
 
         // Deploy oracle hub (UUPS proxy)
         LPOracleHub oracleHubImpl = new LPOracleHub();
-        oracleHub = LPOracleHub(address(new ERC1967Proxy(
-            address(oracleHubImpl),
-            abi.encodeCall(LPOracleHub.initialize, (address(core)))
-        )));
+        oracleHub = LPOracleHub(
+            address(new ERC1967Proxy(address(oracleHubImpl), abi.encodeCall(LPOracleHub.initialize, (address(core)))))
+        );
 
         // Deploy PositionManager (UUPS proxy)
         PositionManager pmImpl = new PositionManager();
-        pm = PositionManager(address(new ERC1967Proxy(
-            address(pmImpl),
-            abi.encodeCall(PositionManager.initialize, (address(core), address(oracleHub)))
-        )));
+        pm = PositionManager(
+            address(
+                new ERC1967Proxy(
+                    address(pmImpl), abi.encodeCall(PositionManager.initialize, (address(core), address(oracleHub)))
+                )
+            )
+        );
+
+        // Deploy real LendingEngine (UUPS proxy)
+        LendingEngine leImpl = new LendingEngine();
+        le = LendingEngine(
+            address(
+                new ERC1967Proxy(
+                    address(leImpl), abi.encodeCall(LendingEngine.initialize, (address(core), address(pm)))
+                )
+            )
+        );
+        lendingEngine = address(le);
 
         // Deploy mocks
         adapter = new MockLPAdapter(ILPAdapter.LPType.UniswapV3);
@@ -68,10 +90,11 @@ contract PositionManagerTest is Test {
         vm.startPrank(owner);
         core.registerAdapter(ILPAdapter.LPType.UniswapV3, address(adapter));
         oracleHub.registerOracle(ILPAdapter.LPType.UniswapV3, address(oracle));
-        core.whitelistPool(lpToken); // adapter returns lpToken as pool
+        core.whitelistPool(lpToken);
         marketId = core.registerMarket(address(market));
         pm.setAuthorized(lendingEngine, true);
         pm.setAuthorized(liquidationEngine, true);
+        pm.setLendingEngine(lendingEngine);
         vm.stopPrank();
     }
 
@@ -172,11 +195,11 @@ contract PositionManagerTest is Test {
     }
 
     function test_deposit_recordsDepositBlock() public {
-        vm.roll(12345);
+        vm.roll(12_345);
         vm.prank(alice);
         uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
 
-        assertEq(pm.getDepositBlock(posId), 12345);
+        assertEq(pm.getDepositBlock(posId), 12_345);
     }
 
     function test_deposit_revertsZeroLpToken() public {
@@ -374,8 +397,8 @@ contract PositionManagerTest is Test {
 
         // Owner bypasses authorized check
         vm.prank(owner);
-        pm.updateDebt(posId, 5_000e18);
-        assertEq(pm.positionDebt(posId), 5_000e18);
+        pm.updateDebt(posId, 5000e18);
+        assertEq(pm.positionDebt(posId), 5000e18);
     }
 
     // ========== reducePositionAmount (PM-3 fix) ==========
@@ -520,24 +543,32 @@ contract PositionManagerTest is Test {
         vm.prank(alice);
         uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
 
-        vm.prank(lendingEngine);
-        pm.updateDebt(posId, 5_000e18); // $5,000 debt
+        // Mock LendingEngine.getDebt to return $5,000
+        vm.mockCall(
+            lendingEngine, abi.encodeWithSelector(LendingEngine.getDebt.selector, posId), abi.encode(uint256(5000e18))
+        );
 
         uint256 hf = pm.getHealthFactor(posId);
         // HF = (10000 * 7500 * 1e18) / (5000 * 10000) = 1.5e18
         assertEq(hf, 1.5e18);
+
+        vm.clearMockedCalls();
     }
 
     function test_getHealthFactor_zeroWhenCollateralZero() public {
         vm.prank(alice);
         uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
 
-        vm.prank(lendingEngine);
-        pm.updateDebt(posId, 5_000e18);
+        // Mock LendingEngine.getDebt to return $5,000
+        vm.mockCall(
+            lendingEngine, abi.encodeWithSelector(LendingEngine.getDebt.selector, posId), abi.encode(uint256(5000e18))
+        );
 
         // Set oracle to 0 after deposit
         oracle.setPrice(0);
         assertEq(pm.getHealthFactor(posId), 0);
+
+        vm.clearMockedCalls();
     }
 
     function test_getDepositBlock() public {

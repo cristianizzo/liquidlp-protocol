@@ -48,10 +48,7 @@ contract InterestRateModel {
     /// @param utilization Current utilization in bps
     /// @param protocolFeeBps Protocol's cut of interest in bps
     /// @return ratePerSecond The supply rate per second (1e18 scale)
-    function getSupplyRate(
-        uint256 utilization,
-        uint256 protocolFeeBps
-    ) external view returns (uint256 ratePerSecond) {
+    function getSupplyRate(uint256 utilization, uint256 protocolFeeBps) external view returns (uint256 ratePerSecond) {
         uint256 borrowRate = this.getBorrowRate(utilization);
         // Supply rate = borrow rate * utilization * (1 - protocolFee)
         uint256 protocolCut = (borrowRate * protocolFeeBps) / BPS;

@@ -29,7 +29,11 @@ contract UniswapV3Adapter is ILPAdapter {
         uint256 tokenId,
         uint256, /* amount — unused for NFTs */
         address from
-    ) external onlyProtocol returns (LPInfo memory info) {
+    )
+        external
+        onlyProtocol
+        returns (LPInfo memory info)
+    {
         require(lpToken == nftManager, "NOT_UNISWAP_V3");
 
         // Get position data from NFT manager
@@ -63,7 +67,10 @@ contract UniswapV3Adapter is ILPAdapter {
         uint256 tokenId,
         uint256, /* amount — unused for NFTs */
         address to
-    ) external onlyProtocol {
+    )
+        external
+        onlyProtocol
+    {
         // Transfer NFT back to user
         // IERC721(nftManager).transferFrom(address(this), to, tokenId);
     }
@@ -73,7 +80,11 @@ contract UniswapV3Adapter is ILPAdapter {
         address, /* lpToken */
         uint256 tokenId,
         uint128 liquidityToRemove
-    ) external onlyProtocol returns (uint256 amount0, uint256 amount1) {
+    )
+        external
+        onlyProtocol
+        returns (uint256 amount0, uint256 amount1)
+    {
         // Step 1: Decrease liquidity
         // INonfungiblePositionManager(nftManager).decreaseLiquidity(
         //     INonfungiblePositionManager.DecreaseLiquidityParams({
@@ -100,7 +111,11 @@ contract UniswapV3Adapter is ILPAdapter {
     function collectFees(
         address, /* lpToken */
         uint256 tokenId
-    ) external onlyProtocol returns (uint256 fees0, uint256 fees1) {
+    )
+        external
+        onlyProtocol
+        returns (uint256 fees0, uint256 fees1)
+    {
         // Collect without decreasing liquidity (fees only)
         // First decrease 0 liquidity to update fee tracking
         // INonfungiblePositionManager(nftManager).decreaseLiquidity(

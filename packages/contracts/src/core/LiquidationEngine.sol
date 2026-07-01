@@ -43,6 +43,7 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
     event MaxSwapSlippageUpdated(uint256 oldValue, uint256 newValue);
     event SwapRouterUpdated(address oldRouter, address newRouter);
     event FeeCollectorUpdated(address oldCollector, address newCollector);
+    event TokensRescued(address indexed token, address indexed to, uint256 amount);
 
     modifier whenNotPaused() {
         require(!core.paused(), "PAUSED");
@@ -104,9 +105,17 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
 
     /// @inheritdoc ILiquidationEngine
     function liquidate(
-        uint256 positionId, uint256 repayAmount
-    ) external whenNotPaused nonReentrant returns (uint256 profit) {
+        uint256 positionId,
+        uint256 repayAmount,
+        uint256 deadline
+    )
+        external
+        whenNotPaused
+        nonReentrant
+        returns (uint256 profit)
+    {
         require(repayAmount > 0, "ZERO_AMOUNT");
+        require(block.timestamp <= deadline, "EXPIRED");
 
         // Step 0: Accrue interest BEFORE health factor check (LIQ-5)
         PositionManager.Position memory pos = positionManager.getPosition(positionId);
@@ -135,10 +144,7 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
         }
 
         // Step 4: Pull repayment from liquidator (in borrow asset decimals)
-        require(
-            IERC20(borrowAsset).transferFrom(msg.sender, address(this), repayAmount),
-            "LIQ_PULL_FAILED"
-        );
+        require(IERC20(borrowAsset).transferFrom(msg.sender, address(this), repayAmount), "LIQ_PULL_FAILED");
 
         // Step 5: Approve market and repay debt via LendingEngine
         // Reset approval first for USDT-compatibility (LIQ-6)
@@ -148,15 +154,21 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
 
         // Step 6: Calculate liquidity to remove proportional to collateral seized
         // Both collateralToSeizeNormalized and positionValue are now in 18-decimal USD
+        // Use uint256 for math to avoid truncation for V2 LP tokens (V3 is uint128 but V2 is uint256)
         uint256 positionValue = positionManager.getPositionValue(positionId);
-        uint128 totalLiquidity = uint128(pos.amount);
-        uint128 liquidityToRemove;
+        uint256 totalLiquidity = pos.amount;
+        uint256 liquidityToRemove256;
         if (positionValue == 0 || collateralToSeizeNormalized >= positionValue) {
-            liquidityToRemove = totalLiquidity;
+            liquidityToRemove256 = totalLiquidity;
         } else {
-            liquidityToRemove = uint128((uint256(totalLiquidity) * collateralToSeizeNormalized) / positionValue);
+            liquidityToRemove256 = (totalLiquidity * collateralToSeizeNormalized) / positionValue;
         }
-        require(liquidityToRemove > 0, "ZERO_LIQUIDITY");
+        require(liquidityToRemove256 > 0, "ZERO_LIQUIDITY");
+
+        // Cast to uint128 for adapter.unwind() — V3 uses uint128 liquidity natively.
+        // For V2, amounts should fit in uint128 (max ~3.4e38, far above any real LP supply).
+        require(liquidityToRemove256 <= type(uint128).max, "LIQUIDITY_OVERFLOW");
+        uint128 liquidityToRemove = uint128(liquidityToRemove256);
 
         // Step 7: Atomic LP unwinding via adapter
         address adapterAddr = core.adapters(pos.lpType);
@@ -164,7 +176,7 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
         (uint256 amount0, uint256 amount1) = adapter.unwind(pos.lpToken, pos.tokenId, liquidityToRemove);
 
         // Step 7b: Update position amount to reflect removed liquidity
-        positionManager.reducePositionAmount(positionId, uint256(liquidityToRemove));
+        positionManager.reducePositionAmount(positionId, liquidityToRemove256);
 
         // Step 8: Swap non-borrow-asset tokens to borrow asset
         uint256 totalReceived = _swapToBorrowAsset(pos.token0, pos.token1, amount0, amount1, borrowAsset);
@@ -203,10 +215,7 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
         // Send remaining proceeds to liquidator
         uint256 liquidatorPayout = totalReceived - protocolFee;
         if (liquidatorPayout > 0) {
-            require(
-                IERC20(borrowAsset).transfer(msg.sender, liquidatorPayout),
-                "LIQ_PROFIT_TRANSFER_FAILED"
-            );
+            require(IERC20(borrowAsset).transfer(msg.sender, liquidatorPayout), "LIQ_PROFIT_TRANSFER_FAILED");
         }
 
         // Step 10: If fully liquidated, return remaining LP THEN mark as liquidated
@@ -264,10 +273,11 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
 
     /// @notice Rescue tokens stuck in this contract (e.g., failed swap, unexpected transfer)
     /// @dev Only callable by owner (DAO). Cannot rescue tokens during an active liquidation (nonReentrant).
-    function rescueTokens(address token, address to, uint256 amount) external onlyOwner {
+    function rescueTokens(address token, address to, uint256 amount) external onlyOwner nonReentrant {
         require(token != address(0) && to != address(0), "ZERO_ADDRESS");
         require(amount > 0, "ZERO_AMOUNT");
         require(IERC20(token).transfer(to, amount), "RESCUE_FAILED");
+        emit TokensRescued(token, to, amount);
     }
 
     /// @dev Swap non-borrow-asset tokens to borrow asset.
@@ -277,10 +287,15 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
     ///      for cross-token swaps with different prices/decimals (1 WBTC ≠ 1 USDC).
     ///      The maxSwapSlippageBps parameter is passed to the router for its use.
     function _swapToBorrowAsset(
-        address token0, address token1,
-        uint256 amount0, uint256 amount1,
+        address token0,
+        address token1,
+        uint256 amount0,
+        uint256 amount1,
         address borrowAsset
-    ) internal returns (uint256 totalReceived) {
+    )
+        internal
+        returns (uint256 totalReceived)
+    {
         if (amount0 > 0) {
             if (token0 == borrowAsset) {
                 totalReceived += amount0;

@@ -56,8 +56,13 @@ contract MockMarket is IMarket {
         require(IERC20(_config.borrowAsset).transferFrom(from, address(this), amount), "TRANSFER_IN_FAILED");
     }
 
-    function supply(uint256) external pure returns (uint256) { return 0; }
-    function withdraw(uint256) external pure returns (uint256) { return 0; }
+    function supply(uint256) external pure returns (uint256) {
+        return 0;
+    }
+
+    function withdraw(uint256) external pure returns (uint256) {
+        return 0;
+    }
 
     function getMarketState() external view returns (MarketState memory) {
         return _state;
