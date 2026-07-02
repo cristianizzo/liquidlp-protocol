@@ -187,6 +187,10 @@ abstract contract ForkTestBase is Test {
         // 13. Authorize
         positionManager.setAuthorized(address(lendingEngine), true);
         positionManager.setAuthorized(address(liquidationEngine), true);
+        positionManager.setLendingEngine(address(lendingEngine));
+
+        // 14. Set MarketFactory on ProtocolCore
+        core.setMarketFactory(address(marketFactory));
 
         vm.stopPrank();
     }

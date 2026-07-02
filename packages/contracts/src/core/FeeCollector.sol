@@ -3,6 +3,8 @@ pragma solidity ^0.8.26;
 
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC20} from "../interfaces/IERC20.sol";
+import {IERC20 as OZIERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ILPAdapter} from "../interfaces/ILPAdapter.sol";
 import {ProtocolCore} from "./ProtocolCore.sol";
 
@@ -22,6 +24,8 @@ import {ProtocolCore} from "./ProtocolCore.sol";
 ///   - collectFee measures actual received amount (fee-on-transfer token safe)
 ///   - distribute verifies balance before sending
 contract FeeCollector is ReentrancyGuard {
+    using SafeERC20 for OZIERC20;
+
     ProtocolCore public immutable core;
 
     // --- Reserve Factor (Aave-style, per LP type) ---
@@ -101,7 +105,7 @@ contract FeeCollector is ReentrancyGuard {
 
         // Measure actual received (fee-on-transfer safe)
         uint256 balanceBefore = IERC20(token).balanceOf(address(this));
-        require(IERC20(token).transferFrom(from, address(this), amount), "FEE_TRANSFER_FAILED");
+        OZIERC20(token).safeTransferFrom(from, address(this), amount);
         uint256 actualReceived = IERC20(token).balanceOf(address(this)) - balanceBefore;
         require(actualReceived > 0, "ZERO_RECEIVED");
 
@@ -129,10 +133,10 @@ contract FeeCollector is ReentrancyGuard {
         uint256 toTreasury = total - toInsurance;
 
         if (toTreasury > 0) {
-            require(IERC20(token).transfer(treasury, toTreasury), "TREASURY_TRANSFER_FAILED");
+            OZIERC20(token).safeTransfer(treasury, toTreasury);
         }
         if (toInsurance > 0) {
-            require(IERC20(token).transfer(insuranceFund, toInsurance), "INSURANCE_TRANSFER_FAILED");
+            OZIERC20(token).safeTransfer(insuranceFund, toInsurance);
         }
 
         emit FeesDistributed(token, toTreasury, toInsurance);

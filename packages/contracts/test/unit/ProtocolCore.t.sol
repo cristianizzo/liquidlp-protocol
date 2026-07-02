@@ -179,9 +179,9 @@ contract ProtocolCoreTest is Test {
         core.registerMarket(address(0));
     }
 
-    function test_registerMarket_revertsNotOwner() public {
+    function test_registerMarket_revertsNotAuthorized() public {
         vm.prank(user);
-        vm.expectRevert("NOT_OWNER");
+        vm.expectRevert("NOT_AUTHORIZED");
         core.registerMarket(makeAddr("market"));
     }
 

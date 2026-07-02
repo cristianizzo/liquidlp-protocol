@@ -19,6 +19,7 @@ contract ProtocolCore {
     mapping(ILPAdapter.LPType => address) public oracles;
     mapping(uint256 => address) public markets;
     uint256 public nextMarketId;
+    address public marketFactory;
 
     /// @notice Highest LP type index with a registered adapter
     /// @dev Used by PositionManager._detectLPType to avoid hardcoded loop bounds.
@@ -83,7 +84,13 @@ contract ProtocolCore {
         emit OracleRegistered(lpType, oracle);
     }
 
-    function registerMarket(address market) external onlyOwner returns (uint256 marketId) {
+    function setMarketFactory(address _factory) external onlyOwner {
+        require(_factory != address(0), "ZERO_ADDRESS");
+        marketFactory = _factory;
+    }
+
+    function registerMarket(address market) external returns (uint256 marketId) {
+        require(msg.sender == owner || msg.sender == marketFactory, "NOT_AUTHORIZED");
         require(market != address(0), "ZERO_ADDRESS");
         marketId = nextMarketId++;
         markets[marketId] = market;

@@ -27,9 +27,10 @@ import {MockSwapRouter} from "../mocks/MockSwapRouter.sol";
 ///      Slippage = % reduction below fair swap rate at current price
 ///
 ///      collateralToSeizeNormalized = repay * (1 + bonus%) = 30K * 1.05 = $31.5K
-///      When seize >= positionValue, liquidityToRemove = 100% = 100 units
+///      When seize >= positionValue (underwater), slippage baseline = positionValue
+///      (prevents bad debt by ensuring underwater positions remain liquidatable)
 ///      totalReceived = 50 WETH * actual_swap_rate
-///      minAcceptable = $31.5K * (1 - slippage_tolerance)
+///      minAcceptable = slippageBaseline * (1 - slippage_tolerance)
 ///      Check: totalReceived >= minAcceptable
 contract LiquidationSlippageTest is Test {
     ProtocolCore public core;

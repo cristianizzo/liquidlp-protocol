@@ -6,6 +6,8 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeab
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {IMarket} from "../interfaces/IMarket.sol";
 import {IERC20} from "../interfaces/IERC20.sol";
+import {IERC20 as OZIERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {InterestRateModel} from "./InterestRateModel.sol";
 import {ProtocolCore} from "../core/ProtocolCore.sol";
 
@@ -14,6 +16,8 @@ import {ProtocolCore} from "../core/ProtocolCore.sol";
 /// @dev UUPS upgradeable. Uses ProtocolCore for ownership (DAO controls admin ops).
 ///      LendingEngine address is updatable so Market isn't bricked if LE is redeployed.
 contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTransient {
+    using SafeERC20 for OZIERC20;
+
     MarketConfig public config;
     MarketState public state;
     InterestRateModel public interestRateModel;
@@ -173,7 +177,7 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
         require(amount > 0, "ZERO_AMOUNT");
         accrueInterest();
 
-        require(IERC20(config.borrowAsset).transferFrom(msg.sender, address(this), amount), "SUPPLY_TRANSFER_FAILED");
+        OZIERC20(config.borrowAsset).safeTransferFrom(msg.sender, address(this), amount);
 
         if (totalShares == 0) {
             require(amount > DEAD_SHARES, "BELOW_MINIMUM_DEPOSIT");
@@ -208,7 +212,7 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
         totalShares -= sharesToBurn;
         state.totalSupply -= amount;
 
-        require(IERC20(config.borrowAsset).transfer(msg.sender, amount), "WITHDRAW_TRANSFER_FAILED");
+        OZIERC20(config.borrowAsset).safeTransfer(msg.sender, amount);
 
         emit Withdraw(msg.sender, amount, sharesToBurn);
     }
@@ -228,7 +232,7 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
         state.totalBorrow += amount;
         _updateRates();
 
-        require(IERC20(config.borrowAsset).transfer(to, amount), "TRANSFER_OUT_FAILED");
+        OZIERC20(config.borrowAsset).safeTransfer(to, amount);
     }
 
     function transferIn(address from, uint256 amount) external onlyLendingEngine {
@@ -238,7 +242,7 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
         state.totalBorrow -= amount;
         _updateRates();
 
-        require(IERC20(config.borrowAsset).transferFrom(from, address(this), amount), "TRANSFER_IN_FAILED");
+        OZIERC20(config.borrowAsset).safeTransferFrom(from, address(this), amount);
     }
 
     // --- View ---
