@@ -111,18 +111,6 @@ contract FeeCollectorTest is Test {
         fc.collectFee(address(usdc), 1000e6, address(0), "interest");
     }
 
-    // ========== recordFee (tokens already in contract) ==========
-
-    function test_recordFee_updatesLedger() public {
-        // Directly send tokens to FeeCollector
-        usdc.mint(address(fc), 500e6);
-
-        vm.prank(keeper);
-        fc.recordFee(address(usdc), 500e6, "liquidation");
-
-        assertEq(fc.accumulatedFees(address(usdc)), 500e6);
-    }
-
     // ========== distribute ==========
 
     function test_distribute_splitCorrectly() public {
@@ -144,17 +132,6 @@ contract FeeCollectorTest is Test {
         assertEq(usdc.balanceOf(insurance), 1000e6);
         assertEq(usdc.balanceOf(address(fc)), 0); // FeeCollector empty
         assertEq(fc.accumulatedFees(address(usdc)), 0);
-    }
-
-    function test_distribute_revertsInsufficientBalance() public {
-        // Record fees without actually having tokens
-        vm.prank(keeper);
-        fc.recordFee(address(usdc), 1000e6, "test");
-
-        // distribute should revert because FeeCollector has no USDC
-        vm.prank(keeper);
-        vm.expectRevert("INSUFFICIENT_BALANCE");
-        fc.distribute(address(usdc));
     }
 
     function test_distribute_revertsNoFees() public {

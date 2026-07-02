@@ -2,32 +2,64 @@
 pragma solidity ^0.8.26;
 
 import {ILPAdapter} from "../interfaces/ILPAdapter.sol";
+import {IUniswapV2Pair, IUniswapV2Factory, IUniswapV2Router} from "../interfaces/external/IUniswapV2.sol";
+import {ProtocolCore} from "../core/ProtocolCore.sol";
 
 /// @title UniswapV2Adapter
-/// @notice Handles Uniswap V2 LP token deposits, withdrawals, and unwinding
+/// @notice Handles Uniswap V2 ERC-20 LP token deposits, withdrawals, and unwinding
+/// @dev V2 LP tokens are fungible ERC-20s. Key differences from V3:
+///      - No tick ranges — full price range
+///      - Fees auto-compound into reserves (no separate collectFees)
+///      - LP token amount IS the liquidity
+///      - removeLiquidity via V2 Router
 contract UniswapV2Adapter is ILPAdapter {
-    address public immutable factory; // IUniswapV2Factory
-    address public immutable router; // IUniswapV2Router02
+    IUniswapV2Factory public immutable v2Factory;
+    IUniswapV2Router public immutable v2Router;
+    ProtocolCore public immutable core;
+
     address public protocol;
 
-    // Track locked LP tokens per position
-    mapping(address => mapping(address => uint256)) public lockedBalances; // pair → user → amount
+    // --- Events ---
+    event PositionLocked(address indexed pair, address indexed from, uint256 amount);
+    event PositionUnlocked(address indexed pair, address indexed to, uint256 amount);
+    event LiquidityUnwound(address indexed pair, uint256 liquidityRemoved, uint256 amount0, uint256 amount1);
+    event ProtocolUpdated(address indexed oldProtocol, address indexed newProtocol);
 
     modifier onlyProtocol() {
         require(msg.sender == protocol, "NOT_PROTOCOL");
         _;
     }
 
-    constructor(address _factory, address _router, address _protocol) {
-        factory = _factory;
-        router = _router;
+    modifier onlyOwner() {
+        require(msg.sender == core.owner(), "NOT_OWNER");
+        _;
+    }
+
+    constructor(address _factory, address _router, address _core, address _protocol) {
+        require(
+            _factory != address(0) && _router != address(0) && _core != address(0) && _protocol != address(0),
+            "ZERO_ADDRESS"
+        );
+        v2Factory = IUniswapV2Factory(_factory);
+        v2Router = IUniswapV2Router(_router);
+        core = ProtocolCore(_core);
         protocol = _protocol;
     }
+
+    // --- Admin ---
+
+    function setProtocol(address _protocol) external onlyOwner {
+        require(_protocol != address(0), "ZERO_ADDRESS");
+        emit ProtocolUpdated(protocol, _protocol);
+        protocol = _protocol;
+    }
+
+    // --- ILPAdapter ---
 
     /// @inheritdoc ILPAdapter
     function validateAndLock(
         address lpToken,
-        uint256, /* tokenId — unused for ERC-20 */
+        uint256, /* tokenId */
         uint256 amount,
         address from
     )
@@ -36,46 +68,55 @@ contract UniswapV2Adapter is ILPAdapter {
         returns (LPInfo memory info)
     {
         require(amount > 0, "ZERO_AMOUNT");
+        require(amount <= type(uint128).max, "AMOUNT_OVERFLOW");
+        require(from != address(0), "ZERO_FROM");
 
-        // Verify this is a valid Uniswap V2 pair
-        // address token0 = IUniswapV2Pair(lpToken).token0();
-        // address token1 = IUniswapV2Pair(lpToken).token1();
-        // address expectedPair = IUniswapV2Factory(factory).getPair(token0, token1);
-        // require(lpToken == expectedPair, "INVALID_PAIR");
+        // Verify this is a valid V2 pair from our factory
+        IUniswapV2Pair pair = IUniswapV2Pair(lpToken);
+        address token0 = pair.token0();
+        address token1 = pair.token1();
+        address expectedPair = v2Factory.getPair(token0, token1);
+        require(lpToken == expectedPair, "INVALID_PAIR");
 
-        // Transfer LP tokens from user
-        // IERC20(lpToken).transferFrom(from, address(this), amount);
+        // Transfer LP tokens from user to adapter
+        require(pair.transferFrom(from, address(this), amount), "TRANSFER_FAILED");
 
-        // lockedBalances[lpToken][from] += amount;
+        info = LPInfo({
+            lpType: LPType.UniswapV2,
+            token0: token0,
+            token1: token1,
+            feeTier: 3000, // V2 always 0.3%
+            tickLower: 0,
+            tickUpper: 0,
+            liquidity: uint128(amount),
+            pool: lpToken
+        });
 
-        // info = LPInfo({
-        //     lpType: LPType.UniswapV2,
-        //     token0: token0,
-        //     token1: token1,
-        //     feeTier: 3000, // V2 always 0.3%
-        //     tickLower: 0, // Not applicable for V2
-        //     tickUpper: 0,
-        //     liquidity: uint128(amount),
-        //     pool: lpToken
-        // });
+        emit PositionLocked(lpToken, from, amount);
     }
 
     /// @inheritdoc ILPAdapter
     function unlock(
         address lpToken,
-        uint256,
-        /* tokenId */
+        uint256, /* tokenId */
         uint256 amount,
         address to
     )
         external
         onlyProtocol
     {
-        // IERC20(lpToken).transfer(to, amount);
-        // lockedBalances[lpToken][to] -= amount;
+        require(to != address(0), "ZERO_RECIPIENT");
+        require(to != address(this), "CANNOT_UNLOCK_TO_SELF");
+        require(amount > 0, "ZERO_AMOUNT");
+
+        require(IUniswapV2Pair(lpToken).transfer(to, amount), "TRANSFER_FAILED");
+
+        emit PositionUnlocked(lpToken, to, amount);
     }
 
     /// @inheritdoc ILPAdapter
+    /// @dev Approves router, calls removeLiquidity. Tokens sent to msg.sender.
+    ///      Slippage is 0 — handled at LiquidationEngine level.
     function unwind(
         address lpToken,
         uint256, /* tokenId */
@@ -85,25 +126,32 @@ contract UniswapV2Adapter is ILPAdapter {
         onlyProtocol
         returns (uint256 amount0, uint256 amount1)
     {
-        // Approve router to spend LP tokens
-        // IERC20(lpToken).approve(router, uint256(liquidityToRemove));
+        require(liquidityToRemove > 0, "ZERO_LIQUIDITY");
 
-        // Remove liquidity atomically
-        // address token0 = IUniswapV2Pair(lpToken).token0();
-        // address token1 = IUniswapV2Pair(lpToken).token1();
-        // (amount0, amount1) = IUniswapV2Router02(router).removeLiquidity(
-        //     token0, token1,
-        //     uint256(liquidityToRemove),
-        //     0, 0, // min amounts (slippage handled by LiquidationEngine)
-        //     msg.sender,
-        //     block.timestamp
-        // );
+        IUniswapV2Pair pair = IUniswapV2Pair(lpToken);
+        address token0 = pair.token0();
+        address token1 = pair.token1();
+
+        // Approve router
+        require(pair.approve(address(v2Router), uint256(liquidityToRemove)), "APPROVE_FAILED");
+
+        // Remove liquidity — tokens to caller
+        (amount0, amount1) = v2Router.removeLiquidity(
+            token0,
+            token1,
+            uint256(liquidityToRemove),
+            0,
+            0, // slippage handled by LiquidationEngine
+            msg.sender,
+            block.timestamp
+        );
+
+        emit LiquidityUnwound(lpToken, uint256(liquidityToRemove), amount0, amount1);
     }
 
     /// @inheritdoc ILPAdapter
+    /// @dev V2 fees auto-compound into reserves. No separate collection needed.
     function collectFees(address, uint256) external pure returns (uint256, uint256) {
-        // V2 LP tokens auto-compound fees — no separate collection needed
-        // Fees are embedded in the LP token value
         return (0, 0);
     }
 
@@ -113,13 +161,17 @@ contract UniswapV2Adapter is ILPAdapter {
     }
 
     /// @inheritdoc ILPAdapter
+    /// @dev Checks if address is a contract AND is a V2 pair from our factory
     function isSupported(address lpToken) external view returns (bool) {
-        // Check if this address is a valid Uniswap V2 pair from our factory
-        // try IUniswapV2Pair(lpToken).factory() returns (address f) {
-        //     return f == factory;
-        // } catch {
-        //     return false;
-        // }
-        return false; // Placeholder
+        if (lpToken == address(0)) return false;
+        uint256 size;
+        assembly { size := extcodesize(lpToken) }
+        if (size == 0) return false;
+
+        try IUniswapV2Pair(lpToken).factory() returns (address f) {
+            return f == address(v2Factory);
+        } catch {
+            return false;
+        }
     }
 }

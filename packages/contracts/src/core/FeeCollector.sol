@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC20} from "../interfaces/IERC20.sol";
 import {ILPAdapter} from "../interfaces/ILPAdapter.sol";
 import {ProtocolCore} from "./ProtocolCore.sol";
@@ -13,9 +14,14 @@ import {ProtocolCore} from "./ProtocolCore.sol";
 ///   3. Management fee: small annual fee on deposited LP collateral
 ///
 /// Fee flow:
-///   LendingEngine/LiquidationEngine → collectFee(token, amount, from) → pulls tokens into FeeCollector
-///   Keeper/DAO → distribute(token) → splits to treasury + insurance fund
-contract FeeCollector {
+///   LendingEngine/LiquidationEngine -> collectFee() -> pulls tokens into FeeCollector
+///   Keeper/DAO -> distribute() -> splits to treasury + insurance fund
+///
+/// Safety:
+///   - Uses OZ ReentrancyGuard (not manual bool — avoids permanent stuck state)
+///   - collectFee measures actual received amount (fee-on-transfer token safe)
+///   - distribute verifies balance before sending
+contract FeeCollector is ReentrancyGuard {
     ProtocolCore public immutable core;
 
     // --- Reserve Factor (Aave-style, per LP type) ---
@@ -39,14 +45,10 @@ contract FeeCollector {
     uint256 public insuranceFundShareBps = 1000; // 10%
 
     // --- Accumulated Fees ---
-    mapping(address => uint256) public accumulatedFees; // token → amount
+    mapping(address => uint256) public accumulatedFees; // token -> amount
 
     // --- Authorized Callers ---
-    /// @notice Protocol contracts authorized to call collectFee (LiquidationEngine, LendingEngine, etc.)
     mapping(address => bool) public authorizedCallers;
-
-    // --- State ---
-    bool private _distributing;
 
     // --- Events ---
     event FeesCollected(address indexed token, uint256 amount, address indexed from, string feeType);
@@ -58,6 +60,7 @@ contract FeeCollector {
     event InsuranceFundShareUpdated(uint256 oldValue, uint256 newValue);
     event TreasuryUpdated(address indexed oldAddr, address indexed newAddr);
     event InsuranceFundUpdated(address indexed oldAddr, address indexed newAddr);
+    event AuthorizedCallerUpdated(address indexed caller, bool status);
 
     modifier onlyOwner() {
         require(msg.sender == core.owner(), "NOT_OWNER");
@@ -89,39 +92,26 @@ contract FeeCollector {
 
     // --- Fee Collection ---
 
-    /// @notice Pull fee tokens from a source into FeeCollector and record them
-    /// @dev Called by LendingEngine (interest fees) and LiquidationEngine (liquidation fees).
-    ///      Caller must have already approved FeeCollector for the token amount.
-    /// @param token The fee token (e.g., USDC)
-    /// @param amount Amount of fees to collect
-    /// @param from Address to pull tokens from (Market, LiquidationEngine, etc.)
-    /// @param feeType Label for event ("interest", "liquidation", "management")
+    /// @notice Pull fee tokens from a source into FeeCollector and record actual received amount
+    /// @dev Measures balance before/after transfer to handle fee-on-transfer tokens correctly.
     function collectFee(address token, uint256 amount, address from, string calldata feeType) external onlyAuthorized {
         require(amount > 0, "ZERO_AMOUNT");
         require(token != address(0), "ZERO_TOKEN");
         require(from != address(0), "ZERO_FROM");
 
-        // Pull tokens into FeeCollector
+        // Measure actual received (fee-on-transfer safe)
+        uint256 balanceBefore = IERC20(token).balanceOf(address(this));
         require(IERC20(token).transferFrom(from, address(this), amount), "FEE_TRANSFER_FAILED");
+        uint256 actualReceived = IERC20(token).balanceOf(address(this)) - balanceBefore;
+        require(actualReceived > 0, "ZERO_RECEIVED");
 
-        accumulatedFees[token] += amount;
-        emit FeesCollected(token, amount, from, feeType);
-    }
-
-    /// @notice Record fees that are already held by FeeCollector (e.g., sent directly)
-    /// @dev Use when tokens are transferred to FeeCollector before calling this
-    function recordFee(address token, uint256 amount, string calldata feeType) external onlyAuthorized {
-        require(amount > 0, "ZERO_AMOUNT");
-        require(token != address(0), "ZERO_TOKEN");
-        accumulatedFees[token] += amount;
-        emit FeesCollected(token, amount, address(this), feeType);
+        accumulatedFees[token] += actualReceived;
+        emit FeesCollected(token, actualReceived, from, feeType);
     }
 
     /// @notice Distribute accumulated fees to treasury and insurance fund
-    function distribute(address token) external onlyAuthorized {
-        require(!_distributing, "REENTRANCY");
-        _distributing = true;
-
+    /// @dev Uses OZ ReentrancyGuard — cannot get permanently stuck on revert
+    function distribute(address token) external onlyAuthorized nonReentrant {
         require(token != address(0), "ZERO_TOKEN");
         require(treasury != address(0), "TREASURY_NOT_SET");
         require(insuranceFund != address(0), "INSURANCE_NOT_SET");
@@ -129,7 +119,6 @@ contract FeeCollector {
         uint256 total = accumulatedFees[token];
         require(total > 0, "NO_FEES");
 
-        // Verify FeeCollector actually holds the tokens
         uint256 balance = IERC20(token).balanceOf(address(this));
         require(balance >= total, "INSUFFICIENT_BALANCE");
 
@@ -147,22 +136,15 @@ contract FeeCollector {
         }
 
         emit FeesDistributed(token, toTreasury, toInsurance);
-        _distributing = false;
     }
 
     // --- View ---
 
-    /// @notice Get the reserve factor for an LP type
     function getReserveFactor(ILPAdapter.LPType lpType) external view returns (uint256) {
         uint256 rf = reserveFactorBps[lpType];
         return rf > 0 ? rf : defaultReserveFactorBps;
     }
 
-    /// @notice Calculate protocol's share of interest for a given LP type
-    /// @param totalInterest Total interest accrued
-    /// @param lpType LP type (determines reserve factor)
-    /// @return protocolShare Amount that goes to protocol
-    /// @return lenderShare Amount that goes to lenders
     function calculateInterestSplit(
         uint256 totalInterest,
         ILPAdapter.LPType lpType
@@ -173,15 +155,10 @@ contract FeeCollector {
     {
         uint256 rf = reserveFactorBps[lpType];
         if (rf == 0) rf = defaultReserveFactorBps;
-
         protocolShare = (totalInterest * rf) / 10_000;
         lenderShare = totalInterest - protocolShare;
     }
 
-    /// @notice Calculate liquidation fee from liquidator profit
-    /// @param liquidatorProfit Total profit the liquidator made
-    /// @return protocolFee Amount that goes to protocol
-    /// @return liquidatorNet Amount liquidator keeps
     function calculateLiquidationFee(uint256 liquidatorProfit)
         external
         view
@@ -193,10 +170,10 @@ contract FeeCollector {
 
     // --- Admin (DAO controlled) ---
 
-    /// @notice Authorize a contract to call collectFee (e.g., LiquidationEngine)
     function setAuthorizedCaller(address caller, bool status) external onlyOwner {
         require(caller != address(0), "ZERO_ADDRESS");
         authorizedCallers[caller] = status;
+        emit AuthorizedCallerUpdated(caller, status);
     }
 
     function setReserveFactor(ILPAdapter.LPType lpType, uint256 _bps) external onlyOwner {
