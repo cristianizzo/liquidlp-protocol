@@ -285,6 +285,7 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
     /// @notice Convert borrow asset amount to 18-dec USD value
     /// @dev Uses PriceFeedRegistry if available, falls back to decimal normalization (assumes $1 peg)
     function _getRepayValueUsd(address borrowAsset, uint256 amount, uint8 decimals) internal view returns (uint256) {
+        require(decimals <= 36, "INVALID_DECIMALS");
         PriceFeedRegistry registry = positionManager.priceFeedRegistry();
         if (address(registry) != address(0)) {
             return registry.getUsdValue(borrowAsset, amount, decimals);

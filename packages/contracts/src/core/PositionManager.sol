@@ -248,8 +248,15 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
             uint8 borrowDecimals = IERC20(config.borrowAsset).decimals();
             debtUsd = priceFeedRegistry.getUsdValue(config.borrowAsset, debt, borrowDecimals);
         } else {
-            // Fallback: assume 18-dec USD-pegged borrow asset (backwards compatible)
-            debtUsd = debt;
+            // Fallback: normalize debt to 18 decimals (assumes USD-pegged borrow asset)
+            uint8 borrowDecimals = IERC20(config.borrowAsset).decimals();
+            if (borrowDecimals < 18) {
+                debtUsd = debt * (10 ** (18 - borrowDecimals));
+            } else if (borrowDecimals > 18) {
+                debtUsd = debt / (10 ** (borrowDecimals - 18));
+            } else {
+                debtUsd = debt;
+            }
         }
 
         // HF = (collateralValue * liquidationThreshold) / (debtUsd * 10000)

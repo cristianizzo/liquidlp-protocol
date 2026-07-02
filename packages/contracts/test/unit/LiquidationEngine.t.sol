@@ -602,7 +602,9 @@ contract LiquidationEngineTest is Test {
 
         // Configure adapter to return WETH and USDC6
         adapter.setTokenReturns(address(weth), address(usdc6));
-        adapter.setUnwindAmounts(1e18, 2000e6); // 1 WETH + 2000 USDC (6 dec)
+        adapter.setUnwindAmounts(25e18, 25_000e6); // 25 WETH + 25K USDC (6 dec) per 100 units
+        // Swap rate: 1 WETH = 1000 USDC (6 dec) → 25*1000 + 25K = $50K = oracle
+        swapRouter6.setExchangeRate(address(weth), 1000e6);
 
         // Alice deposits LP worth $50K
         oracle.setPrice(50_000e18); // Oracle always returns 18 decimals

@@ -223,7 +223,13 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
             // maxBorrow = maxBorrowUsd * 10^decimals / price
             return Math.mulDiv(maxBorrowUsd, 10 ** borrowDecimals, borrowAssetPrice);
         }
-        // Fallback: assume 18-dec USD-pegged (backwards compatible)
+        // Fallback: assume USD-pegged, convert 18-dec USD to borrow asset decimals
+        uint8 borrowDecimals = IERC20(config.borrowAsset).decimals();
+        if (borrowDecimals < 18) {
+            return maxBorrowUsd / (10 ** (18 - borrowDecimals));
+        } else if (borrowDecimals > 18) {
+            return maxBorrowUsd * (10 ** (borrowDecimals - 18));
+        }
         return maxBorrowUsd;
     }
 

@@ -544,13 +544,14 @@ contract PositionManagerTest is Test {
         vm.prank(alice);
         uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
 
-        // Mock LendingEngine.getDebt to return $5,000
+        // Mock LendingEngine.getDebt to return $5,000 in 6-dec USDC (market's borrow asset)
         vm.mockCall(
-            lendingEngine, abi.encodeWithSelector(LendingEngine.getDebt.selector, posId), abi.encode(uint256(5000e18))
+            lendingEngine, abi.encodeWithSelector(LendingEngine.getDebt.selector, posId), abi.encode(uint256(5000e6))
         );
 
         uint256 hf = pm.getHealthFactor(posId);
-        // HF = (10000 * 7500 * 1e18) / (5000 * 10000) = 1.5e18
+        // debtUsd = 5000e6 normalized to 18 dec = 5000e18
+        // HF = (10000e18 * 7500 * 1e18) / (5000e18 * 10000) = 1.5e18
         assertEq(hf, 1.5e18);
 
         vm.clearMockedCalls();
@@ -560,9 +561,9 @@ contract PositionManagerTest is Test {
         vm.prank(alice);
         uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
 
-        // Mock LendingEngine.getDebt to return $5,000
+        // Mock LendingEngine.getDebt to return $5,000 in 6-dec USDC
         vm.mockCall(
-            lendingEngine, abi.encodeWithSelector(LendingEngine.getDebt.selector, posId), abi.encode(uint256(5000e18))
+            lendingEngine, abi.encodeWithSelector(LendingEngine.getDebt.selector, posId), abi.encode(uint256(5000e6))
         );
 
         // Set oracle to 0 after deposit
@@ -783,18 +784,19 @@ contract PositionManagerTest is Test {
     }
 
     function test_getHealthFactor_fallbackWithoutRegistry() public {
-        // Without PriceFeedRegistry, falls back to assuming 18-dec USD-pegged
+        // Without PriceFeedRegistry, fallback normalizes 6-dec debt to 18-dec USD
         oracle.setPrice(10_000e18);
 
         vm.prank(alice);
         uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
 
+        // Market uses 6-dec USDC, so mock debt in 6 decimals
         vm.mockCall(
-            lendingEngine, abi.encodeWithSelector(LendingEngine.getDebt.selector, posId), abi.encode(uint256(5000e18))
+            lendingEngine, abi.encodeWithSelector(LendingEngine.getDebt.selector, posId), abi.encode(uint256(5000e6))
         );
 
         uint256 hf = pm.getHealthFactor(posId);
-        assertEq(hf, 1.5e18, "Fallback must work for 18-dec tokens");
+        assertEq(hf, 1.5e18, "Fallback must normalize 6-dec debt correctly");
 
         vm.clearMockedCalls();
     }
