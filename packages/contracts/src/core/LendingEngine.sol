@@ -16,19 +16,30 @@ import {Market} from "../markets/Market.sol";
 /// @dev UUPS upgradeable + reentrancy protected.
 ///      Interest accrual is delegated to Market (single source of truth).
 ///      LendingEngine reads Market.borrowIndex() for per-position debt calculation.
-///      No duplicate interest tracking — eliminates LE-2 divergence bug.
+///
+///      Important for integrators:
+///      - getDebt() returns debt as of the last on-chain accrual, NOT real-time.
+///        Call accrueInterest(marketId) first for up-to-date values.
+///      - repay() is permissionless — anyone can repay any position's debt (payer = msg.sender).
+///        This is intentional (same as Aave/Compound — generous repayment).
+///      - repayOnBehalf() is restricted to authorized contracts (LiquidationEngine).
+///      - debtInfo is public but shows rebased principal, not interest-accrued total. Use getDebt().
+///      - borrowCooldownBlocks is chain-dependent: 50 blocks = ~10min on ETH, ~100s on L2s.
 contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, ReentrancyGuardTransient {
     ProtocolCore public core;
     PositionManager public positionManager;
 
     struct DebtInfo {
-        uint256 principal; // Current debt (rebased at each interaction)
-        uint256 borrowIndex; // Market's borrowIndex snapshot at last update
+        uint256 principal; // Rebased principal (NOT the interest-accrued total — use getDebt())
+        uint256 borrowIndex; // Market's borrowIndex snapshot at last interaction
     }
 
+    /// @dev Use getDebt(positionId) for the interest-accrued total. This raw mapping shows
+    ///      only the rebased principal at the last borrow/repay interaction.
     mapping(uint256 => DebtInfo) public debtInfo;
 
     /// @notice Blocks after deposit before borrowing is allowed (flash loan defense)
+    /// @dev Chain-dependent: 50 blocks = ~10min on ETH mainnet, ~100s on Arbitrum/Base
     uint256 public borrowCooldownBlocks = 1;
     uint256 public constant MIN_COOLDOWN = 1;
     uint256 public constant MAX_COOLDOWN = 50;
@@ -54,12 +65,13 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
         require(_core != address(0) && _positionManager != address(0), "ZERO_ADDRESS");
         core = ProtocolCore(_core);
         positionManager = PositionManager(_positionManager);
-        borrowCooldownBlocks = 1;
+        borrowCooldownBlocks = 1; // State var defaults don't run in proxy
     }
 
     function _authorizeUpgrade(address) internal override onlyOwner {}
 
     /// @notice Set borrow cooldown (blocks after deposit before borrowing allowed)
+    /// @dev Chain-dependent: on ETH mainnet 50 blocks = ~10min, on L2s ~100s
     function setBorrowCooldown(uint256 _blocks) external onlyOwner {
         require(_blocks >= MIN_COOLDOWN && _blocks <= MAX_COOLDOWN, "OUT_OF_BOUNDS");
         emit BorrowCooldownUpdated(borrowCooldownBlocks, _blocks);
@@ -84,7 +96,7 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
         require(block.number > pos.depositBlock + borrowCooldownBlocks, "BORROW_COOLDOWN");
 
         // Accrue interest in Market (single source of truth)
-        address marketAddr = core.markets(pos.marketId);
+        address marketAddr = _getMarketAddr(pos.marketId);
         Market market = Market(marketAddr);
         market.accrueInterest();
 
@@ -94,12 +106,7 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
         uint256 maxBorrow = _getMaxBorrow(positionId, marketAddr);
         require(newTotalDebt <= maxBorrow, "EXCEEDS_MAX_LTV");
 
-        // Check market borrow cap (LE-3)
-        IMarket.MarketConfig memory config = IMarket(marketAddr).getConfig();
-        IMarket.MarketState memory mState = IMarket(marketAddr).getMarketState();
-        if (config.borrowCap > 0) {
-            require(mState.totalBorrow + amount <= config.borrowCap, "BORROW_CAP_EXCEEDED");
-        }
+        // Borrow cap is enforced inside Market.transferOut() — no redundant check here
 
         // Update debt tracking — snapshot Market's current borrowIndex
         uint256 currentBorrowIndex = market.borrowIndex();
@@ -109,20 +116,22 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
         // Update position manager status
         positionManager.updateDebt(positionId, newTotalDebt);
 
-        // Market transfers borrow asset to borrower
+        // Market transfers borrow asset to borrower (enforces borrow cap + liquidity check)
         market.transferOut(msg.sender, amount);
 
         emit Borrowed(positionId, msg.sender, amount, newTotalDebt);
     }
 
     /// @inheritdoc ILendingEngine
+    /// @dev Permissionless — anyone can repay any position's debt (payer = msg.sender).
+    ///      This is standard DeFi practice (same as Aave/Compound).
     function repay(uint256 positionId, uint256 amount) external whenNotPaused nonReentrant {
         _repayInternal(positionId, amount, msg.sender);
     }
 
     /// @notice Repay debt on behalf of a borrower (used by LiquidationEngine)
-    /// @dev Payer must be msg.sender itself — prevents draining arbitrary approved addresses.
-    ///      The calling contract (e.g., LiquidationEngine) must hold the tokens and be the payer.
+    /// @dev Only callable by contracts authorized in PositionManager (e.g., LiquidationEngine).
+    ///      Payer is always msg.sender — the calling contract must hold the repayment tokens.
     function repayOnBehalf(uint256 positionId, uint256 repayAmount) external whenNotPaused nonReentrant {
         require(positionManager.authorized(msg.sender), "NOT_AUTHORIZED");
         _repayInternal(positionId, repayAmount, msg.sender);
@@ -131,22 +140,25 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
     // --- View ---
 
     /// @inheritdoc ILendingEngine
+    /// @dev Returns debt as of the last on-chain accrual. For real-time values,
+    ///      call accrueInterest(marketId) first. This is a known limitation
+    ///      shared with Compound's borrowBalanceStored.
     function getDebt(uint256 positionId) external view returns (uint256) {
         PositionManager.Position memory pos = positionManager.getPosition(positionId);
-        address marketAddr = core.markets(pos.marketId);
+        address marketAddr = _getMarketAddr(pos.marketId);
         return _getCurrentDebt(positionId, Market(marketAddr));
     }
 
     /// @inheritdoc ILendingEngine
     function getMaxBorrow(uint256 positionId) external view returns (uint256) {
         PositionManager.Position memory pos = positionManager.getPosition(positionId);
-        address marketAddr = core.markets(pos.marketId);
+        address marketAddr = _getMarketAddr(pos.marketId);
         return _getMaxBorrow(positionId, marketAddr);
     }
 
     /// @inheritdoc ILendingEngine
     function accrueInterest(uint256 marketId) public {
-        address marketAddr = core.markets(marketId);
+        address marketAddr = _getMarketAddr(marketId);
         Market(marketAddr).accrueInterest();
     }
 
@@ -155,8 +167,7 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
     function _repayInternal(uint256 positionId, uint256 amount, address payer) internal {
         PositionManager.Position memory pos = positionManager.getPosition(positionId);
 
-        // Accrue interest in Market
-        address marketAddr = core.markets(pos.marketId);
+        address marketAddr = _getMarketAddr(pos.marketId);
         Market market = Market(marketAddr);
         market.accrueInterest();
 
@@ -169,13 +180,10 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
 
         uint256 remainingDebt = currentDebt - repayAmount;
 
-        // Update debt tracking with current Market borrowIndex
         debtInfo[positionId] = DebtInfo({principal: remainingDebt, borrowIndex: market.borrowIndex()});
 
-        // Update position manager status
         positionManager.updateDebt(positionId, remainingDebt);
 
-        // Market pulls borrow asset from payer
         market.transferIn(payer, repayAmount);
 
         emit Repaid(positionId, payer, repayAmount, remainingDebt);
@@ -183,13 +191,14 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
 
     /// @notice Calculate current debt including accrued interest
     /// @dev debt = principal * (currentBorrowIndex / positionBorrowIndex)
-    ///      Uses Market.borrowIndex() as the single source of truth
+    ///      Uses Market.borrowIndex() as the single source of truth.
+    ///      Reverts with INDEX_ZERO if either index is 0 (should not happen post-init).
     function _getCurrentDebt(uint256 positionId, Market market) internal view returns (uint256) {
         DebtInfo memory info = debtInfo[positionId];
         if (info.principal == 0) return 0;
 
         uint256 currentIndex = market.borrowIndex();
-        if (currentIndex == 0 || info.borrowIndex == 0) return info.principal;
+        require(currentIndex > 0 && info.borrowIndex > 0, "INDEX_ZERO");
 
         return (info.principal * currentIndex) / info.borrowIndex;
     }
@@ -198,6 +207,13 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
         uint256 collateralValue = positionManager.getPositionValue(positionId);
         IMarket.MarketConfig memory config = IMarket(marketAddr).getConfig();
         return (collateralValue * config.maxLtv) / 10_000;
+    }
+
+    /// @notice Get market address with revert on invalid market
+    function _getMarketAddr(uint256 marketId) internal view returns (address) {
+        address marketAddr = core.markets(marketId);
+        require(marketAddr != address(0), "MARKET_NOT_FOUND");
+        return marketAddr;
     }
 
     // --- Storage Gap (UUPS upgrade safety) ---

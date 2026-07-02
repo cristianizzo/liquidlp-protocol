@@ -419,7 +419,7 @@ contract FullLifecycleTest is Test {
     // ========================================================
 
     function test_borrowCap_enforced() public {
-        _supplyToMarket(lender1, 10_000_000e18);
+        _supplyToMarket(lender1, 20_000_000e18); // Supply more than cap so liquidity isn't the bottleneck
 
         // Market has 10M cap. Borrow close to cap.
         oracle.setPrice(5_000_000e18); // $5M collateral

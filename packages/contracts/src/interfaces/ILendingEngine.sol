@@ -8,7 +8,8 @@ interface ILendingEngine {
 
     event Repaid(uint256 indexed positionId, address indexed repayer, uint256 amount, uint256 remainingDebt);
 
-    event InterestAccrued(uint256 indexed marketId, uint256 interestAmount, uint256 timestamp);
+    // Note: InterestAccrued is emitted by Market.accrueInterest(), not LendingEngine.
+    // LendingEngine delegates accrual entirely to Market as the single source of truth.
 
     /// @notice Borrow assets against a deposited LP position
     /// @param positionId The position to borrow against
