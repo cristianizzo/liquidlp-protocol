@@ -53,13 +53,15 @@ contract PriceFeedRegistry {
     /// @notice Get token price in USD (18 decimals)
     /// @param token Token address
     /// @return price USD price normalized to 18 decimals
-    function getPrice(address token) external view returns (uint256 price) {
+    function getPrice(address token) public view returns (uint256 price) {
         address feed = priceFeeds[token];
         require(feed != address(0), "NO_PRICE_FEED");
 
-        (, int256 answer,, uint256 updatedAt,) = IAggregatorV3(feed).latestRoundData();
+        (uint80 roundId, int256 answer,, uint256 updatedAt, uint80 answeredInRound) =
+            IAggregatorV3(feed).latestRoundData();
         require(answer > 0, "INVALID_PRICE");
-        require(block.timestamp - updatedAt <= maxStaleness, "STALE_PRICE");
+        require(updatedAt > 0 && answeredInRound >= roundId, "STALE_ROUND");
+        require(block.timestamp >= updatedAt && block.timestamp - updatedAt <= maxStaleness, "STALE_PRICE");
 
         uint8 feedDecimals = IAggregatorV3(feed).decimals();
         if (feedDecimals < 18) {
@@ -77,9 +79,7 @@ contract PriceFeedRegistry {
     /// @param tokenDecimals Token's decimal count
     /// @return usdValue USD value in 18 decimals
     function getUsdValue(address token, uint256 amount, uint8 tokenDecimals) external view returns (uint256 usdValue) {
-        uint256 price = this.getPrice(token);
-        // usdValue = amount * price / 10^tokenDecimals
-        // Both price and result are 18 decimals
+        uint256 price = getPrice(token);
         usdValue = (amount * price) / (10 ** tokenDecimals);
     }
 }

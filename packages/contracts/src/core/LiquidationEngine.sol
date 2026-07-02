@@ -15,6 +15,7 @@ import {ProtocolCore} from "./ProtocolCore.sol";
 import {PositionManager} from "./PositionManager.sol";
 import {LendingEngine} from "./LendingEngine.sol";
 import {FeeCollector} from "./FeeCollector.sol";
+import {PriceFeedRegistry} from "../oracle/PriceFeedRegistry.sol";
 
 /// @title LiquidationEngine
 /// @notice Atomic liquidation: seize LP → unwind → swap → repay → profit to liquidator
@@ -139,15 +140,14 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
         address borrowAsset = config.borrowAsset;
 
         // Step 3: Calculate collateral to seize in USD (18 decimals)
-        // repayAmount is in borrow asset decimals (e.g., 6 for USDC, 18 for DAI)
-        // positionValue from oracle is always 18 decimals USD
-        // We must normalize to the same scale before computing proportions
+        // Convert repayAmount to USD via PriceFeedRegistry (Aave-style)
+        // This works for any borrow asset (USDC, WBTC, ETH, etc.)
         uint256 bonus = config.liquidationBonus;
         uint8 borrowDecimals = IERC20(borrowAsset).decimals();
         uint256 collateralToSeizeNormalized;
         {
-            uint256 repayNormalized = _normalizeTo18(repayAmount, borrowDecimals);
-            collateralToSeizeNormalized = repayNormalized + ((repayNormalized * bonus) / 10_000);
+            uint256 repayUsd = _getRepayValueUsd(borrowAsset, repayAmount, borrowDecimals);
+            collateralToSeizeNormalized = repayUsd + ((repayUsd * bonus) / 10_000);
         }
 
         // Step 4: Pull repayment from liquidator (in borrow asset decimals)
@@ -189,19 +189,11 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
         uint256 totalReceived = _swapToBorrowAsset(pos.token0, pos.token1, amount0, amount1, borrowAsset);
 
         // Step 8b: Validate total received against oracle-expected value (sandwich attack protection)
-        // collateralToSeizeNormalized is the oracle-expected USD value (18 dec) of what was unwound.
-        // totalReceived is in borrow asset decimals. Normalize and compare.
-        // NOTE: This assumes borrow asset is USD-pegged (1 token = $1 after normalization).
-        //       For non-USD borrow assets, this comparison needs a price feed conversion.
-        //       See LiquidationSlippage.t.sol for edge case coverage:
-        //       - Non-USD borrow asset (WBTC): reverts because token amount ≠ USD value
-        //       - Borrow asset depeg below $1: passes (more tokens received)
-        //       - Borrow asset premium above $1: may revert (fewer tokens)
-        //       - Critically underwater + bonus: may revert even at 0% slippage
+        // Both collateralToSeizeNormalized and receivedUsd are in 18-dec USD
         {
-            uint256 receivedNormalized = _normalizeTo18(totalReceived, borrowDecimals);
+            uint256 receivedUsd = _getRepayValueUsd(borrowAsset, totalReceived, borrowDecimals);
             uint256 minAcceptable = (collateralToSeizeNormalized * (10_000 - maxSwapSlippageBps)) / 10_000;
-            require(receivedNormalized >= minAcceptable, "SWAP_SLIPPAGE_EXCEEDED");
+            require(receivedUsd >= minAcceptable, "SWAP_SLIPPAGE_EXCEEDED");
         }
 
         // Step 9: Calculate profit and take protocol fee
@@ -284,6 +276,17 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
         require(amount > 0, "ZERO_AMOUNT");
         OZIERC20(token).safeTransfer(to, amount);
         emit TokensRescued(token, to, amount);
+    }
+
+    /// @notice Convert borrow asset amount to 18-dec USD value
+    /// @dev Uses PriceFeedRegistry if available, falls back to decimal normalization (assumes $1 peg)
+    function _getRepayValueUsd(address borrowAsset, uint256 amount, uint8 decimals) internal view returns (uint256) {
+        PriceFeedRegistry registry = positionManager.priceFeedRegistry();
+        if (address(registry) != address(0)) {
+            return registry.getUsdValue(borrowAsset, amount, decimals);
+        }
+        // Fallback: assume USD-pegged (1 token = $1)
+        return _normalizeTo18(amount, decimals);
     }
 
     /// @dev Swap non-borrow-asset tokens to borrow asset.
