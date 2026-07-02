@@ -151,7 +151,10 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
         }
 
         // Step 4: Pull repayment from liquidator (in borrow asset decimals)
+        // Balance-delta check: ensure exact amount received (rejects fee-on-transfer tokens)
+        uint256 balBefore = IERC20(borrowAsset).balanceOf(address(this));
         OZIERC20(borrowAsset).safeTransferFrom(msg.sender, address(this), repayAmount);
+        require(IERC20(borrowAsset).balanceOf(address(this)) - balBefore == repayAmount, "FEE_ON_TRANSFER_UNSUPPORTED");
 
         // Step 5: Approve market and repay debt via LendingEngine
         OZIERC20(borrowAsset).forceApprove(marketAddr, repayAmount);
@@ -297,9 +300,10 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
     /// @dev Swap non-borrow-asset tokens to borrow asset.
     ///      Slippage protection: the swap router implementation is responsible for
     ///      price validation (e.g., Chainlink oracle check, AMM TWAP).
-    ///      We pass minAmountOut = 0 here because input-based slippage is meaningless
-    ///      for cross-token swaps with different prices/decimals (1 WBTC ≠ 1 USDC).
-    ///      The maxSwapSlippageBps parameter is passed to the router for its use.
+    ///      We pass minAmountOut = 0 to the router because per-swap slippage is checked
+    ///      post-trade against oracle value (Step 8b), not per-swap.
+    ///      This is intentional: cross-token swaps with different prices/decimals
+    ///      (1 WBTC ≠ 1 USDC) make input-based minAmountOut meaningless.
     function _swapToBorrowAsset(
         address token0,
         address token1,
