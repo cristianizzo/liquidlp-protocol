@@ -128,8 +128,12 @@ contract ProtocolCore {
     }
 
     /// @notice Step 1: Propose new owner (two-step transfer)
+    /// @dev Overwrites any existing pending transfer with a cancellation event
     function transferOwnership(address newOwner) external onlyOwner {
         require(newOwner != address(0), "ZERO_ADDRESS");
+        if (pendingOwner != address(0)) {
+            emit OwnershipTransferCancelled(owner, pendingOwner);
+        }
         pendingOwner = newOwner;
         emit OwnershipTransferStarted(owner, newOwner);
     }

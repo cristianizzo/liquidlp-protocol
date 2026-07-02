@@ -92,6 +92,12 @@ contract ProtocolCoreTest is Test {
         core.registerAdapter(ILPAdapter.LPType.UniswapV3, address(0));
     }
 
+    function test_registerAdapter_revertsNotContract() public {
+        vm.prank(owner);
+        vm.expectRevert("NOT_CONTRACT");
+        core.registerAdapter(ILPAdapter.LPType.UniswapV3, makeAddr("eoa"));
+    }
+
     function test_registerAdapter_guardianCannotRegister() public {
         vm.prank(guardian);
         vm.expectRevert("NOT_OWNER");
@@ -122,6 +128,12 @@ contract ProtocolCoreTest is Test {
         vm.prank(owner);
         vm.expectRevert("ZERO_ADDRESS");
         core.registerOracle(ILPAdapter.LPType.UniswapV3, address(0));
+    }
+
+    function test_registerOracle_revertsNotContract() public {
+        vm.prank(owner);
+        vm.expectRevert("NOT_CONTRACT");
+        core.registerOracle(ILPAdapter.LPType.UniswapV3, makeAddr("eoa"));
     }
 
     // ========== maxRegisteredLPType (PM-4) ==========
@@ -200,6 +212,12 @@ contract ProtocolCoreTest is Test {
         vm.prank(owner);
         vm.expectRevert("ZERO_ADDRESS");
         core.registerMarket(address(0));
+    }
+
+    function test_registerMarket_revertsNotContract() public {
+        vm.prank(owner);
+        vm.expectRevert("NOT_CONTRACT");
+        core.registerMarket(makeAddr("eoa"));
     }
 
     function test_registerMarket_revertsNotAuthorized() public {
@@ -374,6 +392,30 @@ contract ProtocolCoreTest is Test {
         vm.prank(user);
         vm.expectRevert("NOT_PENDING_OWNER");
         core.acceptOwnership();
+    }
+
+    function test_transferOwnership_overwriteEmitsCancellation() public {
+        address alice = makeAddr("alice");
+        address bob = makeAddr("bob");
+
+        vm.prank(owner);
+        core.transferOwnership(alice);
+        assertEq(core.pendingOwner(), alice);
+
+        // Overwrite with bob — should emit cancellation for alice
+        vm.recordLogs();
+        vm.prank(owner);
+        core.transferOwnership(bob);
+
+        Vm.Log[] memory entries = vm.getRecordedLogs();
+        bool foundCancellation = false;
+        for (uint256 i = 0; i < entries.length; i++) {
+            if (entries[i].topics[0] == keccak256("OwnershipTransferCancelled(address,address)")) {
+                foundCancellation = true;
+            }
+        }
+        assertTrue(foundCancellation, "Must emit cancellation for overwritten pending transfer");
+        assertEq(core.pendingOwner(), bob);
     }
 
     function test_transferOwnership_newOwnerCanAct() public {
