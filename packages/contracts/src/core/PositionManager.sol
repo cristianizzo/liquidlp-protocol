@@ -250,6 +250,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         } else {
             // Fallback: normalize debt to 18 decimals (assumes USD-pegged borrow asset)
             uint8 borrowDecimals = IERC20(config.borrowAsset).decimals();
+            require(borrowDecimals <= 36, "INVALID_DECIMALS");
             if (borrowDecimals < 18) {
                 debtUsd = debt * (10 ** (18 - borrowDecimals));
             } else if (borrowDecimals > 18) {

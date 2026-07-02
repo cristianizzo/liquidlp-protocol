@@ -225,6 +225,7 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
         }
         // Fallback: assume USD-pegged, convert 18-dec USD to borrow asset decimals
         uint8 borrowDecimals = IERC20(config.borrowAsset).decimals();
+        require(borrowDecimals <= 36, "INVALID_DECIMALS");
         if (borrowDecimals < 18) {
             return maxBorrowUsd / (10 ** (18 - borrowDecimals));
         } else if (borrowDecimals > 18) {

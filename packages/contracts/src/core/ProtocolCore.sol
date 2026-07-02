@@ -35,6 +35,7 @@ contract ProtocolCore {
     event AdapterRegistered(ILPAdapter.LPType indexed lpType, address indexed adapter);
     event OracleRegistered(ILPAdapter.LPType indexed lpType, address indexed oracle);
     event MarketRegistered(uint256 indexed marketId, address indexed market);
+    event MarketFactoryUpdated(address indexed oldFactory, address indexed newFactory);
     event PoolWhitelisted(address indexed pool);
     event PoolRemoved(address indexed pool);
     event Paused(address indexed by);
@@ -86,6 +87,7 @@ contract ProtocolCore {
 
     function setMarketFactory(address _factory) external onlyOwner {
         require(_factory != address(0), "ZERO_ADDRESS");
+        emit MarketFactoryUpdated(marketFactory, _factory);
         marketFactory = _factory;
     }
 
