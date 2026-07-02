@@ -148,7 +148,9 @@ abstract contract ForkTestBase is Test {
         v3Adapter = new UniswapV3Adapter(
             Constants.UNI_V3_NFT_MANAGER, Constants.UNI_V3_FACTORY, address(core), address(positionManager)
         );
-        v2Adapter = new UniswapV2Adapter(Constants.UNI_V2_FACTORY, Constants.UNI_V2_ROUTER, address(positionManager));
+        v2Adapter = new UniswapV2Adapter(
+            Constants.UNI_V2_FACTORY, Constants.UNI_V2_ROUTER, address(core), address(positionManager)
+        );
 
         // Register adapters
         core.registerAdapter(ILPAdapter.LPType.UniswapV3, address(v3Adapter));
