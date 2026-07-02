@@ -24,10 +24,11 @@
     "clean": "turbo run clean && rm -rf node_modules"
   },
   "devDependencies": {
-    "turbo": "^2.5.0",
+    "eslint": "^9.0.0",
     "prettier": "^3.5.0",
     "prettier-plugin-solidity": "^1.4.0",
-    "eslint": "^9.0.0",
+    "solhint": "^6.2.3",
+    "turbo": "^2.5.0",
     "typescript": "^5.8.0"
   },
   "engines": {

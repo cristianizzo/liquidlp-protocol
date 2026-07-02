@@ -15,6 +15,10 @@
     "fork:base": "anvil --fork-url $BASE_RPC_URL --block-time 2",
     "fork:arb": "anvil --fork-url $ARB_RPC_URL --block-time 1",
     "snapshot": "forge snapshot",
+    "lint": "solhint 'src/**/*.sol'",
+    "lint:fix": "solhint 'src/**/*.sol' --fix",
+    "fmt": "forge fmt",
+    "fmt:check": "forge fmt --check",
     "clean": "forge clean"
   }
 }
