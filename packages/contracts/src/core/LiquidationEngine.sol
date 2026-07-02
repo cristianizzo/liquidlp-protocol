@@ -189,10 +189,14 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
         uint256 totalReceived = _swapToBorrowAsset(pos.token0, pos.token1, amount0, amount1, borrowAsset);
 
         // Step 8b: Validate total received against oracle-expected value (sandwich attack protection)
-        // Both collateralToSeizeNormalized and receivedUsd are in 18-dec USD
+        // When position is underwater (seize >= positionValue), use positionValue as baseline
+        // instead of the bonus-inflated collateralToSeize. This ensures underwater positions
+        // remain liquidatable — preventing bad debt is more important than the liquidator bonus.
         {
             uint256 receivedUsd = _getRepayValueUsd(borrowAsset, totalReceived, borrowDecimals);
-            uint256 minAcceptable = (collateralToSeizeNormalized * (10_000 - maxSwapSlippageBps)) / 10_000;
+            uint256 slippageBaseline =
+                collateralToSeizeNormalized >= positionValue ? positionValue : collateralToSeizeNormalized;
+            uint256 minAcceptable = (slippageBaseline * (10_000 - maxSwapSlippageBps)) / 10_000;
             require(receivedUsd >= minAcceptable, "SWAP_SLIPPAGE_EXCEEDED");
         }
 

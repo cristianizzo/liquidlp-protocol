@@ -169,23 +169,22 @@ contract LiquidationSlippageTest is Test {
 
     // ========== Normal Case ==========
 
-    function test_slippage_criticallyUnderwater_fairRate_reverts() public {
+    function test_slippage_criticallyUnderwater_fairRate_succeeds() public {
         // When HF < 0.95 (critical): maxRepay = totalDebt = $30K
         // collateralToSeize = $30K * 1.05 = $31.5K (includes 5% bonus)
-        // But position only worth $30K after drop → unwind all → get $30K
-        // minAcceptable = $31.5K * 0.97 = $30.555K > $30K → reverts EVEN at 0% slippage!
-        // This is a known edge case: critically underwater + bonus makes slippage tight.
+        // But position only worth $30K → seize >= positionValue → slippage baseline = positionValue
+        // minAcceptable = $30K * 0.97 = $29.1K. Received = $30K → passes.
+        // Liquidator won't get full bonus, but bad debt is prevented.
         uint256 posId = _createLiquidatableWithSlippage(0);
-        _expectSlippageRevert(posId);
+        _doLiquidate(posId);
+        assertEq(pm.getPosition(posId).amount, 0, "Full position should be unwound");
     }
 
     // ========== Price Impact ==========
 
-    // NOTE: Critically underwater positions (HF < 0.95) with full liquidation can fail
-    // the slippage check even at 0% swap slippage because:
-    // collateralToSeize = repay * 1.05 (bonus) > positionValue when position is underwater.
-    // See test_slippage_criticallyUnderwater_fairRate_reverts for this edge case.
-    // Partial liquidation scenarios (below) test the slippage boundaries properly.
+    // NOTE: For critically underwater positions (HF < 0.95), the slippage baseline
+    // uses positionValue instead of the bonus-inflated collateralToSeize.
+    // This ensures underwater positions remain liquidatable (bad debt prevention).
 
     // ========== Adjusted Scenario: Less Underwater ==========
     // To properly test slippage, use a position where oracle value > collateralToSeize
