@@ -103,6 +103,7 @@ contract FeeCollector is ReentrancyGuard {
         uint256 balanceBefore = IERC20(token).balanceOf(address(this));
         require(IERC20(token).transferFrom(from, address(this), amount), "FEE_TRANSFER_FAILED");
         uint256 actualReceived = IERC20(token).balanceOf(address(this)) - balanceBefore;
+        require(actualReceived > 0, "ZERO_RECEIVED");
 
         accumulatedFees[token] += actualReceived;
         emit FeesCollected(token, actualReceived, from, feeType);
