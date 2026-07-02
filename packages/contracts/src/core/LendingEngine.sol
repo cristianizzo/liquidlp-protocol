@@ -145,16 +145,14 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
     ///      shared with Compound's borrowBalanceStored.
     function getDebt(uint256 positionId) external view returns (uint256) {
         PositionManager.Position memory pos = positionManager.getPosition(positionId);
-        address marketAddr = _getMarketAddrView(pos.marketId);
-        if (marketAddr == address(0)) return 0;
+        address marketAddr = _getMarketAddr(pos.marketId);
         return _getCurrentDebt(positionId, Market(marketAddr));
     }
 
     /// @inheritdoc ILendingEngine
     function getMaxBorrow(uint256 positionId) external view returns (uint256) {
         PositionManager.Position memory pos = positionManager.getPosition(positionId);
-        address marketAddr = _getMarketAddrView(pos.marketId);
-        if (marketAddr == address(0)) return 0;
+        address marketAddr = _getMarketAddr(pos.marketId);
         return _getMaxBorrow(positionId, marketAddr);
     }
 
@@ -194,7 +192,7 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
     /// @notice Calculate current debt including accrued interest
     /// @dev debt = principal * (currentBorrowIndex / positionBorrowIndex)
     ///      Uses Market.borrowIndex() as the single source of truth.
-    ///      Returns principal unchanged if either index is 0 (should not happen post-init).
+    ///      Reverts with INDEX_ZERO if either index is 0 (should not happen post-init).
     function _getCurrentDebt(uint256 positionId, Market market) internal view returns (uint256) {
         DebtInfo memory info = debtInfo[positionId];
         if (info.principal == 0) return 0;
@@ -216,11 +214,6 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
         address marketAddr = core.markets(marketId);
         require(marketAddr != address(0), "MARKET_NOT_FOUND");
         return marketAddr;
-    }
-
-    /// @notice Get market address without revert (for view functions)
-    function _getMarketAddrView(uint256 marketId) internal view returns (address) {
-        return core.markets(marketId);
     }
 
     // --- Storage Gap (UUPS upgrade safety) ---
