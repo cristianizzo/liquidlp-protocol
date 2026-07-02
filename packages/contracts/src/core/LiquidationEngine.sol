@@ -4,6 +4,8 @@ pragma solidity ^0.8.26;
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
+import {IERC20 as OZIERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ILiquidationEngine} from "../interfaces/ILiquidationEngine.sol";
 import {ILPAdapter} from "../interfaces/ILPAdapter.sol";
 import {IMarket} from "../interfaces/IMarket.sol";
@@ -18,7 +20,12 @@ import {FeeCollector} from "./FeeCollector.sol";
 /// @notice Atomic liquidation: seize LP → unwind → swap → repay → profit to liquidator
 /// @dev Liquidators only deal in borrow asset (e.g., USDC). Never touch LP tokens.
 ///      Reentrancy protected — multiple external calls during liquidation flow.
+///
+///      Slippage check assumes borrow asset is USD-pegged (USDC, USDT, DAI).
+///      For non-USD borrow assets, the oracle-vs-token comparison needs a price feed.
 contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable, ReentrancyGuardTransient {
+    using SafeERC20 for OZIERC20;
+
     ProtocolCore public core;
     PositionManager public positionManager;
     LendingEngine public lendingEngine;
@@ -127,6 +134,7 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
 
         // Step 2: Get market config
         address marketAddr = core.markets(pos.marketId);
+        require(marketAddr != address(0), "MARKET_NOT_FOUND");
         IMarket.MarketConfig memory config = IMarket(marketAddr).getConfig();
         address borrowAsset = config.borrowAsset;
 
@@ -143,12 +151,10 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
         }
 
         // Step 4: Pull repayment from liquidator (in borrow asset decimals)
-        require(IERC20(borrowAsset).transferFrom(msg.sender, address(this), repayAmount), "LIQ_PULL_FAILED");
+        OZIERC20(borrowAsset).safeTransferFrom(msg.sender, address(this), repayAmount);
 
         // Step 5: Approve market and repay debt via LendingEngine
-        // Reset approval first for USDT-compatibility (LIQ-6)
-        IERC20(borrowAsset).approve(marketAddr, 0);
-        IERC20(borrowAsset).approve(marketAddr, repayAmount);
+        OZIERC20(borrowAsset).forceApprove(marketAddr, repayAmount);
         lendingEngine.repayOnBehalf(positionId, repayAmount);
 
         // Step 6: Calculate liquidity to remove proportional to collateral seized
@@ -171,11 +177,13 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
 
         // Step 7: Atomic LP unwinding via adapter
         address adapterAddr = core.adapters(pos.lpType);
+        require(adapterAddr != address(0), "ADAPTER_NOT_SET");
         ILPAdapter adapter = ILPAdapter(adapterAddr);
-        (uint256 amount0, uint256 amount1) = adapter.unwind(pos.lpToken, pos.tokenId, liquidityToRemove);
 
-        // Step 7b: Update position amount to reflect removed liquidity
+        // Step 7a: Reduce position amount BEFORE external unwind call (CEI pattern)
         positionManager.reducePositionAmount(positionId, liquidityToRemove256);
+
+        (uint256 amount0, uint256 amount1) = adapter.unwind(pos.lpToken, pos.tokenId, liquidityToRemove);
 
         // Step 8: Swap non-borrow-asset tokens to borrow asset
         uint256 totalReceived = _swapToBorrowAsset(pos.token0, pos.token1, amount0, amount1, borrowAsset);
@@ -183,14 +191,15 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
         // Step 8b: Validate total received against oracle-expected value (sandwich attack protection)
         // collateralToSeizeNormalized is the oracle-expected USD value (18 dec) of what was unwound.
         // totalReceived is in borrow asset decimals. Normalize and compare.
-        // TODO: Fork test — verify this comparison is valid when:
-        //       - Borrow asset is not USD-pegged (e.g., ETH-denominated market)
-        //       - Borrow asset depegs temporarily (USDT, USDC depeg scenario)
-        //       - Large swap creates significant price impact beyond slippage tolerance
+        // NOTE: This assumes borrow asset is USD-pegged (1 token = $1 after normalization).
+        //       For non-USD borrow assets, this comparison needs a price feed conversion.
+        //       See LiquidationSlippage.t.sol for edge case coverage:
+        //       - Non-USD borrow asset (WBTC): reverts because token amount ≠ USD value
+        //       - Borrow asset depeg below $1: passes (more tokens received)
+        //       - Borrow asset premium above $1: may revert (fewer tokens)
+        //       - Critically underwater + bonus: may revert even at 0% slippage
         {
-            uint8 borrowDecimals = IERC20(borrowAsset).decimals();
             uint256 receivedNormalized = _normalizeTo18(totalReceived, borrowDecimals);
-            // Minimum acceptable: expected value minus slippage tolerance
             uint256 minAcceptable = (collateralToSeizeNormalized * (10_000 - maxSwapSlippageBps)) / 10_000;
             require(receivedNormalized >= minAcceptable, "SWAP_SLIPPAGE_EXCEEDED");
         }
@@ -202,9 +211,7 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
         if (grossProfit > 0 && address(feeCollector) != address(0)) {
             (protocolFee,) = feeCollector.calculateLiquidationFee(grossProfit);
             if (protocolFee > 0) {
-                // Send fee to FeeCollector (reset approval for USDT-compat)
-                IERC20(borrowAsset).approve(address(feeCollector), 0);
-                IERC20(borrowAsset).approve(address(feeCollector), protocolFee);
+                OZIERC20(borrowAsset).forceApprove(address(feeCollector), protocolFee);
                 feeCollector.collectFee(borrowAsset, protocolFee, address(this), "liquidation");
             }
         }
@@ -214,7 +221,7 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
         // Send remaining proceeds to liquidator
         uint256 liquidatorPayout = totalReceived - protocolFee;
         if (liquidatorPayout > 0) {
-            require(IERC20(borrowAsset).transfer(msg.sender, liquidatorPayout), "LIQ_PROFIT_TRANSFER_FAILED");
+            OZIERC20(borrowAsset).safeTransfer(msg.sender, liquidatorPayout);
         }
 
         // Step 10: If fully liquidated, return remaining LP THEN mark as liquidated
@@ -275,7 +282,7 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
     function rescueTokens(address token, address to, uint256 amount) external onlyOwner nonReentrant {
         require(token != address(0) && to != address(0), "ZERO_ADDRESS");
         require(amount > 0, "ZERO_AMOUNT");
-        require(IERC20(token).transfer(to, amount), "RESCUE_FAILED");
+        OZIERC20(token).safeTransfer(to, amount);
         emit TokensRescued(token, to, amount);
     }
 
@@ -300,8 +307,7 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
                 totalReceived += amount0;
             } else {
                 require(address(swapRouter) != address(0), "SWAP_ROUTER_NOT_SET");
-                IERC20(token0).approve(address(swapRouter), 0);
-                IERC20(token0).approve(address(swapRouter), amount0);
+                OZIERC20(token0).forceApprove(address(swapRouter), amount0);
                 totalReceived += swapRouter.swap(token0, borrowAsset, amount0, 0);
             }
         }
@@ -311,8 +317,7 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
                 totalReceived += amount1;
             } else {
                 require(address(swapRouter) != address(0), "SWAP_ROUTER_NOT_SET");
-                IERC20(token1).approve(address(swapRouter), 0);
-                IERC20(token1).approve(address(swapRouter), amount1);
+                OZIERC20(token1).forceApprove(address(swapRouter), amount1);
                 totalReceived += swapRouter.swap(token1, borrowAsset, amount1, 0);
             }
         }

@@ -7,7 +7,9 @@ import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/Reentrancy
 import {ILendingEngine} from "../interfaces/ILendingEngine.sol";
 import {IPositionManager} from "../interfaces/IPositionManager.sol";
 import {IMarket} from "../interfaces/IMarket.sol";
+import {IERC20} from "../interfaces/IERC20.sol";
 import {ProtocolCore} from "./ProtocolCore.sol";
+import {PriceFeedRegistry} from "../oracle/PriceFeedRegistry.sol";
 import {PositionManager} from "./PositionManager.sol";
 import {Market} from "../markets/Market.sol";
 
@@ -203,10 +205,23 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
         return (info.principal * currentIndex) / info.borrowIndex;
     }
 
+    /// @notice Calculate max borrow in borrow asset decimals
+    /// @dev collateralValue is 18-dec USD. Converts to borrow asset amount via oracle price.
     function _getMaxBorrow(uint256 positionId, address marketAddr) internal view returns (uint256) {
         uint256 collateralValue = positionManager.getPositionValue(positionId);
         IMarket.MarketConfig memory config = IMarket(marketAddr).getConfig();
-        return (collateralValue * config.maxLtv) / 10_000;
+        uint256 maxBorrowUsd = (collateralValue * config.maxLtv) / 10_000; // 18-dec USD
+
+        // Convert USD → borrow asset amount using oracle price
+        PriceFeedRegistry registry = positionManager.priceFeedRegistry();
+        if (address(registry) != address(0)) {
+            uint256 borrowAssetPrice = registry.getPrice(config.borrowAsset); // 18-dec USD per token
+            uint8 borrowDecimals = IERC20(config.borrowAsset).decimals();
+            // maxBorrow = maxBorrowUsd * 10^decimals / price
+            return (maxBorrowUsd * (10 ** borrowDecimals)) / borrowAssetPrice;
+        }
+        // Fallback: assume 18-dec USD-pegged (backwards compatible)
+        return maxBorrowUsd;
     }
 
     /// @notice Get market address with revert on invalid market

@@ -9,7 +9,9 @@ import {ILPAdapter} from "../interfaces/ILPAdapter.sol";
 import {ILPOracleHub} from "../interfaces/ILPOracleHub.sol";
 import {ILendingEngine} from "../interfaces/ILendingEngine.sol";
 import {IMarket} from "../interfaces/IMarket.sol";
+import {IERC20} from "../interfaces/IERC20.sol";
 import {ProtocolCore} from "./ProtocolCore.sol";
+import {PriceFeedRegistry} from "../oracle/PriceFeedRegistry.sol";
 
 /// @title PositionManager
 /// @notice Manages LP position deposits, withdrawals, and position state tracking
@@ -18,6 +20,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     ProtocolCore public core;
     ILPOracleHub public oracleHub;
     ILendingEngine public lendingEngine;
+    PriceFeedRegistry public priceFeedRegistry;
 
     mapping(uint256 => Position) internal _positions;
     mapping(address => uint256[]) internal _ownerPositions;
@@ -68,6 +71,12 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     function setLendingEngine(address _lendingEngine) external onlyOwner {
         require(_lendingEngine != address(0), "ZERO_ADDRESS");
         lendingEngine = ILendingEngine(_lendingEngine);
+    }
+
+    /// @notice Set the PriceFeedRegistry (needed for debt → USD conversion in health factor)
+    function setPriceFeedRegistry(address _registry) external onlyOwner {
+        require(_registry != address(0), "ZERO_ADDRESS");
+        priceFeedRegistry = PriceFeedRegistry(_registry);
     }
 
     // --- Admin ---
@@ -234,9 +243,20 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         address marketAddr = core.markets(pos.marketId);
         IMarket.MarketConfig memory config = IMarket(marketAddr).getConfig();
 
-        // HF = (collateralValue * liquidationThreshold) / (debt * 10000)
+        // Convert debt from borrow asset decimals to 18-dec USD value (Aave-style)
+        uint256 debtUsd;
+        if (address(priceFeedRegistry) != address(0)) {
+            uint8 borrowDecimals = IERC20(config.borrowAsset).decimals();
+            debtUsd = priceFeedRegistry.getUsdValue(config.borrowAsset, debt, borrowDecimals);
+        } else {
+            // Fallback: assume 18-dec USD-pegged borrow asset (backwards compatible)
+            debtUsd = debt;
+        }
+
+        // HF = (collateralValue * liquidationThreshold) / (debtUsd * 10000)
+        // Both collateralValue and debtUsd are in 18-dec USD
         // Scaled by 1e18 (1e18 = health factor of 1.0)
-        return (collateralValue * config.liquidationThreshold * 1e18) / (debt * 10_000);
+        return (collateralValue * config.liquidationThreshold * 1e18) / (debtUsd * 10_000);
     }
 
     /// @notice Get the block number when a position was deposited (for borrow cooldown)
