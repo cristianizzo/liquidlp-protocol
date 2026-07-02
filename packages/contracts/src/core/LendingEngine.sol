@@ -8,6 +8,7 @@ import {ILendingEngine} from "../interfaces/ILendingEngine.sol";
 import {IPositionManager} from "../interfaces/IPositionManager.sol";
 import {IMarket} from "../interfaces/IMarket.sol";
 import {IERC20} from "../interfaces/IERC20.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ProtocolCore} from "./ProtocolCore.sol";
 import {PriceFeedRegistry} from "../oracle/PriceFeedRegistry.sol";
 import {PositionManager} from "./PositionManager.sol";
@@ -220,7 +221,7 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
             uint8 borrowDecimals = IERC20(config.borrowAsset).decimals();
             require(borrowDecimals <= 36, "INVALID_DECIMALS");
             // maxBorrow = maxBorrowUsd * 10^decimals / price
-            return (maxBorrowUsd * (10 ** borrowDecimals)) / borrowAssetPrice;
+            return Math.mulDiv(maxBorrowUsd, 10 ** borrowDecimals, borrowAssetPrice);
         }
         // Fallback: assume 18-dec USD-pegged (backwards compatible)
         return maxBorrowUsd;

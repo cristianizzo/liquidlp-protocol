@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ProtocolCore} from "../core/ProtocolCore.sol";
 
 /// @notice Chainlink AggregatorV3 minimal interface
@@ -82,6 +83,6 @@ contract PriceFeedRegistry {
     function getUsdValue(address token, uint256 amount, uint8 tokenDecimals) external view returns (uint256 usdValue) {
         require(tokenDecimals <= 36, "INVALID_DECIMALS");
         uint256 price = getPrice(token);
-        usdValue = (amount * price) / (10 ** tokenDecimals);
+        usdValue = Math.mulDiv(amount, price, 10 ** tokenDecimals);
     }
 }
