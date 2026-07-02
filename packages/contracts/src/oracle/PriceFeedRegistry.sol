@@ -64,6 +64,7 @@ contract PriceFeedRegistry {
         require(block.timestamp >= updatedAt && block.timestamp - updatedAt <= maxStaleness, "STALE_PRICE");
 
         uint8 feedDecimals = IAggregatorV3(feed).decimals();
+        require(feedDecimals <= 36, "INVALID_FEED_DECIMALS");
         if (feedDecimals < 18) {
             price = uint256(answer) * (10 ** (18 - feedDecimals));
         } else if (feedDecimals > 18) {
@@ -76,9 +77,10 @@ contract PriceFeedRegistry {
     /// @notice Convert a token amount to USD value (18 decimals)
     /// @param token Token address
     /// @param amount Token amount in native decimals
-    /// @param tokenDecimals Token's decimal count
+    /// @param tokenDecimals Token's decimal count (must be <= 36)
     /// @return usdValue USD value in 18 decimals
     function getUsdValue(address token, uint256 amount, uint8 tokenDecimals) external view returns (uint256 usdValue) {
+        require(tokenDecimals <= 36, "INVALID_DECIMALS");
         uint256 price = getPrice(token);
         usdValue = (amount * price) / (10 ** tokenDecimals);
     }

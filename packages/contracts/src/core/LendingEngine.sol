@@ -216,7 +216,9 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
         PriceFeedRegistry registry = positionManager.priceFeedRegistry();
         if (address(registry) != address(0)) {
             uint256 borrowAssetPrice = registry.getPrice(config.borrowAsset); // 18-dec USD per token
+            require(borrowAssetPrice > 0, "ZERO_PRICE");
             uint8 borrowDecimals = IERC20(config.borrowAsset).decimals();
+            require(borrowDecimals <= 36, "INVALID_DECIMALS");
             // maxBorrow = maxBorrowUsd * 10^decimals / price
             return (maxBorrowUsd * (10 ** borrowDecimals)) / borrowAssetPrice;
         }

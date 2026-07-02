@@ -20,7 +20,6 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     ProtocolCore public core;
     ILPOracleHub public oracleHub;
     ILendingEngine public lendingEngine;
-    PriceFeedRegistry public priceFeedRegistry;
 
     mapping(uint256 => Position) internal _positions;
     mapping(address => uint256[]) internal _ownerPositions;
@@ -264,10 +263,14 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         return _positions[positionId].depositBlock;
     }
 
+    // --- New state vars (appended for UUPS upgrade safety) ---
+    PriceFeedRegistry public priceFeedRegistry;
+
     // --- Storage Gap (UUPS upgrade safety) ---
-    // Reserve 50 slots so future upgrades can add state variables
+    // Reserve slots so future upgrades can add state variables
     // without colliding with child contract storage.
-    uint256[50] private __gap;
+    // Reduced from 50 to 49 after adding priceFeedRegistry (1 slot used).
+    uint256[49] private __gap;
 
     // --- Internal ---
 

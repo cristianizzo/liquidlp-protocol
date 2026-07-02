@@ -22,8 +22,8 @@ import {PriceFeedRegistry} from "../oracle/PriceFeedRegistry.sol";
 /// @dev Liquidators only deal in borrow asset (e.g., USDC). Never touch LP tokens.
 ///      Reentrancy protected — multiple external calls during liquidation flow.
 ///
-///      Slippage check assumes borrow asset is USD-pegged (USDC, USDT, DAI).
-///      For non-USD borrow assets, the oracle-vs-token comparison needs a price feed.
+///      Slippage check converts borrow asset to USD via PriceFeedRegistry when configured.
+///      Falls back to USD-peg assumption (decimal normalization) when registry is not set.
 contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable, ReentrancyGuardTransient {
     using SafeERC20 for OZIERC20;
 
