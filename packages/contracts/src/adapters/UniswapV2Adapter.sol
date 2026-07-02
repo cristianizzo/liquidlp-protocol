@@ -133,7 +133,7 @@ contract UniswapV2Adapter is ILPAdapter {
         address token1 = pair.token1();
 
         // Approve router
-        pair.approve(address(v2Router), uint256(liquidityToRemove));
+        require(pair.approve(address(v2Router), uint256(liquidityToRemove)), "APPROVE_FAILED");
 
         // Remove liquidity — tokens to caller
         (amount0, amount1) = v2Router.removeLiquidity(
