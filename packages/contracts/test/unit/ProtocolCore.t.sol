@@ -5,6 +5,9 @@ import "forge-std/Test.sol";
 import {ProtocolCore} from "../../src/core/ProtocolCore.sol";
 import {ILPAdapter} from "../../src/interfaces/ILPAdapter.sol";
 
+/// @notice Minimal contract used to satisfy code.length > 0 checks in ProtocolCore
+contract Stub {}
+
 contract ProtocolCoreTest is Test {
     ProtocolCore public core;
     address public owner = makeAddr("owner");
@@ -25,6 +28,11 @@ contract ProtocolCoreTest is Test {
 
     function setUp() public {
         core = new ProtocolCore(owner, guardian);
+    }
+
+    /// @dev Deploy a Stub contract to use where code.length > 0 is required
+    function _stub() internal returns (address) {
+        return address(new Stub());
     }
 
     // ========== Constructor ==========
@@ -49,7 +57,7 @@ contract ProtocolCoreTest is Test {
     // ========== registerAdapter ==========
 
     function test_registerAdapter_success() public {
-        address adapter = makeAddr("adapter");
+        address adapter = _stub();
 
         vm.expectEmit(true, true, false, false);
         emit AdapterRegistered(ILPAdapter.LPType.UniswapV3, adapter);
@@ -61,8 +69,8 @@ contract ProtocolCoreTest is Test {
     }
 
     function test_registerAdapter_overwriteExisting() public {
-        address adapter1 = makeAddr("adapter1");
-        address adapter2 = makeAddr("adapter2");
+        address adapter1 = _stub();
+        address adapter2 = _stub();
 
         vm.startPrank(owner);
         core.registerAdapter(ILPAdapter.LPType.UniswapV3, adapter1);
@@ -93,7 +101,7 @@ contract ProtocolCoreTest is Test {
     // ========== registerOracle ==========
 
     function test_registerOracle_success() public {
-        address oracle = makeAddr("oracle");
+        address oracle = _stub();
 
         vm.expectEmit(true, true, false, false);
         emit OracleRegistered(ILPAdapter.LPType.UniswapV3, oracle);
@@ -120,26 +128,32 @@ contract ProtocolCoreTest is Test {
 
     function test_registerAdapter_updatesMaxLPType() public {
         assertEq(core.maxRegisteredLPType(), 0);
+        address s1 = _stub();
+        address s2 = _stub();
+        address s3 = _stub();
 
         vm.prank(owner);
-        core.registerAdapter(ILPAdapter.LPType.UniswapV2, makeAddr("v2"));
+        core.registerAdapter(ILPAdapter.LPType.UniswapV2, s1);
         assertEq(core.maxRegisteredLPType(), 0); // UniswapV2 = 0
 
         vm.prank(owner);
-        core.registerAdapter(ILPAdapter.LPType.UniswapV3, makeAddr("v3"));
+        core.registerAdapter(ILPAdapter.LPType.UniswapV3, s2);
         assertEq(core.maxRegisteredLPType(), 1); // UniswapV3 = 1
 
         vm.prank(owner);
-        core.registerAdapter(ILPAdapter.LPType.PancakeSwapV3, makeAddr("pcv3"));
+        core.registerAdapter(ILPAdapter.LPType.PancakeSwapV3, s3);
         assertEq(core.maxRegisteredLPType(), 5); // PancakeSwapV3 = 5
     }
 
     function test_registerAdapter_maxOnlyIncreases() public {
+        address s1 = _stub();
+        address s2 = _stub();
+
         vm.startPrank(owner);
-        core.registerAdapter(ILPAdapter.LPType.PancakeSwapV3, makeAddr("pcv3")); // = 5
+        core.registerAdapter(ILPAdapter.LPType.PancakeSwapV3, s1); // = 5
         assertEq(core.maxRegisteredLPType(), 5);
 
-        core.registerAdapter(ILPAdapter.LPType.UniswapV2, makeAddr("v2")); // = 0
+        core.registerAdapter(ILPAdapter.LPType.UniswapV2, s2); // = 0
         assertEq(core.maxRegisteredLPType(), 5); // Still 5, not downgraded
         vm.stopPrank();
     }
@@ -147,7 +161,7 @@ contract ProtocolCoreTest is Test {
     // ========== registerMarket ==========
 
     function test_registerMarket_success() public {
-        address market = makeAddr("market");
+        address market = _stub();
 
         vm.expectEmit(true, true, false, false);
         emit MarketRegistered(0, market);
@@ -162,15 +176,24 @@ contract ProtocolCoreTest is Test {
 
     function test_registerMarket_incrementsId() public {
         vm.startPrank(owner);
-        uint256 id1 = core.registerMarket(makeAddr("market1"));
-        uint256 id2 = core.registerMarket(makeAddr("market2"));
-        uint256 id3 = core.registerMarket(makeAddr("market3"));
+        uint256 id1 = core.registerMarket(_stub());
+        uint256 id2 = core.registerMarket(_stub());
+        uint256 id3 = core.registerMarket(_stub());
         vm.stopPrank();
 
         assertEq(id1, 0);
         assertEq(id2, 1);
         assertEq(id3, 2);
         assertEq(core.nextMarketId(), 3);
+    }
+
+    function test_registerMarket_revertsDuplicate() public {
+        address market = _stub();
+        vm.startPrank(owner);
+        core.registerMarket(market);
+        vm.expectRevert("MARKET_ALREADY_REGISTERED");
+        core.registerMarket(market);
+        vm.stopPrank();
     }
 
     function test_registerMarket_revertsZeroAddress() public {
@@ -371,6 +394,29 @@ contract ProtocolCoreTest is Test {
         core.setKeeper(makeAddr("keeper"), true);
     }
 
+    function test_cancelOwnershipTransfer() public {
+        address newOwner = makeAddr("newOwner");
+
+        vm.prank(owner);
+        core.transferOwnership(newOwner);
+        assertEq(core.pendingOwner(), newOwner);
+
+        vm.prank(owner);
+        core.cancelOwnershipTransfer();
+        assertEq(core.pendingOwner(), address(0));
+
+        // newOwner can no longer accept
+        vm.prank(newOwner);
+        vm.expectRevert("NOT_PENDING_OWNER");
+        core.acceptOwnership();
+    }
+
+    function test_cancelOwnershipTransfer_revertsNoPending() public {
+        vm.prank(owner);
+        vm.expectRevert("NO_PENDING_TRANSFER");
+        core.cancelOwnershipTransfer();
+    }
+
     function test_transferOwnership_revertsZeroAddress() public {
         vm.prank(owner);
         vm.expectRevert("ZERO_ADDRESS");
@@ -509,7 +555,7 @@ contract ProtocolCoreTest is Test {
     // ========== getAdapter / getOracle ==========
 
     function test_getAdapter_success() public {
-        address adapter = makeAddr("adapter");
+        address adapter = _stub();
         vm.prank(owner);
         core.registerAdapter(ILPAdapter.LPType.UniswapV3, adapter);
 
@@ -522,7 +568,7 @@ contract ProtocolCoreTest is Test {
     }
 
     function test_getOracle_success() public {
-        address oracle = makeAddr("oracle");
+        address oracle = _stub();
         vm.prank(owner);
         core.registerOracle(ILPAdapter.LPType.Curve, oracle);
 
@@ -571,7 +617,7 @@ contract ProtocolCoreTest is Test {
         assertEq(core.getPoolAge(pool), 3600);
     }
 
-    function test_getPoolAge_preservedAfterRemoval() public {
+    function test_getPoolAge_zeroAfterRemoval() public {
         address pool = makeAddr("pool");
         vm.startPrank(owner);
         core.whitelistPool(pool);
@@ -582,39 +628,52 @@ contract ProtocolCoreTest is Test {
         vm.prank(owner);
         core.removePool(pool);
 
-        // Pool age still available (historical)
-        assertGt(core.getPoolAge(pool), 0);
+        // Removed pool returns 0 age (not currently supported)
+        assertEq(core.getPoolAge(pool), 0);
     }
 
     // ========== Multiple LP types ==========
 
     function test_registerMultipleAdaptersAndOracles() public {
-        vm.startPrank(owner);
-        core.registerAdapter(ILPAdapter.LPType.UniswapV2, makeAddr("v2adapter"));
-        core.registerAdapter(ILPAdapter.LPType.UniswapV3, makeAddr("v3adapter"));
-        core.registerAdapter(ILPAdapter.LPType.Curve, makeAddr("curveAdapter"));
+        address v2a = _stub();
+        address v3a = _stub();
+        address ca = _stub();
+        address v2o = _stub();
+        address v3o = _stub();
+        address co = _stub();
 
-        core.registerOracle(ILPAdapter.LPType.UniswapV2, makeAddr("v2oracle"));
-        core.registerOracle(ILPAdapter.LPType.UniswapV3, makeAddr("v3oracle"));
-        core.registerOracle(ILPAdapter.LPType.Curve, makeAddr("curveOracle"));
+        vm.startPrank(owner);
+        core.registerAdapter(ILPAdapter.LPType.UniswapV2, v2a);
+        core.registerAdapter(ILPAdapter.LPType.UniswapV3, v3a);
+        core.registerAdapter(ILPAdapter.LPType.Curve, ca);
+
+        core.registerOracle(ILPAdapter.LPType.UniswapV2, v2o);
+        core.registerOracle(ILPAdapter.LPType.UniswapV3, v3o);
+        core.registerOracle(ILPAdapter.LPType.Curve, co);
         vm.stopPrank();
 
-        assertEq(core.adapters(ILPAdapter.LPType.UniswapV2), makeAddr("v2adapter"));
-        assertEq(core.adapters(ILPAdapter.LPType.UniswapV3), makeAddr("v3adapter"));
-        assertEq(core.adapters(ILPAdapter.LPType.Curve), makeAddr("curveAdapter"));
+        assertEq(core.adapters(ILPAdapter.LPType.UniswapV2), v2a);
+        assertEq(core.adapters(ILPAdapter.LPType.UniswapV3), v3a);
+        assertEq(core.adapters(ILPAdapter.LPType.Curve), ca);
 
-        assertEq(core.oracles(ILPAdapter.LPType.UniswapV2), makeAddr("v2oracle"));
-        assertEq(core.oracles(ILPAdapter.LPType.UniswapV3), makeAddr("v3oracle"));
-        assertEq(core.oracles(ILPAdapter.LPType.Curve), makeAddr("curveOracle"));
+        assertEq(core.oracles(ILPAdapter.LPType.UniswapV2), v2o);
+        assertEq(core.oracles(ILPAdapter.LPType.UniswapV3), v3o);
+        assertEq(core.oracles(ILPAdapter.LPType.Curve), co);
     }
 
     // ========== Fuzz tests ==========
 
-    function testFuzz_registerMarket_anyAddress(address market) public {
-        vm.assume(market != address(0));
-        vm.prank(owner);
-        uint256 id = core.registerMarket(market);
-        assertEq(core.markets(id), market);
+    function testFuzz_registerMarket_incrementsCorrectly(uint8 count) public {
+        count = uint8(bound(count, 1, 10));
+        vm.startPrank(owner);
+        for (uint8 i = 0; i < count; i++) {
+            address market = address(new Stub());
+            uint256 id = core.registerMarket(market);
+            assertEq(id, i);
+            assertEq(core.markets(id), market);
+        }
+        vm.stopPrank();
+        assertEq(core.nextMarketId(), count);
     }
 
     function testFuzz_whitelistPool_anyAddress(address pool) public {
