@@ -25,6 +25,8 @@ contract MarketFactory {
         uint256 indexed marketId, address proxy, address implementation, ILPAdapter.LPType lpType, address borrowAsset
     );
     event MarketImplementationUpdated(address oldImpl, address newImpl);
+    event LendingEngineUpdated(address indexed oldEngine, address indexed newEngine);
+    event InterestRateModelSet(string modelType, address indexed model);
 
     modifier onlyOwner() {
         require(msg.sender == core.owner(), "NOT_OWNER");
@@ -89,10 +91,12 @@ contract MarketFactory {
     }
 
     function setLendingEngine(address _lendingEngine) external onlyOwner {
+        emit LendingEngineUpdated(lendingEngine, _lendingEngine);
         lendingEngine = _lendingEngine;
     }
 
     function setInterestRateModel(string calldata modelType, address model) external onlyOwner {
         interestRateModels[modelType] = model;
+        emit InterestRateModelSet(modelType, model);
     }
 }

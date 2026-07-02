@@ -17,6 +17,8 @@ contract MarketRegistry {
     mapping(ILPAdapter.LPType => uint256[]) public marketsByLPType;
     mapping(address => uint256[]) public marketsByBorrowAsset;
 
+    event MarketRegistered(uint256 indexed marketId, ILPAdapter.LPType indexed lpType, address indexed borrowAsset);
+
     modifier onlyOwner() {
         require(msg.sender == core.owner(), "NOT_OWNER");
         _;
@@ -31,6 +33,7 @@ contract MarketRegistry {
         allMarketIds.push(marketId);
         marketsByLPType[lpType].push(marketId);
         marketsByBorrowAsset[borrowAsset].push(marketId);
+        emit MarketRegistered(marketId, lpType, borrowAsset);
     }
 
     /// @notice Get all market IDs

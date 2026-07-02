@@ -16,6 +16,8 @@ contract LPOracleHub is ILPOracleHub, Initializable, UUPSUpgradeable {
 
     mapping(ILPAdapter.LPType => address) public oracles;
 
+    event OracleRegistered(ILPAdapter.LPType indexed lpType, address indexed oracle);
+
     modifier onlyOwner() {
         require(msg.sender == core.owner(), "NOT_OWNER");
         _;
@@ -36,6 +38,7 @@ contract LPOracleHub is ILPOracleHub, Initializable, UUPSUpgradeable {
     function registerOracle(ILPAdapter.LPType lpType, address oracle) external onlyOwner {
         require(oracle != address(0), "ZERO_ADDRESS");
         oracles[lpType] = oracle;
+        emit OracleRegistered(lpType, oracle);
     }
 
     /// @inheritdoc ILPOracleHub
