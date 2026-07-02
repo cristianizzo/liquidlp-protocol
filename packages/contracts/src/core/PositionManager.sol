@@ -30,6 +30,8 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     // --- Events ---
     event AuthorizationUpdated(address indexed addr, bool status);
     event PositionAmountReduced(uint256 indexed positionId, uint256 amountRemoved, uint256 newAmount);
+    event LendingEngineUpdated(address indexed oldEngine, address indexed newEngine);
+    event PriceFeedRegistryUpdated(address indexed oldRegistry, address indexed newRegistry);
 
     // --- Modifiers ---
     modifier onlyOwner() {
@@ -69,12 +71,14 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     /// @notice Set the LendingEngine reference (needed for accurate health factor)
     function setLendingEngine(address _lendingEngine) external onlyOwner {
         require(_lendingEngine != address(0), "ZERO_ADDRESS");
+        emit LendingEngineUpdated(address(lendingEngine), _lendingEngine);
         lendingEngine = ILendingEngine(_lendingEngine);
     }
 
     /// @notice Set the PriceFeedRegistry (needed for debt → USD conversion in health factor)
     function setPriceFeedRegistry(address _registry) external onlyOwner {
         require(_registry != address(0), "ZERO_ADDRESS");
+        emit PriceFeedRegistryUpdated(address(priceFeedRegistry), _registry);
         priceFeedRegistry = PriceFeedRegistry(_registry);
     }
 
@@ -162,6 +166,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     // --- State Updates (authorized contracts only) ---
 
     /// @notice Update position debt (called by LendingEngine)
+    /// @dev Prevents zombie positions: cannot transition to Active if amount is 0
     function updateDebt(uint256 positionId, uint256 newDebt) external onlyAuthorized positionExists(positionId) {
         Position storage pos = _positions[positionId];
         require(pos.status == PositionStatus.Active || pos.status == PositionStatus.Borrowed, "POSITION_NOT_BORROWABLE");
@@ -170,7 +175,10 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         if (newDebt > 0 && pos.status == PositionStatus.Active) {
             pos.status = PositionStatus.Borrowed;
         } else if (newDebt == 0 && pos.status == PositionStatus.Borrowed) {
-            pos.status = PositionStatus.Active;
+            // Only return to Active if position still has collateral
+            if (pos.amount > 0) {
+                pos.status = PositionStatus.Active;
+            }
         }
     }
 
@@ -193,6 +201,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     }
 
     /// @notice Mark position as liquidated (called by LiquidationEngine)
+    /// @dev Terminal state — position cannot re-enter active lifecycle after this
     function markLiquidated(
         uint256 positionId,
         address liquidator,
@@ -203,7 +212,9 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         positionExists(positionId)
     {
         require(liquidator != address(0), "ZERO_LIQUIDATOR");
-        _positions[positionId].status = PositionStatus.Liquidated;
+        Position storage pos = _positions[positionId];
+        require(pos.status == PositionStatus.Borrowed || pos.status == PositionStatus.Active, "NOT_LIQUIDATABLE_STATUS");
+        pos.status = PositionStatus.Liquidated;
         positionDebt[positionId] = 0;
         emit PositionLiquidated(positionId, liquidator, debtRepaid);
     }
@@ -230,7 +241,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
 
     /// @inheritdoc IPositionManager
     function getHealthFactor(uint256 positionId) external view returns (uint256) {
-        // Use interest-accrued debt from LendingEngine (not stale positionDebt)
+        require(positionId < nextPositionId && _positions[positionId].owner != address(0), "POSITION_NOT_FOUND");
         require(address(lendingEngine) != address(0), "LENDING_ENGINE_NOT_SET");
         uint256 debt = lendingEngine.getDebt(positionId);
         if (debt == 0) return type(uint256).max;
