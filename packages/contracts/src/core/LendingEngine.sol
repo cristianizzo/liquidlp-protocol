@@ -229,7 +229,7 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
         if (borrowDecimals < 18) {
             return maxBorrowUsd / (10 ** (18 - borrowDecimals));
         } else if (borrowDecimals > 18) {
-            return maxBorrowUsd * (10 ** (borrowDecimals - 18));
+            return Math.mulDiv(maxBorrowUsd, 10 ** (borrowDecimals - 18), 1);
         }
         return maxBorrowUsd;
     }

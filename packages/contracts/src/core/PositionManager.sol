@@ -10,6 +10,7 @@ import {ILPOracleHub} from "../interfaces/ILPOracleHub.sol";
 import {ILendingEngine} from "../interfaces/ILendingEngine.sol";
 import {IMarket} from "../interfaces/IMarket.sol";
 import {IERC20} from "../interfaces/IERC20.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ProtocolCore} from "./ProtocolCore.sol";
 import {PriceFeedRegistry} from "../oracle/PriceFeedRegistry.sol";
 
@@ -263,7 +264,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
             uint8 borrowDecimals = IERC20(config.borrowAsset).decimals();
             require(borrowDecimals <= 36, "INVALID_DECIMALS");
             if (borrowDecimals < 18) {
-                debtUsd = debt * (10 ** (18 - borrowDecimals));
+                debtUsd = Math.mulDiv(debt, 10 ** (18 - borrowDecimals), 1);
             } else if (borrowDecimals > 18) {
                 debtUsd = debt / (10 ** (borrowDecimals - 18));
             } else {
