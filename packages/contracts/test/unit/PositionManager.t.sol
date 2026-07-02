@@ -807,9 +807,18 @@ contract PositionManagerTest is Test {
         pm.setPriceFeedRegistry(makeAddr("registry"));
     }
 
-    function test_setPriceFeedRegistry_revertsZero() public {
+    function test_setPriceFeedRegistry_allowsZero() public {
+        // Can set to address(0) to revert to fallback normalization mode
+        MockPriceFeedRegistry registry = new MockPriceFeedRegistry();
+        registry.setPrice(address(0x1), 1e18);
+
         vm.prank(owner);
-        vm.expectRevert("ZERO_ADDRESS");
+        pm.setPriceFeedRegistry(address(registry));
+        assertEq(address(pm.priceFeedRegistry()), address(registry));
+
+        // Unset → fallback mode
+        vm.prank(owner);
         pm.setPriceFeedRegistry(address(0));
+        assertEq(address(pm.priceFeedRegistry()), address(0));
     }
 }

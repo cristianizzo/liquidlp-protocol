@@ -77,8 +77,8 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     }
 
     /// @notice Set the PriceFeedRegistry (needed for debt → USD conversion in health factor)
+    /// @dev Set to address(0) to revert to fallback decimal normalization mode
     function setPriceFeedRegistry(address _registry) external onlyOwner {
-        require(_registry != address(0), "ZERO_ADDRESS");
         emit PriceFeedRegistryUpdated(address(priceFeedRegistry), _registry);
         priceFeedRegistry = PriceFeedRegistry(_registry);
     }
@@ -107,10 +107,16 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     {
         require(lpToken != address(0), "ZERO_LP_TOKEN");
         require(amount > 0 || tokenId > 0, "ZERO_AMOUNT"); // V2: amount > 0, V3: tokenId > 0
-        require(core.markets(marketId) != address(0), "INVALID_MARKET");
+        address marketAddr = core.markets(marketId);
+        require(marketAddr != address(0), "INVALID_MARKET");
 
         // Auto-detect LP type by querying each registered adapter
         ILPAdapter.LPType lpType = _detectLPType(lpToken);
+
+        // Validate LP type matches market's configured LP type (prevents risk parameter mismatch)
+        IMarket.MarketConfig memory mConfig = IMarket(marketAddr).getConfig();
+        require(lpType == mConfig.lpType, "LP_TYPE_MISMATCH");
+
         address adapterAddr = core.adapters(lpType);
         require(adapterAddr != address(0), "NO_ADAPTER");
 
@@ -156,12 +162,20 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         require(positionDebt[positionId] == 0, "HAS_DEBT");
         require(pos.status == PositionStatus.Active, "NOT_ACTIVE");
 
-        // Unlock LP via adapter (external call — reentrancy protected)
-        address adapterAddr = core.adapters(pos.lpType);
-        ILPAdapter(adapterAddr).unlock(pos.lpToken, pos.tokenId, pos.amount, msg.sender);
+        // Defense-in-depth: also check live debt from LendingEngine
+        if (address(lendingEngine) != address(0)) {
+            require(lendingEngine.getDebt(positionId) == 0, "HAS_LIVE_DEBT");
+        }
 
+        address adapterAddr = core.adapters(pos.lpType);
+        require(adapterAddr != address(0), "ADAPTER_NOT_FOUND");
+
+        // CEI: update state BEFORE external call
         pos.status = PositionStatus.Closed;
         emit PositionClosed(positionId, msg.sender);
+
+        // Unlock LP via adapter (external call — reentrancy protected)
+        ILPAdapter(adapterAddr).unlock(pos.lpToken, pos.tokenId, pos.amount, msg.sender);
     }
 
     // --- State Updates (authorized contracts only) ---
@@ -252,6 +266,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
 
         Position memory pos = _positions[positionId];
         address marketAddr = core.markets(pos.marketId);
+        require(marketAddr != address(0), "MARKET_NOT_FOUND");
         IMarket.MarketConfig memory config = IMarket(marketAddr).getConfig();
 
         // Convert debt from borrow asset decimals to 18-dec USD value (Aave-style)
@@ -272,10 +287,10 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
             }
         }
 
-        // HF = (collateralValue * liquidationThreshold) / (debtUsd * 10000)
+        // HF = (collateralValue * liquidationThreshold * 1e18) / (debtUsd * 10000)
         // Both collateralValue and debtUsd are in 18-dec USD
         // Scaled by 1e18 (1e18 = health factor of 1.0)
-        return (collateralValue * config.liquidationThreshold * 1e18) / (debtUsd * 10_000);
+        return Math.mulDiv(collateralValue * config.liquidationThreshold, 1e18, debtUsd * 10_000);
     }
 
     /// @notice Get the block number when a position was deposited (for borrow cooldown)
