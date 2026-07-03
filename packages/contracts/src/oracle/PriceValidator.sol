@@ -2,6 +2,7 @@
 pragma solidity ^0.8.26;
 
 import {ProtocolCore} from "../core/ProtocolCore.sol";
+import {ACLManager} from "../core/ACLManager.sol";
 
 /// @title PriceValidator
 /// @notice Cross-validates oracle prices and triggers circuit breakers
@@ -46,13 +47,19 @@ contract PriceValidator {
     event PriceValidated(address indexed pool, uint256 price, uint256 confidence);
     event ParameterUpdated(string name, uint256 oldValue, uint256 newValue);
 
-    modifier onlyOwnerOrGuardian() {
-        require(msg.sender == core.owner() || msg.sender == core.guardian(), "NOT_AUTHORIZED");
+    function _acl() internal view returns (ACLManager) {
+        return core.aclManager();
+    }
+
+    modifier onlyEmergencyAdmin() {
+        ACLManager acl = _acl();
+        require(acl.isEmergencyAdmin(msg.sender) || acl.isPoolAdmin(msg.sender), "NOT_EMERGENCY_ADMIN");
         _;
     }
 
-    modifier onlyOwner() {
-        require(msg.sender == core.owner(), "NOT_OWNER");
+    modifier onlyRiskAdmin() {
+        ACLManager acl = _acl();
+        require(acl.isRiskAdmin(msg.sender) || acl.isPoolAdmin(msg.sender), "NOT_RISK_ADMIN");
         _;
     }
 
@@ -62,31 +69,31 @@ contract PriceValidator {
 
     // --- Admin Setters ---
 
-    function setMaxPriceDeviation(uint256 _bps) external onlyOwner {
+    function setMaxPriceDeviation(uint256 _bps) external onlyRiskAdmin {
         require(_bps >= MIN_DEVIATION_BPS && _bps <= MAX_DEVIATION_BPS_CAP, "OUT_OF_BOUNDS");
         emit ParameterUpdated("maxPriceDeviationBps", maxPriceDeviationBps, _bps);
         maxPriceDeviationBps = _bps;
     }
 
-    function setMaxVolatility(uint256 _bps) external onlyOwner {
+    function setMaxVolatility(uint256 _bps) external onlyRiskAdmin {
         require(_bps >= MIN_VOLATILITY_BPS && _bps <= MAX_VOLATILITY_BPS_CAP, "OUT_OF_BOUNDS");
         emit ParameterUpdated("maxVolatilityBps", maxVolatilityBps, _bps);
         maxVolatilityBps = _bps;
     }
 
-    function setMinPoolTvl(uint256 _minTvl) external onlyOwner {
+    function setMinPoolTvl(uint256 _minTvl) external onlyRiskAdmin {
         require(_minTvl >= MIN_TVL_FLOOR, "BELOW_ABSOLUTE_MIN");
         emit ParameterUpdated("minPoolTvl", minPoolTvl, _minTvl);
         minPoolTvl = _minTvl;
     }
 
-    function setStalePriceThreshold(uint256 _seconds) external onlyOwner {
+    function setStalePriceThreshold(uint256 _seconds) external onlyRiskAdmin {
         require(_seconds >= MIN_STALE_THRESHOLD && _seconds <= MAX_STALE_THRESHOLD, "OUT_OF_BOUNDS");
         emit ParameterUpdated("stalePriceThreshold", stalePriceThreshold, _seconds);
         stalePriceThreshold = _seconds;
     }
 
-    function setTvlDropThreshold(uint256 _bps) external onlyOwner {
+    function setTvlDropThreshold(uint256 _bps) external onlyRiskAdmin {
         require(_bps >= MIN_TVL_DROP_BPS && _bps <= MAX_TVL_DROP_BPS, "OUT_OF_BOUNDS");
         emit ParameterUpdated("tvlDropThresholdBps", tvlDropThresholdBps, _bps);
         tvlDropThresholdBps = _bps;
@@ -158,12 +165,12 @@ contract PriceValidator {
         return (true, adjustedHaircutBps);
     }
 
-    function resetCircuitBreaker(address pool) external onlyOwnerOrGuardian {
+    function resetCircuitBreaker(address pool) external onlyEmergencyAdmin {
         poolPaused[pool] = false;
         emit CircuitBreakerReset(pool);
     }
 
-    function triggerCircuitBreaker(address pool, string calldata reason) external onlyOwnerOrGuardian {
+    function triggerCircuitBreaker(address pool, string calldata reason) external onlyEmergencyAdmin {
         poolPaused[pool] = true;
         emit CircuitBreakerTriggered(pool, reason);
     }

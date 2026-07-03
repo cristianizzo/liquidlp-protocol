@@ -2,10 +2,11 @@
 pragma solidity ^0.8.26;
 
 import {ProtocolCore} from "../core/ProtocolCore.sol";
+import {ACLManager} from "../core/ACLManager.sol";
 
 /// @title CircuitBreaker
 /// @notice Granular pause mechanism for individual markets and pools
-/// @dev Keepers/guardian can pause. Only guardian/owner can unpause.
+/// @dev EmergencyAdmin/Keeper can pause. Only PoolAdmin can unpause.
 contract CircuitBreaker {
     ProtocolCore public immutable core;
 
@@ -23,15 +24,21 @@ contract CircuitBreaker {
     event PoolPaused(address indexed pool, string reason);
     event PoolUnpaused(address indexed pool);
 
+    function _acl() internal view returns (ACLManager) {
+        return core.aclManager();
+    }
+
     modifier onlyGuardianOrKeeper() {
+        ACLManager acl = _acl();
         require(
-            msg.sender == core.guardian() || msg.sender == core.owner() || core.keepers(msg.sender), "NOT_AUTHORIZED"
+            acl.isEmergencyAdmin(msg.sender) || acl.isPoolAdmin(msg.sender) || acl.isKeeper(msg.sender),
+            "NOT_AUTHORIZED"
         );
         _;
     }
 
-    modifier onlyOwnerOrGuardian() {
-        require(msg.sender == core.owner() || msg.sender == core.guardian(), "NOT_AUTHORIZED");
+    modifier onlyPoolAdmin() {
+        require(_acl().isPoolAdmin(msg.sender), "NOT_POOL_ADMIN");
         _;
     }
 
@@ -48,7 +55,7 @@ contract CircuitBreaker {
     }
 
     /// @notice Unpause a market (guardian/owner only, after investigation)
-    function unpauseMarket(uint256 marketId) external onlyOwnerOrGuardian {
+    function unpauseMarket(uint256 marketId) external onlyPoolAdmin {
         marketPaused[marketId] = false;
         pauseReason[marketId] = "";
         emit MarketUnpaused(marketId);
@@ -61,7 +68,7 @@ contract CircuitBreaker {
     }
 
     /// @notice Unpause a pool (guardian/owner only, after investigation)
-    function unpausePool(address pool) external onlyOwnerOrGuardian {
+    function unpausePool(address pool) external onlyPoolAdmin {
         poolPaused[pool] = false;
         emit PoolUnpaused(pool);
     }

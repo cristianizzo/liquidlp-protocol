@@ -2,6 +2,7 @@
 pragma solidity ^0.8.26;
 
 import {ProtocolCore} from "../core/ProtocolCore.sol";
+import {ACLManager} from "../core/ACLManager.sol";
 import {CircuitBreaker} from "./CircuitBreaker.sol";
 
 /// @title PoolHealthMonitor
@@ -32,12 +33,12 @@ contract PoolHealthMonitor {
     event MinTvlUpdated(address indexed pool, uint256 minTvl);
 
     modifier onlyKeeper() {
-        require(core.keepers(msg.sender) || msg.sender == core.owner(), "NOT_KEEPER");
+        require(core.aclManager().isKeeper(msg.sender) || msg.sender == core.owner(), "NOT_KEEPER");
         _;
     }
 
-    modifier onlyOwner() {
-        require(msg.sender == core.owner(), "NOT_OWNER");
+    modifier onlyPoolAdmin() {
+        require(core.aclManager().isPoolAdmin(msg.sender), "NOT_POOL_ADMIN");
         _;
     }
 
@@ -48,21 +49,21 @@ contract PoolHealthMonitor {
 
     // --- Admin Setters ---
 
-    function setTvlDropThreshold(uint256 _bps) external onlyOwner {
+    function setTvlDropThreshold(uint256 _bps) external onlyPoolAdmin {
         require(_bps >= MIN_DROP_THRESHOLD && _bps <= MAX_DROP_THRESHOLD, "OUT_OF_BOUNDS");
         require(_bps < criticalTvlDropBps, "MUST_BE_BELOW_CRITICAL");
         emit ParameterUpdated("tvlDropThresholdBps", tvlDropThresholdBps, _bps);
         tvlDropThresholdBps = _bps;
     }
 
-    function setCriticalTvlDrop(uint256 _bps) external onlyOwner {
+    function setCriticalTvlDrop(uint256 _bps) external onlyPoolAdmin {
         require(_bps >= MIN_DROP_THRESHOLD && _bps <= MAX_DROP_THRESHOLD, "OUT_OF_BOUNDS");
         require(_bps > tvlDropThresholdBps, "MUST_BE_ABOVE_WARNING");
         emit ParameterUpdated("criticalTvlDropBps", criticalTvlDropBps, _bps);
         criticalTvlDropBps = _bps;
     }
 
-    function setMinTvl(address pool, uint256 minTvl) external onlyOwner {
+    function setMinTvl(address pool, uint256 minTvl) external onlyPoolAdmin {
         minRequiredTvl[pool] = minTvl;
         emit MinTvlUpdated(pool, minTvl);
     }

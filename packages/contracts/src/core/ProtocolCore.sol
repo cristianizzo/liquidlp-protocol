@@ -2,31 +2,29 @@
 pragma solidity ^0.8.26;
 
 import {ILPAdapter} from "../interfaces/ILPAdapter.sol";
+import {ACLManager} from "./ACLManager.sol";
 
 /// @title ProtocolCore
-/// @notice Central registry and access control for the LiquidLP protocol
+/// @notice Central registry and access control for the Aurelia protocol
 /// @dev All core contracts reference this for shared state and permissions.
 ///      Not proxied — this IS the root of trust. owner = DAO multisig.
-///      Adapter/oracle registrations are sparse — maxRegisteredLPType may exceed
-///      the number of active adapters. Downstream code handles zero addresses.
+///      Uses ACLManager (Aave V3 pattern) for role-based access control.
 contract ProtocolCore {
-    // --- Roles ---
+    // --- Roles (via ACLManager) ---
+    ACLManager public aclManager;
     address public owner;
-    address public pendingOwner; // Two-step ownership transfer
-    address public guardian;
-    mapping(address => bool) public keepers;
+    address public pendingOwner;
 
     // --- Registry ---
     mapping(ILPAdapter.LPType => address) public adapters;
     mapping(ILPAdapter.LPType => address) public oracles;
     mapping(uint256 => address) public markets;
-    mapping(address => bool) public registeredMarkets; // duplicate protection
+    mapping(address => bool) public registeredMarkets;
     uint256 public nextMarketId;
     address public marketFactory;
 
     /// @notice Highest LP type index with a registered adapter
-    /// @dev Used by PositionManager._detectLPType to avoid hardcoded loop bounds.
-    ///      Only increases — sparse enum slots with no adapter are handled downstream.
+    /// @dev Only increases — sparse enum slots with no adapter are handled downstream.
     uint8 public maxRegisteredLPType;
 
     // --- Protocol State ---
@@ -46,8 +44,7 @@ contract ProtocolCore {
     event OwnershipTransferStarted(address indexed currentOwner, address indexed pendingOwner);
     event OwnershipTransferCancelled(address indexed currentOwner, address indexed cancelledPendingOwner);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
-    event GuardianUpdated(address indexed previousGuardian, address indexed newGuardian);
-    event KeeperUpdated(address indexed keeper, bool status);
+    event ACLManagerUpdated(address indexed oldManager, address indexed newManager);
 
     // --- Modifiers ---
     modifier onlyOwner() {
@@ -55,21 +52,40 @@ contract ProtocolCore {
         _;
     }
 
-    modifier onlyGuardian() {
-        require(msg.sender == guardian || msg.sender == owner, "NOT_GUARDIAN");
+    modifier onlyPoolAdmin() {
+        require(address(aclManager) != address(0) && aclManager.isPoolAdmin(msg.sender), "NOT_POOL_ADMIN");
         _;
     }
 
-    constructor(address _owner, address _guardian) {
+    modifier onlyEmergencyAdmin() {
+        require(
+            address(aclManager) != address(0)
+                && (aclManager.isEmergencyAdmin(msg.sender) || aclManager.isPoolAdmin(msg.sender)),
+            "NOT_EMERGENCY_ADMIN"
+        );
+        _;
+    }
+
+    constructor(address _owner, address _aclManager) {
         require(_owner != address(0), "ZERO_OWNER");
-        require(_guardian != address(0), "ZERO_GUARDIAN");
+        require(_aclManager != address(0), "ZERO_ACL");
+        require(_aclManager.code.length > 0, "NOT_CONTRACT");
         owner = _owner;
-        guardian = _guardian;
+        aclManager = ACLManager(_aclManager);
+    }
+
+    // --- ACLManager ---
+
+    function setACLManager(address _aclManager) external onlyOwner {
+        require(_aclManager != address(0), "ZERO_ADDRESS");
+        require(_aclManager.code.length > 0, "NOT_CONTRACT");
+        emit ACLManagerUpdated(address(aclManager), _aclManager);
+        aclManager = ACLManager(_aclManager);
     }
 
     // --- Registry Management ---
 
-    function registerAdapter(ILPAdapter.LPType lpType, address adapter) external onlyOwner {
+    function registerAdapter(ILPAdapter.LPType lpType, address adapter) external onlyPoolAdmin {
         require(adapter != address(0), "ZERO_ADDRESS");
         require(adapter.code.length > 0, "NOT_CONTRACT");
         adapters[lpType] = adapter;
@@ -79,14 +95,14 @@ contract ProtocolCore {
         emit AdapterRegistered(lpType, adapter);
     }
 
-    function registerOracle(ILPAdapter.LPType lpType, address oracle) external onlyOwner {
+    function registerOracle(ILPAdapter.LPType lpType, address oracle) external onlyPoolAdmin {
         require(oracle != address(0), "ZERO_ADDRESS");
         require(oracle.code.length > 0, "NOT_CONTRACT");
         oracles[lpType] = oracle;
         emit OracleRegistered(lpType, oracle);
     }
 
-    function setMarketFactory(address _factory) external onlyOwner {
+    function setMarketFactory(address _factory) external onlyPoolAdmin {
         require(_factory != address(0), "ZERO_ADDRESS");
         require(_factory.code.length > 0, "NOT_CONTRACT");
         emit MarketFactoryUpdated(marketFactory, _factory);
@@ -94,7 +110,10 @@ contract ProtocolCore {
     }
 
     function registerMarket(address market) external returns (uint256 marketId) {
-        require(msg.sender == owner || msg.sender == marketFactory, "NOT_AUTHORIZED");
+        require(
+            (address(aclManager) != address(0) && aclManager.isPoolAdmin(msg.sender)) || msg.sender == marketFactory,
+            "NOT_AUTHORIZED"
+        );
         require(market != address(0), "ZERO_ADDRESS");
         require(market.code.length > 0, "NOT_CONTRACT");
         require(!registeredMarkets[market], "MARKET_ALREADY_REGISTERED");
@@ -106,7 +125,7 @@ contract ProtocolCore {
 
     // --- Pool Management ---
 
-    function whitelistPool(address pool) external onlyOwner {
+    function whitelistPool(address pool) external onlyPoolAdmin {
         require(pool != address(0), "ZERO_ADDRESS");
         require(!supportedPools[pool], "ALREADY_WHITELISTED");
         supportedPools[pool] = true;
@@ -114,22 +133,28 @@ contract ProtocolCore {
         emit PoolWhitelisted(pool);
     }
 
-    function removePool(address pool) external onlyOwner {
+    function removePool(address pool) external onlyPoolAdmin {
         require(supportedPools[pool], "NOT_WHITELISTED");
         supportedPools[pool] = false;
         emit PoolRemoved(pool);
     }
 
-    // --- Access Control ---
+    // --- Emergency ---
 
-    function setKeeper(address keeper, bool status) external onlyOwner {
-        require(keeper != address(0), "ZERO_ADDRESS");
-        keepers[keeper] = status;
-        emit KeeperUpdated(keeper, status);
+    function pause() external onlyEmergencyAdmin {
+        require(!paused, "ALREADY_PAUSED");
+        paused = true;
+        emit Paused(msg.sender);
     }
 
-    /// @notice Step 1: Propose new owner (two-step transfer)
-    /// @dev Overwrites any existing pending transfer with a cancellation event
+    function unpause() external onlyPoolAdmin {
+        require(paused, "NOT_PAUSED");
+        paused = false;
+        emit Unpaused(msg.sender);
+    }
+
+    // --- Ownership (two-step transfer) ---
+
     function transferOwnership(address newOwner) external onlyOwner {
         require(newOwner != address(0), "ZERO_ADDRESS");
         if (pendingOwner != address(0)) {
@@ -139,39 +164,17 @@ contract ProtocolCore {
         emit OwnershipTransferStarted(owner, newOwner);
     }
 
-    /// @notice Cancel a pending ownership transfer
     function cancelOwnershipTransfer() external onlyOwner {
         require(pendingOwner != address(0), "NO_PENDING_TRANSFER");
         emit OwnershipTransferCancelled(owner, pendingOwner);
         pendingOwner = address(0);
     }
 
-    /// @notice Step 2: New owner accepts ownership
     function acceptOwnership() external {
         require(msg.sender == pendingOwner, "NOT_PENDING_OWNER");
         emit OwnershipTransferred(owner, pendingOwner);
         owner = pendingOwner;
         pendingOwner = address(0);
-    }
-
-    function setGuardian(address newGuardian) external onlyOwner {
-        require(newGuardian != address(0), "ZERO_ADDRESS");
-        emit GuardianUpdated(guardian, newGuardian);
-        guardian = newGuardian;
-    }
-
-    // --- Emergency ---
-
-    function pause() external onlyGuardian {
-        require(!paused, "ALREADY_PAUSED");
-        paused = true;
-        emit Paused(msg.sender);
-    }
-
-    function unpause() external onlyOwner {
-        require(paused, "NOT_PAUSED");
-        paused = false;
-        emit Unpaused(msg.sender);
     }
 
     // --- View ---

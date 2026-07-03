@@ -12,11 +12,13 @@ import {IMarket} from "../interfaces/IMarket.sol";
 import {IERC20} from "../interfaces/IERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ProtocolCore} from "./ProtocolCore.sol";
+import {ACLManager} from "./ACLManager.sol";
 import {PriceFeedRegistry} from "../oracle/PriceFeedRegistry.sol";
 
 /// @title PositionManager
 /// @notice Manages LP position deposits, withdrawals, and position state tracking
 /// @dev UUPS upgradeable + reentrancy protected (external calls to adapters/oracles)
+///      Uses ACLManager for role-based access control (Aave V3 pattern).
 contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, ReentrancyGuardTransient {
     ProtocolCore public core;
     ILPOracleHub public oracleHub;
@@ -26,22 +28,36 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     mapping(address => uint256[]) internal _ownerPositions;
     uint256 public nextPositionId;
     mapping(uint256 => uint256) public positionDebt;
-    mapping(address => bool) public authorized;
 
     // --- Events ---
-    event AuthorizationUpdated(address indexed addr, bool status);
     event PositionAmountReduced(uint256 indexed positionId, uint256 amountRemoved, uint256 newAmount);
     event LendingEngineUpdated(address indexed oldEngine, address indexed newEngine);
     event PriceFeedRegistryUpdated(address indexed oldRegistry, address indexed newRegistry);
 
+    // --- ACL Helpers ---
+    function _acl() internal view returns (ACLManager) {
+        return core.aclManager();
+    }
+
     // --- Modifiers ---
-    modifier onlyOwner() {
-        require(msg.sender == core.owner(), "NOT_OWNER");
+    modifier onlyPoolAdmin() {
+        require(_acl().isPoolAdmin(msg.sender), "NOT_POOL_ADMIN");
         _;
     }
 
-    modifier onlyAuthorized() {
-        require(authorized[msg.sender] || msg.sender == core.owner(), "NOT_AUTHORIZED");
+    modifier onlyLendingEngine() {
+        require(_acl().isLendingEngine(msg.sender), "NOT_LENDING_ENGINE");
+        _;
+    }
+
+    modifier onlyLiquidationEngine() {
+        require(_acl().isLiquidationEngine(msg.sender), "NOT_LIQUIDATION_ENGINE");
+        _;
+    }
+
+    modifier onlyLendingOrLiquidation() {
+        ACLManager acl = _acl();
+        require(acl.isLendingEngine(msg.sender) || acl.isLiquidationEngine(msg.sender), "NOT_AUTHORIZED");
         _;
     }
 
@@ -67,10 +83,10 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         oracleHub = ILPOracleHub(_oracleHub);
     }
 
-    function _authorizeUpgrade(address) internal override onlyOwner {}
+    function _authorizeUpgrade(address) internal override onlyPoolAdmin {}
 
     /// @notice Set the LendingEngine reference (needed for accurate health factor)
-    function setLendingEngine(address _lendingEngine) external onlyOwner {
+    function setLendingEngine(address _lendingEngine) external onlyPoolAdmin {
         require(_lendingEngine != address(0), "ZERO_ADDRESS");
         emit LendingEngineUpdated(address(lendingEngine), _lendingEngine);
         lendingEngine = ILendingEngine(_lendingEngine);
@@ -78,18 +94,10 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
 
     /// @notice Set the PriceFeedRegistry (needed for debt → USD conversion in health factor)
     /// @dev Set to address(0) to revert to fallback decimal normalization mode
-    function setPriceFeedRegistry(address _registry) external onlyOwner {
+    function setPriceFeedRegistry(address _registry) external onlyPoolAdmin {
         require(_registry == address(0) || _registry.code.length > 0, "NOT_CONTRACT");
         emit PriceFeedRegistryUpdated(address(priceFeedRegistry), _registry);
         priceFeedRegistry = PriceFeedRegistry(_registry);
-    }
-
-    // --- Admin ---
-
-    function setAuthorized(address addr, bool status) external onlyOwner {
-        require(addr != address(0), "ZERO_ADDRESS");
-        authorized[addr] = status;
-        emit AuthorizationUpdated(addr, status);
     }
 
     // --- Core Logic ---
@@ -107,14 +115,14 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         returns (uint256 positionId)
     {
         require(lpToken != address(0), "ZERO_LP_TOKEN");
-        require(amount > 0 || tokenId > 0, "ZERO_AMOUNT"); // V2: amount > 0, V3: tokenId > 0
+        require(amount > 0 || tokenId > 0, "ZERO_AMOUNT");
         address marketAddr = core.markets(marketId);
         require(marketAddr != address(0), "INVALID_MARKET");
 
         // Auto-detect LP type by querying each registered adapter
         ILPAdapter.LPType lpType = _detectLPType(lpToken);
 
-        // Validate LP type matches market's configured LP type (prevents risk parameter mismatch)
+        // Validate LP type matches market's configured LP type
         IMarket.MarketConfig memory mConfig = IMarket(marketAddr).getConfig();
         require(lpType == mConfig.lpType, "LP_TYPE_MISMATCH");
 
@@ -123,7 +131,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
 
         ILPAdapter adapter = ILPAdapter(adapterAddr);
 
-        // Validate and lock the LP position (external call — reentrancy protected)
+        // Validate and lock the LP position
         ILPAdapter.LPInfo memory info = adapter.validateAndLock(lpToken, tokenId, amount, msg.sender);
 
         // Verify pool is whitelisted
@@ -175,15 +183,14 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         pos.status = PositionStatus.Closed;
         emit PositionClosed(positionId, msg.sender);
 
-        // Unlock LP via adapter (external call — reentrancy protected)
+        // Unlock LP via adapter
         ILPAdapter(adapterAddr).unlock(pos.lpToken, pos.tokenId, pos.amount, msg.sender);
     }
 
-    // --- State Updates (authorized contracts only) ---
+    // --- State Updates (role-based access) ---
 
     /// @notice Update position debt (called by LendingEngine)
-    /// @dev Prevents zombie positions: cannot transition to Active if amount is 0
-    function updateDebt(uint256 positionId, uint256 newDebt) external onlyAuthorized positionExists(positionId) {
+    function updateDebt(uint256 positionId, uint256 newDebt) external onlyLendingEngine positionExists(positionId) {
         Position storage pos = _positions[positionId];
         require(pos.status == PositionStatus.Active || pos.status == PositionStatus.Borrowed, "POSITION_NOT_BORROWABLE");
 
@@ -191,7 +198,6 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         if (newDebt > 0 && pos.status == PositionStatus.Active) {
             pos.status = PositionStatus.Borrowed;
         } else if (newDebt == 0 && pos.status == PositionStatus.Borrowed) {
-            // Only return to Active if position still has collateral
             if (pos.amount > 0) {
                 pos.status = PositionStatus.Active;
             }
@@ -199,14 +205,12 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     }
 
     /// @notice Reduce position amount after partial liquidation (called by LiquidationEngine)
-    /// @param positionId The position to update
-    /// @param amountRemoved How much liquidity was unwound and removed
     function reducePositionAmount(
         uint256 positionId,
         uint256 amountRemoved
     )
         external
-        onlyAuthorized
+        onlyLiquidationEngine
         positionExists(positionId)
     {
         Position storage pos = _positions[positionId];
@@ -217,14 +221,13 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     }
 
     /// @notice Mark position as liquidated (called by LiquidationEngine)
-    /// @dev Terminal state — position cannot re-enter active lifecycle after this
     function markLiquidated(
         uint256 positionId,
         address liquidator,
         uint256 debtRepaid
     )
         external
-        onlyAuthorized
+        onlyLiquidationEngine
         positionExists(positionId)
     {
         require(liquidator != address(0), "ZERO_LIQUIDATOR");
@@ -276,7 +279,6 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
             uint8 borrowDecimals = IERC20(config.borrowAsset).decimals();
             debtUsd = priceFeedRegistry.getUsdValue(config.borrowAsset, debt, borrowDecimals);
         } else {
-            // Fallback: normalize debt to 18 decimals (assumes USD-pegged borrow asset)
             uint8 borrowDecimals = IERC20(config.borrowAsset).decimals();
             require(borrowDecimals <= 36, "INVALID_DECIMALS");
             if (borrowDecimals < 18) {
@@ -288,16 +290,11 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
             }
         }
 
-        // HF = (collateralValue * liquidationThreshold * 1e18) / (debtUsd * 10000)
-        // Both collateralValue and debtUsd are in 18-dec USD
-        // Scaled by 1e18 (1e18 = health factor of 1.0)
-        // Two-step mulDiv to avoid overflow: first scale by threshold, then by 1e18
-        if (debtUsd == 0) return type(uint256).max; // Dust debt rounds to 0 USD → treat as no debt
+        if (debtUsd == 0) return type(uint256).max;
         uint256 numerator = Math.mulDiv(collateralValue, config.liquidationThreshold, 10_000);
         return Math.mulDiv(numerator, 1e18, debtUsd);
     }
 
-    /// @notice Get the block number when a position was deposited (for borrow cooldown)
     function getDepositBlock(uint256 positionId) external view returns (uint256) {
         return _positions[positionId].depositBlock;
     }
@@ -305,10 +302,9 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     // --- New state vars (appended for UUPS upgrade safety) ---
     PriceFeedRegistry public priceFeedRegistry;
 
-    // --- Storage Gap (UUPS upgrade safety) ---
-    // Reserve slots so future upgrades can add state variables
-    // without colliding with child contract storage.
-    // Reduced from 50 to 49 after adding priceFeedRegistry (1 slot used).
+    // --- Storage Gap ---
+    // Reduced from 50 to 49 after adding priceFeedRegistry.
+    // Note: removed `authorized` mapping (slot freed) but keeping gap conservative.
     uint256[49] private __gap;
 
     // --- Internal ---

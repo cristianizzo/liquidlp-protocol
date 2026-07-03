@@ -4,6 +4,7 @@ pragma solidity ^0.8.26;
 import {ILPAdapter} from "../interfaces/ILPAdapter.sol";
 import {INonfungiblePositionManager, IUniswapV3Factory} from "../interfaces/external/IUniswapV3.sol";
 import {ProtocolCore} from "../core/ProtocolCore.sol";
+import {ACLManager} from "../core/ACLManager.sol";
 
 /// @title UniswapV3Adapter
 /// @notice Handles Uniswap V3 NFT position deposits, withdrawals, and unwinding
@@ -22,44 +23,28 @@ contract UniswapV3Adapter is ILPAdapter {
     IUniswapV3Factory public immutable v3Factory;
     ProtocolCore public immutable core;
 
-    /// @notice Address authorized to call adapter functions (PositionManager proxy)
-    address public protocol;
-
     // --- Events ---
     event PositionLocked(uint256 indexed tokenId, address indexed from, address pool, uint128 liquidity);
     event PositionUnlocked(uint256 indexed tokenId, address indexed to);
     event LiquidityUnwound(uint256 indexed tokenId, uint128 liquidityRemoved, uint256 amount0, uint256 amount1);
     event FeesCollected(uint256 indexed tokenId, uint256 fees0, uint256 fees1);
-    event ProtocolUpdated(address indexed oldProtocol, address indexed newProtocol);
 
+    function _acl() internal view returns (ACLManager) {
+        return core.aclManager();
+    }
+
+    /// @dev Authorized = PositionManager or LiquidationEngine
     modifier onlyProtocol() {
-        require(msg.sender == protocol, "NOT_PROTOCOL");
+        ACLManager acl = _acl();
+        require(acl.isPositionManager(msg.sender) || acl.isLiquidationEngine(msg.sender), "NOT_AUTHORIZED");
         _;
     }
 
-    modifier onlyOwner() {
-        require(msg.sender == core.owner(), "NOT_OWNER");
-        _;
-    }
-
-    constructor(address _nftManager, address _factory, address _core, address _protocol) {
-        require(
-            _nftManager != address(0) && _factory != address(0) && _core != address(0) && _protocol != address(0),
-            "ZERO_ADDRESS"
-        );
+    constructor(address _nftManager, address _factory, address _core) {
+        require(_nftManager != address(0) && _factory != address(0) && _core != address(0), "ZERO_ADDRESS");
         nftManager = INonfungiblePositionManager(_nftManager);
         v3Factory = IUniswapV3Factory(_factory);
         core = ProtocolCore(_core);
-        protocol = _protocol;
-    }
-
-    // --- Admin ---
-
-    /// @notice Update protocol address (if PositionManager is redeployed)
-    function setProtocol(address _protocol) external onlyOwner {
-        require(_protocol != address(0), "ZERO_ADDRESS");
-        emit ProtocolUpdated(protocol, _protocol);
-        protocol = _protocol;
     }
 
     // --- ILPAdapter Implementation ---
@@ -212,7 +197,10 @@ contract UniswapV3Adapter is ILPAdapter {
     ///      initiated by this adapter or the protocol contract.
     function onERC721Received(address operator, address, uint256, bytes calldata) external view returns (bytes4) {
         require(msg.sender == address(nftManager), "ONLY_V3_NFT");
-        require(operator == address(this) || operator == protocol, "UNEXPECTED_OPERATOR");
+        require(
+            operator == address(this) || _acl().isPositionManager(operator) || _acl().isLiquidationEngine(operator),
+            "UNEXPECTED_OPERATOR"
+        );
         return this.onERC721Received.selector;
     }
 }

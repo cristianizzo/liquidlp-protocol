@@ -4,6 +4,7 @@ pragma solidity ^0.8.26;
 import {ILPAdapter} from "../interfaces/ILPAdapter.sol";
 import {IMarket} from "../interfaces/IMarket.sol";
 import {ProtocolCore} from "../core/ProtocolCore.sol";
+import {ACLManager} from "../core/ACLManager.sol";
 
 /// @title MarketRegistry
 /// @notice Track and query all active lending markets
@@ -17,8 +18,8 @@ contract MarketRegistry {
     mapping(ILPAdapter.LPType => uint256[]) public marketsByLPType;
     mapping(address => uint256[]) public marketsByBorrowAsset;
 
-    modifier onlyOwner() {
-        require(msg.sender == core.owner(), "NOT_OWNER");
+    modifier onlyPoolAdmin() {
+        require(core.aclManager().isPoolAdmin(msg.sender), "NOT_POOL_ADMIN");
         _;
     }
 
@@ -27,7 +28,7 @@ contract MarketRegistry {
     }
 
     /// @notice Register a market in the registry (called after MarketFactory creates one)
-    function registerMarket(uint256 marketId, ILPAdapter.LPType lpType, address borrowAsset) external onlyOwner {
+    function registerMarket(uint256 marketId, ILPAdapter.LPType lpType, address borrowAsset) external onlyPoolAdmin {
         allMarketIds.push(marketId);
         marketsByLPType[lpType].push(marketId);
         marketsByBorrowAsset[borrowAsset].push(marketId);

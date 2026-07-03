@@ -3,9 +3,11 @@ pragma solidity ^0.8.26;
 
 import {ILPAdapter} from "../interfaces/ILPAdapter.sol";
 import {ProtocolCore} from "../core/ProtocolCore.sol";
+import {ACLManager} from "../core/ACLManager.sol";
 
 /// @title RiskManager
-/// @notice Enforces risk parameters: LTV limits, position caps, borrow caps
+/// @notice Enforces risk parameters: position caps, borrow caps
+/// @dev Uses ACLManager for role-based access. LENDING_ENGINE calls record*, RISK_ADMIN adjusts caps.
 contract RiskManager {
     ProtocolCore public immutable core;
 
@@ -26,13 +28,18 @@ contract RiskManager {
 
     event BorrowCooldownUpdated(uint256 oldValue, uint256 newValue);
 
-    modifier onlyOwner() {
-        require(msg.sender == core.owner(), "NOT_OWNER");
+    function _acl() internal view returns (ACLManager) {
+        return core.aclManager();
+    }
+
+    modifier onlyRiskAdmin() {
+        ACLManager acl = _acl();
+        require(acl.isRiskAdmin(msg.sender) || acl.isPoolAdmin(msg.sender), "NOT_RISK_ADMIN");
         _;
     }
 
-    modifier onlyAuthorized() {
-        require(msg.sender == core.owner() || core.keepers(msg.sender), "NOT_AUTHORIZED");
+    modifier onlyLendingEngine() {
+        require(_acl().isLendingEngine(msg.sender), "NOT_LENDING_ENGINE");
         _;
     }
 
@@ -86,13 +93,13 @@ contract RiskManager {
     }
 
     /// @notice Record a borrow for cap tracking
-    function recordBorrow(uint256 amount, ILPAdapter.LPType lpType) external onlyAuthorized {
+    function recordBorrow(uint256 amount, ILPAdapter.LPType lpType) external onlyLendingEngine {
         currentGlobalBorrows += amount;
         lpTypeCurrentBorrows[lpType] += amount;
     }
 
     /// @notice Record a repayment for cap tracking
-    function recordRepay(uint256 amount, ILPAdapter.LPType lpType) external onlyAuthorized {
+    function recordRepay(uint256 amount, ILPAdapter.LPType lpType) external onlyLendingEngine {
         currentGlobalBorrows -= amount;
         lpTypeCurrentBorrows[lpType] -= amount;
     }
@@ -104,28 +111,28 @@ contract RiskManager {
     event MaxPositionValueUpdated(uint256 oldValue, uint256 newValue);
     event MaxPositionsPerUserUpdated(uint256 oldValue, uint256 newValue);
 
-    function setGlobalBorrowCap(uint256 cap) external onlyOwner {
+    function setGlobalBorrowCap(uint256 cap) external onlyRiskAdmin {
         emit GlobalBorrowCapUpdated(globalBorrowCap, cap);
         globalBorrowCap = cap;
     }
 
-    function setLPTypeBorrowCap(ILPAdapter.LPType lpType, uint256 cap) external onlyOwner {
+    function setLPTypeBorrowCap(ILPAdapter.LPType lpType, uint256 cap) external onlyRiskAdmin {
         lpTypeBorrowCap[lpType] = cap;
         emit LPTypeBorrowCapUpdated(lpType, cap);
     }
 
-    function setMaxPositionValue(uint256 maxValue) external onlyOwner {
+    function setMaxPositionValue(uint256 maxValue) external onlyRiskAdmin {
         emit MaxPositionValueUpdated(maxPositionValue, maxValue);
         maxPositionValue = maxValue;
     }
 
-    function setMaxPositionsPerUser(uint256 max) external onlyOwner {
+    function setMaxPositionsPerUser(uint256 max) external onlyRiskAdmin {
         require(max >= 1, "AT_LEAST_ONE");
         emit MaxPositionsPerUserUpdated(maxPositionsPerUser, max);
         maxPositionsPerUser = max;
     }
 
-    function setBorrowCooldown(uint256 _cooldown) external onlyOwner {
+    function setBorrowCooldown(uint256 _cooldown) external onlyRiskAdmin {
         require(_cooldown >= MIN_BORROW_COOLDOWN, "BELOW_MIN");
         require(_cooldown <= MAX_BORROW_COOLDOWN, "ABOVE_MAX");
         emit BorrowCooldownUpdated(borrowCooldown, _cooldown);

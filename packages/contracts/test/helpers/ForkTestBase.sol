@@ -5,6 +5,7 @@ import "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {ProtocolCore} from "../../src/core/ProtocolCore.sol";
+import {ACLManager} from "../../src/core/ACLManager.sol";
 import {PositionManager} from "../../src/core/PositionManager.sol";
 import {LendingEngine} from "../../src/core/LendingEngine.sol";
 import {LiquidationEngine} from "../../src/core/LiquidationEngine.sol";
@@ -40,6 +41,7 @@ import {Constants} from "./Constants.sol";
 ///   }
 abstract contract ForkTestBase is Test {
     // --- Protocol contracts ---
+    ACLManager public aclManager;
     ProtocolCore public core;
     PositionManager public positionManager;
     LendingEngine public lendingEngine;
@@ -80,8 +82,10 @@ abstract contract ForkTestBase is Test {
 
         vm.startPrank(deployer);
 
-        // 1. Deploy ProtocolCore
-        core = new ProtocolCore(deployer, guardian);
+        // 1. Deploy ACLManager + ProtocolCore
+        aclManager = new ACLManager(deployer);
+        aclManager.addEmergencyAdmin(guardian);
+        core = new ProtocolCore(deployer, address(aclManager));
 
         // 2. Deploy LPOracleHub (UUPS proxy)
         LPOracleHub oracleHubImpl = new LPOracleHub();
@@ -145,12 +149,8 @@ abstract contract ForkTestBase is Test {
         oracleHub.registerOracle(ILPAdapter.LPType.UniswapV2, address(v2Oracle));
 
         // 9. Adapters
-        v3Adapter = new UniswapV3Adapter(
-            Constants.UNI_V3_NFT_MANAGER, Constants.UNI_V3_FACTORY, address(core), address(positionManager)
-        );
-        v2Adapter = new UniswapV2Adapter(
-            Constants.UNI_V2_FACTORY, Constants.UNI_V2_ROUTER, address(core), address(positionManager)
-        );
+        v3Adapter = new UniswapV3Adapter(Constants.UNI_V3_NFT_MANAGER, Constants.UNI_V3_FACTORY, address(core));
+        v2Adapter = new UniswapV2Adapter(Constants.UNI_V2_FACTORY, Constants.UNI_V2_ROUTER, address(core));
 
         // Register adapters
         core.registerAdapter(ILPAdapter.LPType.UniswapV3, address(v3Adapter));
@@ -184,9 +184,10 @@ abstract contract ForkTestBase is Test {
         router = new Router(address(positionManager), address(lendingEngine));
         positionViewer = new PositionViewer(address(core), address(positionManager), address(lendingEngine));
 
-        // 13. Authorize
-        positionManager.setAuthorized(address(lendingEngine), true);
-        positionManager.setAuthorized(address(liquidationEngine), true);
+        // 13. Grant ACL roles
+        aclManager.grantRole(aclManager.LENDING_ENGINE(), address(lendingEngine));
+        aclManager.grantRole(aclManager.LIQUIDATION_ENGINE(), address(liquidationEngine));
+        aclManager.grantRole(aclManager.POSITION_MANAGER(), address(positionManager));
         positionManager.setLendingEngine(address(lendingEngine));
 
         // 14. Set MarketFactory on ProtocolCore
