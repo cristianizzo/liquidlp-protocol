@@ -210,6 +210,7 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
 
         if (grossProfit > 0 && address(feeCollector) != address(0)) {
             (protocolFee,) = feeCollector.calculateLiquidationFee(grossProfit);
+            if (protocolFee > grossProfit) protocolFee = grossProfit; // Clamp to prevent underflow
             if (protocolFee > 0) {
                 OZIERC20(borrowAsset).forceApprove(address(feeCollector), protocolFee);
                 feeCollector.collectFee(borrowAsset, protocolFee, address(this), "liquidation");
