@@ -471,7 +471,7 @@ contract LiquidationDecimalTest is Test {
         uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
         vm.roll(block.number + 2);
 
-        // maxBorrow = 100_000 * 0.65 / 60_000 = 1.0833 WBTC = 1_0833e4
+        // maxBorrow = 100_000 * 0.65 / 60_000 = 1.0833 WBTC = 108_333_333 (8 dec)
         uint256 maxBorrow = le.getMaxBorrow(posId);
         // mulDiv(65_000e18, 1e8, 60_000e18) = 108_333_333 = ~1.083 WBTC
         assertApproxEqAbs(maxBorrow, 108_333_333, 1, "maxBorrow must be in 8-dec WBTC");
