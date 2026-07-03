@@ -81,4 +81,10 @@ contract ACLManager is AccessControl {
     function isKeeper(address addr) external view returns (bool) {
         return hasRole(KEEPER, addr);
     }
+
+    /// @notice Override renounceRole to prevent bricking — cannot renounce DEFAULT_ADMIN_ROLE
+    function renounceRole(bytes32 role, address callerConfirmation) public override {
+        require(role != DEFAULT_ADMIN_ROLE, "CANNOT_RENOUNCE_ADMIN");
+        super.renounceRole(role, callerConfirmation);
+    }
 }

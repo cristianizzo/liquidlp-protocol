@@ -68,6 +68,12 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
         _;
     }
 
+    modifier onlyRiskAdmin() {
+        ACLManager acl = _acl();
+        require(acl.isRiskAdmin(msg.sender) || acl.isPoolAdmin(msg.sender), "NOT_RISK_ADMIN");
+        _;
+    }
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
@@ -94,14 +100,14 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
         swapRouter = ISwapRouter(_swapRouter);
     }
 
-    function setMaxLiquidationPortion(uint256 _maxLiquidationPortion) external onlyPoolAdmin {
+    function setMaxLiquidationPortion(uint256 _maxLiquidationPortion) external onlyRiskAdmin {
         require(_maxLiquidationPortion >= MIN_LIQUIDATION_PORTION, "BELOW_MIN");
         require(_maxLiquidationPortion <= MAX_LIQUIDATION_PORTION_CAP, "ABOVE_MAX");
         emit MaxLiquidationPortionUpdated(maxLiquidationPortion, _maxLiquidationPortion);
         maxLiquidationPortion = _maxLiquidationPortion;
     }
 
-    function setMaxSwapSlippage(uint256 _maxSwapSlippageBps) external onlyPoolAdmin {
+    function setMaxSwapSlippage(uint256 _maxSwapSlippageBps) external onlyRiskAdmin {
         require(_maxSwapSlippageBps >= MIN_SWAP_SLIPPAGE, "BELOW_MIN");
         require(_maxSwapSlippageBps <= MAX_SWAP_SLIPPAGE_CAP, "ABOVE_MAX");
         emit MaxSwapSlippageUpdated(maxSwapSlippageBps, _maxSwapSlippageBps);
