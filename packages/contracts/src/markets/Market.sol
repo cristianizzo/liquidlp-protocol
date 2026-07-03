@@ -121,7 +121,12 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
         require(amount > 0, "NO_RESERVES");
         require(address(feeCollector) != address(0), "NO_FEE_COLLECTOR");
 
-        protocolReserves = 0;
+        // Ensure we have enough cash (reserves may exceed balance at high utilization)
+        uint256 balance = IERC20(config.borrowAsset).balanceOf(address(this));
+        if (amount > balance) amount = balance;
+        require(amount > 0, "NO_CASH");
+
+        protocolReserves -= amount; // May leave dust if capped by balance
 
         // Approve FeeCollector to pull, then call depositReserves
         OZIERC20(config.borrowAsset).forceApprove(address(feeCollector), amount);
@@ -238,7 +243,9 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
 
         amount = (sharesToBurn * state.totalSupply) / totalShares;
 
-        uint256 availableLiquidity = state.totalSupply - state.totalBorrow;
+        // Available = actual balance minus protocol reserves (which aren't lender funds)
+        uint256 balance = IERC20(config.borrowAsset).balanceOf(address(this));
+        uint256 availableLiquidity = balance > protocolReserves ? balance - protocolReserves : 0;
         require(amount <= availableLiquidity, "INSUFFICIENT_LIQUIDITY");
 
         shares[msg.sender] -= sharesToBurn;
@@ -254,7 +261,8 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
 
     function transferOut(address to, uint256 amount) external onlyLendingEngine {
         require(to != address(0), "ZERO_RECIPIENT");
-        uint256 available = state.totalSupply - state.totalBorrow;
+        uint256 balance = IERC20(config.borrowAsset).balanceOf(address(this));
+        uint256 available = balance > protocolReserves ? balance - protocolReserves : 0;
         require(amount <= available, "INSUFFICIENT_LIQUIDITY");
 
         // Enforce borrow cap (MKT-6)
@@ -299,9 +307,8 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
             state.utilization = (state.totalBorrow * 10_000) / state.totalSupply;
         }
         state.borrowRate = interestRateModel.getBorrowRate(state.utilization);
-        // Use reserveFactorBps for supply rate (protocol's actual cut from interest)
-        uint256 effectiveFee = reserveFactorBps > 0 ? reserveFactorBps : protocolFeeBps;
-        state.supplyRate = interestRateModel.getSupplyRate(state.utilization, effectiveFee);
+        // Supply rate reflects actual protocol cut from interest
+        state.supplyRate = interestRateModel.getSupplyRate(state.utilization, reserveFactorBps);
     }
 
     // --- New state vars (appended for UUPS upgrade safety) ---
