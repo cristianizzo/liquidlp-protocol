@@ -292,6 +292,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         // Both collateralValue and debtUsd are in 18-dec USD
         // Scaled by 1e18 (1e18 = health factor of 1.0)
         // Two-step mulDiv to avoid overflow: first scale by threshold, then by 1e18
+        if (debtUsd == 0) return type(uint256).max; // Dust debt rounds to 0 USD → treat as no debt
         uint256 numerator = Math.mulDiv(collateralValue, config.liquidationThreshold, 10_000);
         return Math.mulDiv(numerator, 1e18, debtUsd);
     }

@@ -88,6 +88,7 @@ contract ProtocolCore {
 
     function setMarketFactory(address _factory) external onlyOwner {
         require(_factory != address(0), "ZERO_ADDRESS");
+        require(_factory.code.length > 0, "NOT_CONTRACT");
         emit MarketFactoryUpdated(marketFactory, _factory);
         marketFactory = _factory;
     }

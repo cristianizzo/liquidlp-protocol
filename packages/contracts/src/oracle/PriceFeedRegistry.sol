@@ -68,7 +68,7 @@ contract PriceFeedRegistry {
         uint8 feedDecimals = IAggregatorV3(feed).decimals();
         require(feedDecimals <= 36, "INVALID_FEED_DECIMALS");
         if (feedDecimals < 18) {
-            price = uint256(answer) * (10 ** (18 - feedDecimals));
+            price = Math.mulDiv(uint256(answer), 10 ** (18 - feedDecimals), 1);
         } else if (feedDecimals > 18) {
             price = uint256(answer) / (10 ** (feedDecimals - 18));
         } else {
