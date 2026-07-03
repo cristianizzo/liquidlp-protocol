@@ -156,10 +156,11 @@ contract FeeCollector is ReentrancyGuard {
         emit FeesDistributed(token, toTreasury, toInsurance);
     }
 
-    /// @notice Accept reserve transfers from Market contracts
+    /// @notice Accept reserve transfers from registered Market contracts only
     /// @dev Called by Market.distributeReserves() which approves this contract first.
     ///      Pulls tokens via safeTransferFrom and tracks via balance delta.
     function depositReserves(address token, uint256 expectedAmount) external nonReentrant {
+        require(core.registeredMarkets(msg.sender), "NOT_REGISTERED_MARKET");
         require(token != address(0), "ZERO_TOKEN");
         require(expectedAmount > 0, "ZERO_AMOUNT");
 

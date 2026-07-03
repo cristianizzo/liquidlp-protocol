@@ -114,7 +114,10 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
     }
 
     /// @notice Distribute accumulated protocol reserves to FeeCollector
-    /// @dev Permissionless — anyone can trigger (keeper, user, DAO)
+    /// @dev Permissionless — anyone can trigger (keeper, user, DAO).
+    ///      At high utilization, reserves may exceed cash (tokens lent out).
+    ///      In that case, only available cash is distributed. Remaining reserves
+    ///      stay tracked and can be distributed after repayments bring cash back.
     function distributeReserves() external {
         accrueInterest(); // Ensure reserves are up-to-date
         uint256 amount = protocolReserves;

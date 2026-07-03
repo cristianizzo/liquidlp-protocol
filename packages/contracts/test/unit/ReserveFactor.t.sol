@@ -61,6 +61,7 @@ contract ReserveFactorTest is Test {
         // Grant LENDING_ENGINE to this test contract so we can call transferOut/transferIn
         vm.startPrank(owner);
         aclManager.grantRole(aclManager.LENDING_ENGINE(), address(this));
+        core.registerMarket(address(market));
         market.setReserveFactor(2000); // 20%
         market.setFeeCollector(address(fc));
         vm.stopPrank();
