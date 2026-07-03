@@ -17,7 +17,7 @@ contract LPCompounder {
     event FeesCompounded(uint256 indexed positionId, uint256 fees0, uint256 fees1);
 
     modifier onlyKeeper() {
-        require(core.aclManager().isKeeper(msg.sender) || msg.sender == core.owner(), "NOT_KEEPER");
+        require(core.aclManager().isKeeper(msg.sender) || core.aclManager().isPoolAdmin(msg.sender), "NOT_KEEPER");
         _;
     }
 

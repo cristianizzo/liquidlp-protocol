@@ -33,7 +33,7 @@ contract PoolHealthMonitor {
     event MinTvlUpdated(address indexed pool, uint256 minTvl);
 
     modifier onlyKeeper() {
-        require(core.aclManager().isKeeper(msg.sender) || msg.sender == core.owner(), "NOT_KEEPER");
+        require(core.aclManager().isKeeper(msg.sender) || core.aclManager().isPoolAdmin(msg.sender), "NOT_KEEPER");
         _;
     }
 
