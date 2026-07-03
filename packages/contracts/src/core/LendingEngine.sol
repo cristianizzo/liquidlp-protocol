@@ -11,6 +11,7 @@ import {IERC20} from "../interfaces/IERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ProtocolCore} from "./ProtocolCore.sol";
 import {PriceFeedRegistry} from "../oracle/PriceFeedRegistry.sol";
+import {RiskManager} from "../security/RiskManager.sol";
 import {PositionManager} from "./PositionManager.sol";
 import {Market} from "../markets/Market.sol";
 
@@ -47,7 +48,10 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
     uint256 public constant MIN_COOLDOWN = 1;
     uint256 public constant MAX_COOLDOWN = 50;
 
+    RiskManager public riskManager;
+
     event BorrowCooldownUpdated(uint256 oldValue, uint256 newValue);
+    event RiskManagerUpdated(address indexed oldManager, address indexed newManager);
 
     modifier whenNotPaused() {
         require(!core.paused(), "PAUSED");
@@ -72,6 +76,13 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
     }
 
     function _authorizeUpgrade(address) internal override onlyOwner {}
+
+    /// @notice Set RiskManager for position/borrow cap enforcement
+    function setRiskManager(address _riskManager) external onlyOwner {
+        require(_riskManager == address(0) || _riskManager.code.length > 0, "NOT_CONTRACT");
+        emit RiskManagerUpdated(address(riskManager), _riskManager);
+        riskManager = RiskManager(_riskManager);
+    }
 
     /// @notice Set borrow cooldown (blocks after deposit before borrowing allowed)
     /// @dev Chain-dependent: on ETH mainnet 50 blocks = ~10min, on L2s ~100s
@@ -110,6 +121,17 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
         require(newTotalDebt <= maxBorrow, "EXCEEDS_MAX_LTV");
 
         // Borrow cap is enforced inside Market.transferOut() — no redundant check here
+
+        // RiskManager: validate position value cap + global/LP-type borrow caps
+        if (address(riskManager) != address(0)) {
+            uint256 positionValue = positionManager.getPositionValue(positionId);
+            IMarket.MarketConfig memory config = IMarket(marketAddr).getConfig();
+            (bool valid, string memory reason) = riskManager.validateBorrow(
+                msg.sender, amount, positionValue, pos.depositBlock, currentDebt, config.maxLtv, pos.lpType
+            );
+            require(valid, reason);
+            riskManager.recordBorrow(amount, pos.lpType);
+        }
 
         // Update debt tracking — snapshot Market's current borrowIndex
         uint256 currentBorrowIndex = market.borrowIndex();
@@ -188,6 +210,11 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
         positionManager.updateDebt(positionId, remainingDebt);
 
         market.transferIn(payer, repayAmount);
+
+        // RiskManager: track repayment for global/LP-type cap accounting
+        if (address(riskManager) != address(0)) {
+            riskManager.recordRepay(repayAmount, pos.lpType);
+        }
 
         emit Repaid(positionId, payer, repayAmount, remainingDebt);
     }

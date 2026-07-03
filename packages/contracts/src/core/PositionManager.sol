@@ -13,6 +13,7 @@ import {IERC20} from "../interfaces/IERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ProtocolCore} from "./ProtocolCore.sol";
 import {PriceFeedRegistry} from "../oracle/PriceFeedRegistry.sol";
+import {RiskManager} from "../security/RiskManager.sol";
 
 /// @title PositionManager
 /// @notice Manages LP position deposits, withdrawals, and position state tracking
@@ -33,6 +34,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     event PositionAmountReduced(uint256 indexed positionId, uint256 amountRemoved, uint256 newAmount);
     event LendingEngineUpdated(address indexed oldEngine, address indexed newEngine);
     event PriceFeedRegistryUpdated(address indexed oldRegistry, address indexed newRegistry);
+    event RiskManagerUpdated(address indexed oldManager, address indexed newManager);
 
     // --- Modifiers ---
     modifier onlyOwner() {
@@ -74,6 +76,13 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         require(_lendingEngine != address(0), "ZERO_ADDRESS");
         emit LendingEngineUpdated(address(lendingEngine), _lendingEngine);
         lendingEngine = ILendingEngine(_lendingEngine);
+    }
+
+    /// @notice Set RiskManager for position/borrow limits
+    function setRiskManager(address _riskManager) external onlyOwner {
+        require(_riskManager == address(0) || _riskManager.code.length > 0, "NOT_CONTRACT");
+        emit RiskManagerUpdated(address(riskManager), _riskManager);
+        riskManager = RiskManager(_riskManager);
     }
 
     /// @notice Set the PriceFeedRegistry (needed for debt → USD conversion in health factor)
@@ -132,6 +141,12 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         // Get oracle price to validate position has value
         ILPOracleHub.PriceResult memory price = oracleHub.getPrice(lpToken, tokenId, amount, lpType);
         require(price.totalValue > 0, "ZERO_VALUE");
+
+        // RiskManager: enforce max positions per user + max position value
+        if (address(riskManager) != address(0)) {
+            require(_ownerPositions[msg.sender].length < riskManager.maxPositionsPerUser(), "MAX_POSITIONS_REACHED");
+            require(price.totalValue <= riskManager.maxPositionValue(), "POSITION_TOO_LARGE");
+        }
 
         // Create position
         positionId = nextPositionId++;
@@ -304,12 +319,11 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
 
     // --- New state vars (appended for UUPS upgrade safety) ---
     PriceFeedRegistry public priceFeedRegistry;
+    RiskManager public riskManager;
 
     // --- Storage Gap (UUPS upgrade safety) ---
-    // Reserve slots so future upgrades can add state variables
-    // without colliding with child contract storage.
-    // Reduced from 50 to 49 after adding priceFeedRegistry (1 slot used).
-    uint256[49] private __gap;
+    // Reduced from 50 → 49 → 48 after adding priceFeedRegistry + riskManager.
+    uint256[48] private __gap;
 
     // --- Internal ---
 

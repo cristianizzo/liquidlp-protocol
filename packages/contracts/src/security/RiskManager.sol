@@ -19,6 +19,9 @@ contract RiskManager {
     mapping(ILPAdapter.LPType => uint256) public lpTypeBorrowCap;
     mapping(ILPAdapter.LPType => uint256) public lpTypeCurrentBorrows;
 
+    // Authorized callers (LendingEngine)
+    mapping(address => bool) public authorizedCallers;
+
     // Borrow cooldown (prevent same-block deposit+borrow oracle manipulation)
     uint256 public borrowCooldown = 1; // 1 block after deposit
     uint256 public constant MIN_BORROW_COOLDOWN = 1; // At least 1 block
@@ -32,7 +35,9 @@ contract RiskManager {
     }
 
     modifier onlyAuthorized() {
-        require(msg.sender == core.owner() || core.keepers(msg.sender), "NOT_AUTHORIZED");
+        require(
+            msg.sender == core.owner() || core.keepers(msg.sender) || authorizedCallers[msg.sender], "NOT_AUTHORIZED"
+        );
         _;
     }
 
@@ -99,10 +104,17 @@ contract RiskManager {
 
     // --- Admin ---
 
+    event AuthorizedCallerUpdated(address indexed caller, bool status);
     event GlobalBorrowCapUpdated(uint256 oldValue, uint256 newValue);
     event LPTypeBorrowCapUpdated(ILPAdapter.LPType lpType, uint256 cap);
     event MaxPositionValueUpdated(uint256 oldValue, uint256 newValue);
     event MaxPositionsPerUserUpdated(uint256 oldValue, uint256 newValue);
+
+    function setAuthorizedCaller(address caller, bool status) external onlyOwner {
+        require(caller != address(0), "ZERO_ADDRESS");
+        authorizedCallers[caller] = status;
+        emit AuthorizedCallerUpdated(caller, status);
+    }
 
     function setGlobalBorrowCap(uint256 cap) external onlyOwner {
         emit GlobalBorrowCapUpdated(globalBorrowCap, cap);
