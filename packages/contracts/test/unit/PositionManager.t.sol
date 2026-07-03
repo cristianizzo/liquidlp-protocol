@@ -4,6 +4,7 @@ pragma solidity ^0.8.26;
 import "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ProtocolCore} from "../../src/core/ProtocolCore.sol";
+import {ACLManager} from "../../src/core/ACLManager.sol";
 import {PositionManager} from "../../src/core/PositionManager.sol";
 import {LendingEngine} from "../../src/core/LendingEngine.sol";
 import {LPOracleHub} from "../../src/oracle/LPOracleHub.sol";
@@ -18,6 +19,7 @@ import {InterestRateModel} from "../../src/markets/InterestRateModel.sol";
 
 contract PositionManagerTest is Test {
     ProtocolCore public core;
+    ACLManager public aclManager;
     PositionManager public pm;
     LPOracleHub public oracleHub;
     MockLPAdapter public adapter;
@@ -46,11 +48,11 @@ contract PositionManagerTest is Test {
     );
     event PositionClosed(uint256 indexed positionId, address indexed owner);
     event PositionLiquidated(uint256 indexed positionId, address indexed liquidator, uint256 debtRepaid);
-    event AuthorizationUpdated(address indexed addr, bool status);
 
     function setUp() public {
-        // Deploy core
-        core = new ProtocolCore(owner, guardian);
+        // Deploy ACLManager and core
+        aclManager = new ACLManager(owner);
+        core = new ProtocolCore(owner, address(aclManager));
 
         // Deploy oracle hub (UUPS proxy)
         LPOracleHub oracleHubImpl = new LPOracleHub();
@@ -87,14 +89,16 @@ contract PositionManagerTest is Test {
         InterestRateModel irm = new InterestRateModel(200, 600, 10_000, 8000);
         market = new MockMarket(address(usdc), address(irm));
 
-        // Register everything
+        // Register everything and grant roles via ACLManager
         vm.startPrank(owner);
+        aclManager.addEmergencyAdmin(guardian);
+        aclManager.grantRole(aclManager.LENDING_ENGINE(), lendingEngine);
+        aclManager.grantRole(aclManager.LIQUIDATION_ENGINE(), liquidationEngine);
+        aclManager.grantRole(aclManager.POSITION_MANAGER(), address(pm));
         core.registerAdapter(ILPAdapter.LPType.UniswapV3, address(adapter));
         oracleHub.registerOracle(ILPAdapter.LPType.UniswapV3, address(oracle));
         core.whitelistPool(lpToken);
         marketId = core.registerMarket(address(market));
-        pm.setAuthorized(lendingEngine, true);
-        pm.setAuthorized(liquidationEngine, true);
         pm.setLendingEngine(lendingEngine);
         vm.stopPrank();
     }
@@ -112,36 +116,31 @@ contract PositionManagerTest is Test {
         pm.initialize(address(core), address(oracleHub));
     }
 
-    // ========== setAuthorized ==========
+    // ========== ACLManager Role Checks ==========
 
-    function test_setAuthorized_success() public {
-        address newAddr = makeAddr("newAuthorized");
+    function test_aclRoles_lendingEngineGranted() public view {
+        assertTrue(aclManager.isLendingEngine(lendingEngine));
+    }
 
-        vm.expectEmit(true, false, false, true);
-        emit AuthorizationUpdated(newAddr, true);
+    function test_aclRoles_liquidationEngineGranted() public view {
+        assertTrue(aclManager.isLiquidationEngine(liquidationEngine));
+    }
+
+    function test_aclRoles_revokeRole() public {
+        bytes32 leRole = aclManager.LENDING_ENGINE();
 
         vm.prank(owner);
-        pm.setAuthorized(newAddr, true);
-        assertTrue(pm.authorized(newAddr));
+        aclManager.revokeRole(leRole, lendingEngine);
+        assertFalse(aclManager.isLendingEngine(lendingEngine));
     }
 
-    function test_setAuthorized_revoke() public {
-        vm.startPrank(owner);
-        pm.setAuthorized(lendingEngine, false);
-        vm.stopPrank();
-        assertFalse(pm.authorized(lendingEngine));
-    }
+    function test_aclRoles_revertsNotAdmin() public {
+        bytes32 leRole = aclManager.LENDING_ENGINE();
+        bytes32 adminRole = aclManager.DEFAULT_ADMIN_ROLE();
 
-    function test_setAuthorized_revertsNotOwner() public {
         vm.prank(alice);
-        vm.expectRevert("NOT_OWNER");
-        pm.setAuthorized(makeAddr("x"), true);
-    }
-
-    function test_setAuthorized_revertsZeroAddress() public {
-        vm.prank(owner);
-        vm.expectRevert("ZERO_ADDRESS");
-        pm.setAuthorized(address(0), true);
+        vm.expectRevert(abi.encodeWithSignature("AccessControlUnauthorizedAccount(address,bytes32)", alice, adminRole));
+        aclManager.grantRole(leRole, makeAddr("x"));
     }
 
     // ========== deposit ==========
@@ -359,12 +358,12 @@ contract PositionManagerTest is Test {
         assertEq(uint8(pos.status), uint8(IPositionManager.PositionStatus.Active));
     }
 
-    function test_updateDebt_revertsNotAuthorized() public {
+    function test_updateDebt_revertsNotLendingEngine() public {
         vm.prank(alice);
         uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
 
         vm.prank(alice);
-        vm.expectRevert("NOT_AUTHORIZED");
+        vm.expectRevert("NOT_LENDING_ENGINE");
         pm.updateDebt(posId, 10_000e18);
     }
 
@@ -392,14 +391,14 @@ contract PositionManagerTest is Test {
         pm.updateDebt(posId, 10_000e18);
     }
 
-    function test_updateDebt_ownerCanCallDirectly() public {
+    function test_updateDebt_ownerCannotCallDirectly() public {
         vm.prank(alice);
         uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
 
-        // Owner bypasses authorized check
+        // Owner does NOT bypass LendingEngine role check
         vm.prank(owner);
+        vm.expectRevert("NOT_LENDING_ENGINE");
         pm.updateDebt(posId, 5000e18);
-        assertEq(pm.positionDebt(posId), 5000e18);
     }
 
     // ========== reducePositionAmount (PM-3 fix) ==========
@@ -463,12 +462,12 @@ contract PositionManagerTest is Test {
         pm.reducePositionAmount(posId, 0);
     }
 
-    function test_reducePositionAmount_revertsNotAuthorized() public {
+    function test_reducePositionAmount_revertsNotLiquidationEngine() public {
         vm.prank(alice);
         uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
 
         vm.prank(alice);
-        vm.expectRevert("NOT_AUTHORIZED");
+        vm.expectRevert("NOT_LIQUIDATION_ENGINE");
         pm.reducePositionAmount(posId, 50e18);
     }
 
@@ -498,12 +497,12 @@ contract PositionManagerTest is Test {
         assertEq(pm.positionDebt(posId), 0); // Debt cleared
     }
 
-    function test_markLiquidated_revertsNotAuthorized() public {
+    function test_markLiquidated_revertsNotLiquidationEngine() public {
         vm.prank(alice);
         uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
 
         vm.prank(alice);
-        vm.expectRevert("NOT_AUTHORIZED");
+        vm.expectRevert("NOT_LIQUIDATION_ENGINE");
         pm.markLiquidated(posId, makeAddr("liq"), 5000e18);
     }
 
@@ -591,11 +590,11 @@ contract PositionManagerTest is Test {
 
     // ========== UUPS Upgrade ==========
 
-    function test_upgrade_onlyOwner() public {
+    function test_upgrade_onlyPoolAdmin() public {
         PositionManager newImpl = new PositionManager();
 
         vm.prank(alice);
-        vm.expectRevert("NOT_OWNER");
+        vm.expectRevert("NOT_POOL_ADMIN");
         pm.upgradeToAndCall(address(newImpl), "");
     }
 
@@ -634,8 +633,8 @@ contract PositionManagerTest is Test {
         assertEq(pos.amount, 100e18);
         assertEq(pos.lpToken, lpToken);
         assertEq(pm.nextPositionId(), 1);
-        assertTrue(pm.authorized(lendingEngine));
-        assertTrue(pm.authorized(liquidationEngine));
+        assertTrue(aclManager.isLendingEngine(lendingEngine));
+        assertTrue(aclManager.isLiquidationEngine(liquidationEngine));
     }
 
     // ========== Fuzz Tests ==========
@@ -801,9 +800,9 @@ contract PositionManagerTest is Test {
         vm.clearMockedCalls();
     }
 
-    function test_setPriceFeedRegistry_onlyOwner() public {
+    function test_setPriceFeedRegistry_onlyPoolAdmin() public {
         vm.prank(alice);
-        vm.expectRevert("NOT_OWNER");
+        vm.expectRevert("NOT_POOL_ADMIN");
         pm.setPriceFeedRegistry(makeAddr("registry"));
     }
 

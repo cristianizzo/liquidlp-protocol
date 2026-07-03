@@ -12,7 +12,8 @@ contract ProtocolDeploymentTest is ForkTestBase {
 
     function test_coreDeployed() public view {
         assertEq(core.owner(), deployer);
-        assertEq(core.guardian(), guardian);
+        assertEq(address(core.aclManager()), address(aclManager));
+        assertTrue(aclManager.isEmergencyAdmin(guardian));
         assertFalse(core.paused());
     }
 
@@ -63,8 +64,8 @@ contract ProtocolDeploymentTest is ForkTestBase {
     }
 
     function test_authorization() public view {
-        assertTrue(positionManager.authorized(address(lendingEngine)));
-        assertTrue(positionManager.authorized(address(liquidationEngine)));
+        assertTrue(aclManager.isLendingEngine(address(lendingEngine)));
+        assertTrue(aclManager.isLiquidationEngine(address(liquidationEngine)));
     }
 
     function test_chainlinkFeedsWork() public view {
@@ -100,7 +101,7 @@ contract ProtocolDeploymentTest is ForkTestBase {
 
         // Alice cannot upgrade
         vm.prank(alice);
-        vm.expectRevert("NOT_OWNER");
+        vm.expectRevert("NOT_POOL_ADMIN");
         positionManager.upgradeToAndCall(address(newImpl), "");
 
         // Deployer (owner) can upgrade
@@ -115,7 +116,7 @@ contract ProtocolDeploymentTest is ForkTestBase {
 
         // Guardian cannot unpause
         vm.prank(guardian);
-        vm.expectRevert("NOT_OWNER");
+        vm.expectRevert("NOT_POOL_ADMIN");
         core.unpause();
 
         // Owner can unpause

@@ -4,6 +4,7 @@ pragma solidity ^0.8.26;
 import "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ProtocolCore} from "../../src/core/ProtocolCore.sol";
+import {ACLManager} from "../../src/core/ACLManager.sol";
 import {PositionManager} from "../../src/core/PositionManager.sol";
 import {LendingEngine} from "../../src/core/LendingEngine.sol";
 import {LiquidationEngine} from "../../src/core/LiquidationEngine.sol";
@@ -24,6 +25,7 @@ import {MockSwapRouter} from "../mocks/MockSwapRouter.sol";
 ///         multi-step scenarios, and attack vectors
 contract EdgeCasesTest is Test {
     ProtocolCore public core;
+    ACLManager public aclManager;
     PositionManager public pm;
     LendingEngine public le;
     LiquidationEngine public liq;
@@ -63,8 +65,7 @@ contract EdgeCasesTest is Test {
         market = Market(
             address(
                 new ERC1967Proxy(
-                    address(new Market()),
-                    abi.encodeCall(Market.initialize, (mConfig, address(irm), address(core), address(le)))
+                    address(new Market()), abi.encodeCall(Market.initialize, (mConfig, address(irm), address(core)))
                 )
             )
         );
@@ -79,7 +80,8 @@ contract EdgeCasesTest is Test {
     }
 
     function setUp() public {
-        core = new ProtocolCore(owner, guardian);
+        aclManager = new ACLManager(owner);
+        core = new ProtocolCore(owner, address(aclManager));
 
         oracleHub = LPOracleHub(
             address(
@@ -121,15 +123,16 @@ contract EdgeCasesTest is Test {
         oracle.setPrice(50_000e18);
 
         vm.startPrank(owner);
+        aclManager.addEmergencyAdmin(guardian);
+        aclManager.grantRole(aclManager.LENDING_ENGINE(), address(le));
+        aclManager.grantRole(aclManager.LIQUIDATION_ENGINE(), address(liq));
+        aclManager.grantRole(aclManager.POSITION_MANAGER(), address(pm));
+        aclManager.grantRole(aclManager.KEEPER(), address(liq));
         core.registerAdapter(ILPAdapter.LPType.UniswapV3, address(adapter));
         oracleHub.registerOracle(ILPAdapter.LPType.UniswapV3, address(oracle));
         core.whitelistPool(lpToken);
-        pm.setAuthorized(address(le), true);
-        pm.setAuthorized(address(liq), true);
         pm.setLendingEngine(address(le));
         liq.setFeeCollector(address(fc));
-        fc.setAuthorizedCaller(address(liq), true);
-        core.setKeeper(address(liq), true);
         vm.stopPrank();
     }
 
@@ -241,8 +244,7 @@ contract EdgeCasesTest is Test {
         Market m = Market(
             address(
                 new ERC1967Proxy(
-                    address(new Market()),
-                    abi.encodeCall(Market.initialize, (mConfig2, address(irm2), address(core), address(le)))
+                    address(new Market()), abi.encodeCall(Market.initialize, (mConfig2, address(irm2), address(core)))
                 )
             )
         );

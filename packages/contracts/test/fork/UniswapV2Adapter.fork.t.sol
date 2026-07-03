@@ -3,6 +3,7 @@ pragma solidity ^0.8.26;
 
 import "forge-std/Test.sol";
 import {ProtocolCore} from "../../src/core/ProtocolCore.sol";
+import {ACLManager} from "../../src/core/ACLManager.sol";
 import {UniswapV2Adapter} from "../../src/adapters/UniswapV2Adapter.sol";
 import {ILPAdapter} from "../../src/interfaces/ILPAdapter.sol";
 import {IUniswapV2Pair} from "../../src/interfaces/external/IUniswapV2.sol";
@@ -19,6 +20,7 @@ contract UniswapV2AdapterForkTest is Test {
 
     UniswapV2Adapter public adapter;
     ProtocolCore public core;
+    ACLManager public aclManager;
     address public owner = makeAddr("owner");
     address public protocol = makeAddr("protocol");
 
@@ -26,8 +28,13 @@ contract UniswapV2AdapterForkTest is Test {
         string memory rpcUrl = vm.envOr("ETH_RPC_URL", string("https://ethereum-rpc.publicnode.com"));
         vm.createSelectFork(rpcUrl);
 
-        core = new ProtocolCore(owner, owner);
-        adapter = new UniswapV2Adapter(UNI_V2_FACTORY, UNI_V2_ROUTER, address(core), protocol);
+        aclManager = new ACLManager(owner);
+        core = new ProtocolCore(owner, address(aclManager));
+        adapter = new UniswapV2Adapter(UNI_V2_FACTORY, UNI_V2_ROUTER, address(core));
+
+        // Grant protocol address the POSITION_MANAGER role so it can call adapter
+        vm.prank(owner);
+        aclManager.grantRole(aclManager.POSITION_MANAGER(), protocol);
     }
 
     function _lockPosition() internal returns (address holder, uint256 lockAmount) {
@@ -58,19 +65,19 @@ contract UniswapV2AdapterForkTest is Test {
 
     function test_onlyProtocol_validateAndLock() public {
         vm.prank(makeAddr("random"));
-        vm.expectRevert("NOT_PROTOCOL");
+        vm.expectRevert("NOT_AUTHORIZED");
         adapter.validateAndLock(UNI_V2_WETH_USDC, 0, 1e18, makeAddr("x"));
     }
 
     function test_onlyProtocol_unlock() public {
         vm.prank(makeAddr("random"));
-        vm.expectRevert("NOT_PROTOCOL");
+        vm.expectRevert("NOT_AUTHORIZED");
         adapter.unlock(UNI_V2_WETH_USDC, 0, 1e18, makeAddr("x"));
     }
 
     function test_onlyProtocol_unwind() public {
         vm.prank(makeAddr("random"));
-        vm.expectRevert("NOT_PROTOCOL");
+        vm.expectRevert("NOT_AUTHORIZED");
         adapter.unwind(UNI_V2_WETH_USDC, 0, 100);
     }
 
@@ -172,20 +179,5 @@ contract UniswapV2AdapterForkTest is Test {
         vm.prank(protocol);
         adapter.unlock(UNI_V2_WETH_USDC, 0, remaining, holder);
         assertEq(pair.balanceOf(address(adapter)), 0);
-    }
-
-    // ========== setProtocol ==========
-
-    function test_setProtocol() public {
-        address newProtocol = makeAddr("newProtocol");
-        vm.prank(owner);
-        adapter.setProtocol(newProtocol);
-        assertEq(adapter.protocol(), newProtocol);
-    }
-
-    function test_setProtocol_revertsNotOwner() public {
-        vm.prank(makeAddr("random"));
-        vm.expectRevert("NOT_OWNER");
-        adapter.setProtocol(makeAddr("x"));
     }
 }

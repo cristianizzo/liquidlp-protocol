@@ -3,6 +3,7 @@ pragma solidity ^0.8.26;
 
 import "forge-std/Test.sol";
 import {ProtocolCore} from "../../src/core/ProtocolCore.sol";
+import {ACLManager} from "../../src/core/ACLManager.sol";
 import {UniswapV3Adapter} from "../../src/adapters/UniswapV3Adapter.sol";
 import {ILPAdapter} from "../../src/interfaces/ILPAdapter.sol";
 import {INonfungiblePositionManager} from "../../src/interfaces/external/IUniswapV3.sol";
@@ -20,6 +21,7 @@ contract UniswapV3AdapterForkTest is Test {
     UniswapV3Adapter public adapter;
     INonfungiblePositionManager public nftManager;
     ProtocolCore public core;
+    ACLManager public aclManager;
     address public owner = makeAddr("owner");
     address public protocol = makeAddr("protocol");
 
@@ -27,9 +29,14 @@ contract UniswapV3AdapterForkTest is Test {
         string memory rpcUrl = vm.envOr("ETH_RPC_URL", string("https://ethereum-rpc.publicnode.com"));
         vm.createSelectFork(rpcUrl);
 
-        core = new ProtocolCore(owner, owner);
-        adapter = new UniswapV3Adapter(UNI_V3_NFT_MANAGER, UNI_V3_FACTORY, address(core), protocol);
+        aclManager = new ACLManager(owner);
+        core = new ProtocolCore(owner, address(aclManager));
+        adapter = new UniswapV3Adapter(UNI_V3_NFT_MANAGER, UNI_V3_FACTORY, address(core));
         nftManager = INonfungiblePositionManager(UNI_V3_NFT_MANAGER);
+
+        // Grant protocol address the POSITION_MANAGER role so it can call adapter
+        vm.prank(owner);
+        aclManager.grantRole(aclManager.POSITION_MANAGER(), protocol);
     }
 
     function _findPosition(
@@ -88,25 +95,25 @@ contract UniswapV3AdapterForkTest is Test {
 
     function test_onlyProtocol_validateAndLock() public {
         vm.prank(makeAddr("random"));
-        vm.expectRevert("NOT_PROTOCOL");
+        vm.expectRevert("NOT_AUTHORIZED");
         adapter.validateAndLock(UNI_V3_NFT_MANAGER, 1, 0, makeAddr("x"));
     }
 
     function test_onlyProtocol_unlock() public {
         vm.prank(makeAddr("random"));
-        vm.expectRevert("NOT_PROTOCOL");
+        vm.expectRevert("NOT_AUTHORIZED");
         adapter.unlock(UNI_V3_NFT_MANAGER, 1, 0, makeAddr("x"));
     }
 
     function test_onlyProtocol_unwind() public {
         vm.prank(makeAddr("random"));
-        vm.expectRevert("NOT_PROTOCOL");
+        vm.expectRevert("NOT_AUTHORIZED");
         adapter.unwind(UNI_V3_NFT_MANAGER, 1, 100);
     }
 
     function test_onlyProtocol_collectFees() public {
         vm.prank(makeAddr("random"));
-        vm.expectRevert("NOT_PROTOCOL");
+        vm.expectRevert("NOT_AUTHORIZED");
         adapter.collectFees(UNI_V3_NFT_MANAGER, 1);
     }
 

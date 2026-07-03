@@ -3,12 +3,14 @@ pragma solidity ^0.8.26;
 
 import "forge-std/Test.sol";
 import {ProtocolCore} from "../../src/core/ProtocolCore.sol";
+import {ACLManager} from "../../src/core/ACLManager.sol";
 import {FeeCollector} from "../../src/core/FeeCollector.sol";
 import {ILPAdapter} from "../../src/interfaces/ILPAdapter.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
 
 contract FeeCollectorTest is Test {
     ProtocolCore public core;
+    ACLManager public aclManager;
     FeeCollector public fc;
     MockERC20 public usdc;
 
@@ -31,12 +33,15 @@ contract FeeCollectorTest is Test {
     event InsuranceFundUpdated(address indexed oldAddr, address indexed newAddr);
 
     function setUp() public {
-        core = new ProtocolCore(owner, guardian);
+        aclManager = new ACLManager(owner);
+        core = new ProtocolCore(owner, address(aclManager));
         fc = new FeeCollector(address(core), treasury, insurance);
         usdc = new MockERC20("USDC", "USDC", 6);
 
-        vm.prank(owner);
-        core.setKeeper(keeper, true);
+        vm.startPrank(owner);
+        aclManager.addEmergencyAdmin(guardian);
+        aclManager.grantRole(aclManager.KEEPER(), keeper);
+        vm.stopPrank();
     }
 
     // ========== Constructor ==========

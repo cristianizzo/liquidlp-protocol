@@ -3,6 +3,7 @@ pragma solidity ^0.8.26;
 
 import "forge-std/Test.sol";
 import {ProtocolCore} from "../../src/core/ProtocolCore.sol";
+import {ACLManager} from "../../src/core/ACLManager.sol";
 import {ILPAdapter} from "../../src/interfaces/ILPAdapter.sol";
 
 /// @notice Minimal contract used to satisfy code.length > 0 checks in ProtocolCore
@@ -10,6 +11,7 @@ contract Stub {}
 
 contract ProtocolCoreTest is Test {
     ProtocolCore public core;
+    ACLManager public aclManager;
     address public owner = makeAddr("owner");
     address public guardian = makeAddr("guardian");
     address public user = makeAddr("user");
@@ -23,11 +25,14 @@ contract ProtocolCoreTest is Test {
     event Paused(address indexed by);
     event Unpaused(address indexed by);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
-    event GuardianUpdated(address indexed previousGuardian, address indexed newGuardian);
-    event KeeperUpdated(address indexed keeper, bool status);
 
     function setUp() public {
-        core = new ProtocolCore(owner, guardian);
+        aclManager = new ACLManager(owner);
+        core = new ProtocolCore(owner, address(aclManager));
+
+        vm.startPrank(owner);
+        aclManager.addEmergencyAdmin(guardian);
+        vm.stopPrank();
     }
 
     /// @dev Deploy a Stub contract to use where code.length > 0 is required
@@ -37,20 +42,20 @@ contract ProtocolCoreTest is Test {
 
     // ========== Constructor ==========
 
-    function test_constructor_setsOwnerAndGuardian() public view {
+    function test_constructor_setsOwnerAndACL() public view {
         assertEq(core.owner(), owner);
-        assertEq(core.guardian(), guardian);
+        assertEq(address(core.aclManager()), address(aclManager));
         assertFalse(core.paused());
         assertEq(core.nextMarketId(), 0);
     }
 
     function test_constructor_revertsZeroOwner() public {
         vm.expectRevert("ZERO_OWNER");
-        new ProtocolCore(address(0), guardian);
+        new ProtocolCore(address(0), address(aclManager));
     }
 
-    function test_constructor_revertsZeroGuardian() public {
-        vm.expectRevert("ZERO_GUARDIAN");
+    function test_constructor_revertsZeroACL() public {
+        vm.expectRevert("ZERO_ACL");
         new ProtocolCore(owner, address(0));
     }
 
@@ -80,9 +85,9 @@ contract ProtocolCoreTest is Test {
         assertEq(core.adapters(ILPAdapter.LPType.UniswapV3), adapter2);
     }
 
-    function test_registerAdapter_revertsNotOwner() public {
+    function test_registerAdapter_revertsNotPoolAdmin() public {
         vm.prank(user);
-        vm.expectRevert("NOT_OWNER");
+        vm.expectRevert("NOT_POOL_ADMIN");
         core.registerAdapter(ILPAdapter.LPType.UniswapV3, makeAddr("adapter"));
     }
 
@@ -100,7 +105,7 @@ contract ProtocolCoreTest is Test {
 
     function test_registerAdapter_guardianCannotRegister() public {
         vm.prank(guardian);
-        vm.expectRevert("NOT_OWNER");
+        vm.expectRevert("NOT_POOL_ADMIN");
         core.registerAdapter(ILPAdapter.LPType.UniswapV3, makeAddr("adapter"));
     }
 
@@ -118,9 +123,9 @@ contract ProtocolCoreTest is Test {
         assertEq(core.oracles(ILPAdapter.LPType.UniswapV3), oracle);
     }
 
-    function test_registerOracle_revertsNotOwner() public {
+    function test_registerOracle_revertsNotPoolAdmin() public {
         vm.prank(user);
-        vm.expectRevert("NOT_OWNER");
+        vm.expectRevert("NOT_POOL_ADMIN");
         core.registerOracle(ILPAdapter.LPType.UniswapV3, makeAddr("oracle"));
     }
 
@@ -257,9 +262,9 @@ contract ProtocolCoreTest is Test {
         core.whitelistPool(address(0));
     }
 
-    function test_whitelistPool_revertsNotOwner() public {
+    function test_whitelistPool_revertsNotPoolAdmin() public {
         vm.prank(user);
-        vm.expectRevert("NOT_OWNER");
+        vm.expectRevert("NOT_POOL_ADMIN");
         core.whitelistPool(makeAddr("pool"));
     }
 
@@ -289,13 +294,13 @@ contract ProtocolCoreTest is Test {
         core.removePool(makeAddr("pool"));
     }
 
-    function test_removePool_revertsNotOwner() public {
+    function test_removePool_revertsNotPoolAdmin() public {
         address pool = makeAddr("pool");
         vm.prank(owner);
         core.whitelistPool(pool);
 
         vm.prank(user);
-        vm.expectRevert("NOT_OWNER");
+        vm.expectRevert("NOT_POOL_ADMIN");
         core.removePool(pool);
     }
 
@@ -316,42 +321,38 @@ contract ProtocolCoreTest is Test {
         vm.stopPrank();
     }
 
-    // ========== setKeeper ==========
+    // ========== ACLManager Keeper Role ==========
 
-    function test_setKeeper_enable() public {
+    function test_keeper_grantRole() public {
         address keeper = makeAddr("keeper");
-
-        vm.expectEmit(true, false, false, true);
-        emit KeeperUpdated(keeper, true);
+        bytes32 keeperRole = aclManager.KEEPER();
 
         vm.prank(owner);
-        core.setKeeper(keeper, true);
+        aclManager.grantRole(keeperRole, keeper);
 
-        assertTrue(core.keepers(keeper));
+        assertTrue(aclManager.isKeeper(keeper));
     }
 
-    function test_setKeeper_disable() public {
+    function test_keeper_revokeRole() public {
         address keeper = makeAddr("keeper");
+        bytes32 keeperRole = aclManager.KEEPER();
 
         vm.startPrank(owner);
-        core.setKeeper(keeper, true);
-        assertTrue(core.keepers(keeper));
+        aclManager.grantRole(keeperRole, keeper);
+        assertTrue(aclManager.isKeeper(keeper));
 
-        core.setKeeper(keeper, false);
-        assertFalse(core.keepers(keeper));
+        aclManager.revokeRole(keeperRole, keeper);
+        assertFalse(aclManager.isKeeper(keeper));
         vm.stopPrank();
     }
 
-    function test_setKeeper_revertsZeroAddress() public {
-        vm.prank(owner);
-        vm.expectRevert("ZERO_ADDRESS");
-        core.setKeeper(address(0), true);
-    }
+    function test_keeper_revertsNotAdmin() public {
+        bytes32 keeperRole = aclManager.KEEPER();
+        bytes32 adminRole = aclManager.DEFAULT_ADMIN_ROLE();
 
-    function test_setKeeper_revertsNotOwner() public {
         vm.prank(user);
-        vm.expectRevert("NOT_OWNER");
-        core.setKeeper(makeAddr("keeper"), true);
+        vm.expectRevert(abi.encodeWithSignature("AccessControlUnauthorizedAccount(address,bytes32)", user, adminRole));
+        aclManager.grantRole(keeperRole, makeAddr("keeper"));
     }
 
     // ========== transferOwnership (two-step) ==========
@@ -426,14 +427,14 @@ contract ProtocolCoreTest is Test {
         vm.prank(newOwner);
         core.acceptOwnership();
 
-        // Old owner can no longer act
+        // Old owner can no longer act (transferOwnership is onlyOwner)
         vm.prank(owner);
         vm.expectRevert("NOT_OWNER");
-        core.setKeeper(makeAddr("keeper"), true);
+        core.transferOwnership(makeAddr("someone"));
 
         // New owner can act
         vm.prank(newOwner);
-        core.setKeeper(makeAddr("keeper"), true);
+        core.transferOwnership(makeAddr("someone"));
     }
 
     function test_cancelOwnershipTransfer() public {
@@ -471,29 +472,28 @@ contract ProtocolCoreTest is Test {
         core.transferOwnership(makeAddr("newOwner"));
     }
 
-    // ========== setGuardian ==========
+    // ========== ACLManager Emergency Admin ==========
 
-    function test_setGuardian_success() public {
+    function test_emergencyAdmin_addAndCheck() public {
         address newGuardian = makeAddr("newGuardian");
 
-        vm.expectEmit(true, true, false, false);
-        emit GuardianUpdated(guardian, newGuardian);
-
         vm.prank(owner);
-        core.setGuardian(newGuardian);
+        aclManager.addEmergencyAdmin(newGuardian);
 
-        assertEq(core.guardian(), newGuardian);
+        assertTrue(aclManager.isEmergencyAdmin(newGuardian));
     }
 
-    function test_setGuardian_newGuardianCanPause() public {
+    function test_emergencyAdmin_newAdminCanPause() public {
         address newGuardian = makeAddr("newGuardian");
 
-        vm.prank(owner);
-        core.setGuardian(newGuardian);
+        vm.startPrank(owner);
+        aclManager.addEmergencyAdmin(newGuardian);
+        aclManager.removeEmergencyAdmin(guardian);
+        vm.stopPrank();
 
         // Old guardian can no longer pause
         vm.prank(guardian);
-        vm.expectRevert("NOT_GUARDIAN");
+        vm.expectRevert("NOT_EMERGENCY_ADMIN");
         core.pause();
 
         // New guardian can pause
@@ -502,16 +502,14 @@ contract ProtocolCoreTest is Test {
         assertTrue(core.paused());
     }
 
-    function test_setGuardian_revertsZeroAddress() public {
-        vm.prank(owner);
-        vm.expectRevert("ZERO_ADDRESS");
-        core.setGuardian(address(0));
-    }
+    function test_emergencyAdmin_revertsNotAdmin() public {
+        bytes32 adminRole = aclManager.DEFAULT_ADMIN_ROLE();
 
-    function test_setGuardian_revertsNotOwner() public {
         vm.prank(guardian);
-        vm.expectRevert("NOT_OWNER");
-        core.setGuardian(makeAddr("newGuardian"));
+        vm.expectRevert(
+            abi.encodeWithSignature("AccessControlUnauthorizedAccount(address,bytes32)", guardian, adminRole)
+        );
+        aclManager.addEmergencyAdmin(makeAddr("newGuardian"));
     }
 
     // ========== pause / unpause ==========
@@ -536,7 +534,7 @@ contract ProtocolCoreTest is Test {
 
     function test_pause_revertsUnauthorized() public {
         vm.prank(user);
-        vm.expectRevert("NOT_GUARDIAN");
+        vm.expectRevert("NOT_EMERGENCY_ADMIN");
         core.pause();
     }
 
@@ -561,13 +559,13 @@ contract ProtocolCoreTest is Test {
         assertFalse(core.paused());
     }
 
-    function test_unpause_revertsNotOwner() public {
+    function test_unpause_revertsNotPoolAdmin() public {
         vm.prank(guardian);
         core.pause();
 
         // Guardian CANNOT unpause (security feature)
         vm.prank(guardian);
-        vm.expectRevert("NOT_OWNER");
+        vm.expectRevert("NOT_POOL_ADMIN");
         core.unpause();
     }
 

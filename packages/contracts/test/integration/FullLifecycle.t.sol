@@ -4,6 +4,7 @@ pragma solidity ^0.8.26;
 import "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ProtocolCore} from "../../src/core/ProtocolCore.sol";
+import {ACLManager} from "../../src/core/ACLManager.sol";
 import {PositionManager} from "../../src/core/PositionManager.sol";
 import {LendingEngine} from "../../src/core/LendingEngine.sol";
 import {LiquidationEngine} from "../../src/core/LiquidationEngine.sol";
@@ -26,6 +27,7 @@ import {MockSwapRouter} from "../mocks/MockSwapRouter.sol";
 contract FullLifecycleTest is Test {
     // --- Real contracts ---
     ProtocolCore public core;
+    ACLManager public aclManager;
     PositionManager public pm;
     LendingEngine public le;
     LiquidationEngine public liq;
@@ -60,8 +62,9 @@ contract FullLifecycleTest is Test {
         usdc = new MockERC20("USDC", "USDC", 18);
         weth = new MockERC20("WETH", "WETH", 18);
 
-        // --- Deploy real core ---
-        core = new ProtocolCore(owner, guardian);
+        // --- Deploy ACLManager and core ---
+        aclManager = new ACLManager(owner);
+        core = new ProtocolCore(owner, address(aclManager));
 
         // --- OracleHub (UUPS proxy) ---
         oracleHub = LPOracleHub(
@@ -120,8 +123,7 @@ contract FullLifecycleTest is Test {
         market = Market(
             address(
                 new ERC1967Proxy(
-                    address(new Market()),
-                    abi.encodeCall(Market.initialize, (mConfig, address(irm), address(core), address(le)))
+                    address(new Market()), abi.encodeCall(Market.initialize, (mConfig, address(irm), address(core)))
                 )
             )
         );
@@ -136,19 +138,20 @@ contract FullLifecycleTest is Test {
         oracle.setPrice(50_000e18); // $50K collateral value
         swapRouter = new MockSwapRouter(address(usdc));
 
-        // --- Register everything ---
+        // --- Register everything and grant roles ---
         vm.startPrank(owner);
+        aclManager.addEmergencyAdmin(guardian);
+        aclManager.grantRole(aclManager.LENDING_ENGINE(), address(le));
+        aclManager.grantRole(aclManager.LIQUIDATION_ENGINE(), address(liq));
+        aclManager.grantRole(aclManager.POSITION_MANAGER(), address(pm));
+        aclManager.grantRole(aclManager.KEEPER(), address(liq));
         core.registerAdapter(ILPAdapter.LPType.UniswapV3, address(adapter));
         oracleHub.registerOracle(ILPAdapter.LPType.UniswapV3, address(oracle));
         core.whitelistPool(lpToken);
         marketId = core.registerMarket(address(market));
-        pm.setAuthorized(address(le), true);
-        pm.setAuthorized(address(liq), true);
         pm.setLendingEngine(address(le));
         liq.setSwapRouter(address(swapRouter));
         liq.setFeeCollector(address(fc));
-        fc.setAuthorizedCaller(address(liq), true);
-        core.setKeeper(address(liq), true);
         vm.stopPrank();
 
         // Set WETH swap rate: 1 WETH = 1000 USDC (so 25 WETH + 25K USDC ≈ $50K)
@@ -638,7 +641,7 @@ contract FullLifecycleTest is Test {
 
         // Guardian cannot unpause
         vm.prank(guardian);
-        vm.expectRevert("NOT_OWNER");
+        vm.expectRevert("NOT_POOL_ADMIN");
         core.unpause();
 
         // Owner unpauses
@@ -693,17 +696,17 @@ contract FullLifecycleTest is Test {
 
         // Random user can't update debt
         vm.prank(bob);
-        vm.expectRevert("NOT_AUTHORIZED");
+        vm.expectRevert("NOT_LENDING_ENGINE");
         pm.updateDebt(posId, 1000e18);
 
         // Random user can't register adapter
         vm.prank(bob);
-        vm.expectRevert("NOT_OWNER");
+        vm.expectRevert("NOT_POOL_ADMIN");
         core.registerAdapter(ILPAdapter.LPType.UniswapV3, makeAddr("x"));
 
         // Random user can't update market config
         vm.prank(bob);
-        vm.expectRevert("NOT_OWNER");
+        vm.expectRevert("NOT_RISK_ADMIN");
         market.updateConfig(7000, 8000, 600, 800, 20_000_000e18);
     }
 
@@ -730,13 +733,13 @@ contract FullLifecycleTest is Test {
         core.acceptOwnership();
         assertEq(core.owner(), newOwner);
 
-        // New owner can act
+        // New owner can act (transferOwnership is onlyOwner)
         vm.prank(newOwner);
-        core.setKeeper(makeAddr("k"), true);
+        core.transferOwnership(makeAddr("someone"));
 
         // Old owner can't
         vm.prank(owner);
         vm.expectRevert("NOT_OWNER");
-        core.setKeeper(makeAddr("k2"), true);
+        core.transferOwnership(makeAddr("someone2"));
     }
 }

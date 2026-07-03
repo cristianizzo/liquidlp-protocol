@@ -4,6 +4,7 @@ pragma solidity ^0.8.26;
 import "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ProtocolCore} from "../../src/core/ProtocolCore.sol";
+import {ACLManager} from "../../src/core/ACLManager.sol";
 import {PositionManager} from "../../src/core/PositionManager.sol";
 import {LendingEngine} from "../../src/core/LendingEngine.sol";
 import {LPOracleHub} from "../../src/oracle/LPOracleHub.sol";
@@ -17,6 +18,7 @@ import {MockERC20} from "../mocks/MockERC20.sol";
 
 contract LendingEngineTest is Test {
     ProtocolCore public core;
+    ACLManager public aclManager;
     PositionManager public pm;
     LendingEngine public le;
     LPOracleHub public oracleHub;
@@ -45,8 +47,9 @@ contract LendingEngineTest is Test {
         usdc = new MockERC20("USDC", "USDC", 18);
         irm = new InterestRateModel(200, 600, 10_000, 8000);
 
-        // Deploy core
-        core = new ProtocolCore(owner, guardian);
+        // Deploy ACLManager and core
+        aclManager = new ACLManager(owner);
+        core = new ProtocolCore(owner, address(aclManager));
 
         // Deploy OracleHub (UUPS proxy)
         LPOracleHub ohImpl = new LPOracleHub();
@@ -81,14 +84,16 @@ contract LendingEngineTest is Test {
         oracle.setPrice(50_000e18); // $50K collateral
         market = new MockMarket(address(usdc), address(irm));
 
-        // Register everything
+        // Register everything and grant roles via ACLManager
         vm.startPrank(owner);
+        aclManager.addEmergencyAdmin(guardian);
+        aclManager.grantRole(aclManager.LENDING_ENGINE(), address(le));
+        aclManager.grantRole(aclManager.LIQUIDATION_ENGINE(), liquidationEngine);
+        aclManager.grantRole(aclManager.POSITION_MANAGER(), address(pm));
         core.registerAdapter(ILPAdapter.LPType.UniswapV3, address(adapter));
         oracleHub.registerOracle(ILPAdapter.LPType.UniswapV3, address(oracle));
         core.whitelistPool(lpToken);
         marketId = core.registerMarket(address(market));
-        pm.setAuthorized(address(le), true);
-        pm.setAuthorized(liquidationEngine, true);
         vm.stopPrank();
 
         // Fund market with USDC (use 18 decimals to match oracle/debt accounting)
@@ -307,11 +312,11 @@ contract LendingEngineTest is Test {
         assertEq(le.getDebt(posId), 10_000e18);
     }
 
-    function test_repayOnBehalf_revertsNotAuthorized() public {
+    function test_repayOnBehalf_revertsNotLiquidationEngine() public {
         uint256 posId = _depositAndBorrow(alice, 20_000e18);
 
         vm.prank(bob);
-        vm.expectRevert("NOT_AUTHORIZED");
+        vm.expectRevert("NOT_LIQUIDATION_ENGINE");
         le.repayOnBehalf(posId, 5000e18);
     }
 
@@ -399,9 +404,9 @@ contract LendingEngineTest is Test {
         le.setBorrowCooldown(51);
     }
 
-    function test_setBorrowCooldown_revertsNotOwner() public {
+    function test_setBorrowCooldown_revertsNotPoolAdmin() public {
         vm.prank(alice);
-        vm.expectRevert("NOT_OWNER");
+        vm.expectRevert("NOT_POOL_ADMIN");
         le.setBorrowCooldown(5);
     }
 
@@ -488,11 +493,11 @@ contract LendingEngineTest is Test {
 
     // ========== UUPS Upgrade ==========
 
-    function test_upgrade_onlyOwner() public {
+    function test_upgrade_onlyPoolAdmin() public {
         LendingEngine newImpl = new LendingEngine();
 
         vm.prank(alice);
-        vm.expectRevert("NOT_OWNER");
+        vm.expectRevert("NOT_POOL_ADMIN");
         le.upgradeToAndCall(address(newImpl), "");
     }
 
