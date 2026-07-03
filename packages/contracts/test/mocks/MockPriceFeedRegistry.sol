@@ -20,6 +20,7 @@ contract MockPriceFeedRegistry {
     }
 
     function getUsdValue(address token, uint256 amount, uint8 tokenDecimals) external view returns (uint256) {
+        require(tokenDecimals <= 36, "INVALID_DECIMALS");
         uint256 price = prices[token];
         require(price > 0, "NO_PRICE_FEED");
         return Math.mulDiv(amount, price, 10 ** tokenDecimals);

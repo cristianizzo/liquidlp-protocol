@@ -79,6 +79,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     /// @notice Set the PriceFeedRegistry (needed for debt → USD conversion in health factor)
     /// @dev Set to address(0) to revert to fallback decimal normalization mode
     function setPriceFeedRegistry(address _registry) external onlyOwner {
+        require(_registry == address(0) || _registry.code.length > 0, "NOT_CONTRACT");
         emit PriceFeedRegistryUpdated(address(priceFeedRegistry), _registry);
         priceFeedRegistry = PriceFeedRegistry(_registry);
     }
@@ -290,7 +291,9 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         // HF = (collateralValue * liquidationThreshold * 1e18) / (debtUsd * 10000)
         // Both collateralValue and debtUsd are in 18-dec USD
         // Scaled by 1e18 (1e18 = health factor of 1.0)
-        return Math.mulDiv(collateralValue * config.liquidationThreshold, 1e18, debtUsd * 10_000);
+        // Two-step mulDiv to avoid overflow: first scale by threshold, then by 1e18
+        uint256 numerator = Math.mulDiv(collateralValue, config.liquidationThreshold, 10_000);
+        return Math.mulDiv(numerator, 1e18, debtUsd);
     }
 
     /// @notice Get the block number when a position was deposited (for borrow cooldown)

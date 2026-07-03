@@ -154,7 +154,8 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
         // Balance-delta check: ensure exact amount received (rejects fee-on-transfer tokens)
         uint256 balBefore = IERC20(borrowAsset).balanceOf(address(this));
         OZIERC20(borrowAsset).safeTransferFrom(msg.sender, address(this), repayAmount);
-        require(IERC20(borrowAsset).balanceOf(address(this)) - balBefore == repayAmount, "FEE_ON_TRANSFER_UNSUPPORTED");
+        uint256 balAfter = IERC20(borrowAsset).balanceOf(address(this));
+        require(balAfter >= balBefore && balAfter - balBefore == repayAmount, "FEE_ON_TRANSFER_UNSUPPORTED");
 
         // Step 5: Approve market and repay debt via LendingEngine
         OZIERC20(borrowAsset).forceApprove(marketAddr, repayAmount);

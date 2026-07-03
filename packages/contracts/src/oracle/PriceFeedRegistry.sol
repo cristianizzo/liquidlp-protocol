@@ -40,6 +40,7 @@ contract PriceFeedRegistry {
     /// @notice Set Chainlink price feed for a token
     function setPriceFeed(address token, address feed) external onlyOwner {
         require(token != address(0) && feed != address(0), "ZERO_ADDRESS");
+        require(feed.code.length > 0, "NOT_CONTRACT");
         priceFeeds[token] = feed;
         emit PriceFeedUpdated(token, feed);
     }
