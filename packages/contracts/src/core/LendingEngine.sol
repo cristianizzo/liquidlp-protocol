@@ -123,14 +123,19 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
         // Borrow cap is enforced inside Market.transferOut() — no redundant check here
 
         // RiskManager: validate position value cap + global/LP-type borrow caps
+        // All values passed to RM are in 18-dec USD (RM caps are in 18-dec USD)
         if (address(riskManager) != address(0)) {
             uint256 positionValue = positionManager.getPositionValue(positionId);
+            // Convert borrow amount to 18-dec USD for cap comparison
             IMarket.MarketConfig memory config = IMarket(marketAddr).getConfig();
+            uint256 amountUsd = _toUsd(amount, config.borrowAsset);
+            uint256 currentDebtUsd = _toUsd(currentDebt, config.borrowAsset);
+            // Pass maxLtv=10000 (100%) to skip RM's LTV check — already checked above with decimals
             (bool valid, string memory reason) = riskManager.validateBorrow(
-                msg.sender, amount, positionValue, pos.depositBlock, currentDebt, config.maxLtv, pos.lpType
+                msg.sender, amountUsd, positionValue, pos.depositBlock, currentDebtUsd, 10_000, pos.lpType
             );
             require(valid, reason);
-            riskManager.recordBorrow(amount, pos.lpType);
+            riskManager.recordBorrow(amountUsd, pos.lpType);
         }
 
         // Update debt tracking — snapshot Market's current borrowIndex
@@ -211,9 +216,11 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
 
         market.transferIn(payer, repayAmount);
 
-        // RiskManager: track repayment for global/LP-type cap accounting
+        // RiskManager: track repayment for global/LP-type cap accounting (in 18-dec USD)
         if (address(riskManager) != address(0)) {
-            riskManager.recordRepay(repayAmount, pos.lpType);
+            IMarket.MarketConfig memory config = IMarket(marketAddr).getConfig();
+            uint256 repayUsd = _toUsd(repayAmount, config.borrowAsset);
+            riskManager.recordRepay(repayUsd, pos.lpType);
         }
 
         emit Repaid(positionId, payer, repayAmount, remainingDebt);
@@ -231,6 +238,21 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
         require(currentIndex > 0 && info.borrowIndex > 0, "INDEX_ZERO");
 
         return (info.principal * currentIndex) / info.borrowIndex;
+    }
+
+    /// @notice Convert borrow asset amount to 18-dec USD
+    /// @dev Uses PriceFeedRegistry if available, fallback normalizes (assumes $1 peg)
+    function _toUsd(uint256 amount, address borrowAsset) internal view returns (uint256) {
+        PriceFeedRegistry registry = positionManager.priceFeedRegistry();
+        if (address(registry) != address(0)) {
+            uint8 dec = IERC20(borrowAsset).decimals();
+            return registry.getUsdValue(borrowAsset, amount, dec);
+        }
+        // Fallback: normalize to 18 dec (assumes USD-pegged)
+        uint8 dec = IERC20(borrowAsset).decimals();
+        if (dec < 18) return Math.mulDiv(amount, 10 ** (18 - dec), 1);
+        if (dec > 18) return amount / (10 ** (dec - 18));
+        return amount;
     }
 
     /// @notice Calculate max borrow in borrow asset decimals
@@ -269,5 +291,6 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
     }
 
     // --- Storage Gap (UUPS upgrade safety) ---
-    uint256[50] private __gap;
+    // Reduced from 50 to 49 after adding riskManager (1 slot used).
+    uint256[49] private __gap;
 }

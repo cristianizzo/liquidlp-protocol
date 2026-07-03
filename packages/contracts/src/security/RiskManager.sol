@@ -97,9 +97,19 @@ contract RiskManager {
     }
 
     /// @notice Record a repayment for cap tracking
+    /// @dev Clamped to prevent underflow when repayAmount includes accrued interest
+    ///      (interest was never recorded via recordBorrow)
     function recordRepay(uint256 amount, ILPAdapter.LPType lpType) external onlyAuthorized {
-        currentGlobalBorrows -= amount;
-        lpTypeCurrentBorrows[lpType] -= amount;
+        if (amount > currentGlobalBorrows) {
+            currentGlobalBorrows = 0;
+        } else {
+            currentGlobalBorrows -= amount;
+        }
+        if (amount > lpTypeCurrentBorrows[lpType]) {
+            lpTypeCurrentBorrows[lpType] = 0;
+        } else {
+            lpTypeCurrentBorrows[lpType] -= amount;
+        }
     }
 
     // --- Admin ---
