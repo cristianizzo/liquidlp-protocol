@@ -132,8 +132,10 @@ contract Deploy is Script {
         console.log("--- ACL ---");
         console.log("ACLManager:             ", address(aclManager));
         console.log("");
-        console.log("--- Core (proxied) ---");
+        console.log("--- Core (not proxied) ---");
         console.log("ProtocolCore:           ", address(core));
+        console.log("");
+        console.log("--- Proxied (UUPS) ---");
         console.log("LPOracleHub proxy:      ", address(oracleHub));
         console.log("PositionManager proxy:  ", address(positionManager));
         console.log("LendingEngine proxy:    ", address(lendingEngine));
