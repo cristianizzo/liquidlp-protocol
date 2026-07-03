@@ -306,7 +306,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
 
     // --- Storage Gap ---
     // Reduced from 50 to 49 after adding priceFeedRegistry.
-    // Note: removed `authorized` mapping (slot freed) but keeping gap conservative.
+    // Note: `authorized` mapping preserved as `__deprecated_authorized` for UUPS layout safety.
     uint256[49] private __gap;
 
     // --- Internal ---

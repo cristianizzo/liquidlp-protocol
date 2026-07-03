@@ -28,6 +28,7 @@ contract ACLManager is AccessControl {
 
     // --- Pool Admin ---
     function addPoolAdmin(address admin) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(admin != address(0), "ZERO_ADDRESS");
         grantRole(POOL_ADMIN, admin);
     }
 
@@ -41,6 +42,7 @@ contract ACLManager is AccessControl {
 
     // --- Emergency Admin ---
     function addEmergencyAdmin(address admin) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(admin != address(0), "ZERO_ADDRESS");
         grantRole(EMERGENCY_ADMIN, admin);
     }
 
@@ -54,6 +56,7 @@ contract ACLManager is AccessControl {
 
     // --- Risk Admin ---
     function addRiskAdmin(address admin) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(admin != address(0), "ZERO_ADDRESS");
         grantRole(RISK_ADMIN, admin);
     }
 
