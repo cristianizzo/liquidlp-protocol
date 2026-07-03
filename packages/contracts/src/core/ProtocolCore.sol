@@ -156,8 +156,6 @@ contract ProtocolCore {
     // --- Ownership (two-step transfer) ---
 
     /// @notice Step 1: Propose new owner (two-step transfer)
-    /// @dev After acceptOwnership(), the caller must also grant DEFAULT_ADMIN_ROLE
-    ///      and POOL_ADMIN to the new owner in ACLManager, and revoke from the old owner.
     function transferOwnership(address newOwner) external onlyOwner {
         require(newOwner != address(0), "ZERO_ADDRESS");
         if (pendingOwner != address(0)) {
