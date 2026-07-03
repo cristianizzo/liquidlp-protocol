@@ -5,7 +5,7 @@ import {ILPAdapter} from "../interfaces/ILPAdapter.sol";
 import {ACLManager} from "./ACLManager.sol";
 
 /// @title ProtocolCore
-/// @notice Central registry and access control for the Aurelia protocol
+/// @notice Central registry and access control for the LiquidLP protocol
 /// @dev All core contracts reference this for shared state and permissions.
 ///      Not proxied — this IS the root of trust. owner = DAO multisig.
 ///      Uses ACLManager (Aave V3 pattern) for role-based access control.

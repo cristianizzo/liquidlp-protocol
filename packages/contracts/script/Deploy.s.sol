@@ -127,7 +127,7 @@ contract Deploy is Script {
     }
 
     function _logAddresses() internal view {
-        console.log("=== Aurelia Protocol Deployed (UUPS + ACLManager) ===");
+        console.log("=== LiquidLP Protocol Deployed (UUPS + ACLManager) ===");
         console.log("");
         console.log("--- ACL ---");
         console.log("ACLManager:             ", address(aclManager));

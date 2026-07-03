@@ -4,7 +4,7 @@ pragma solidity ^0.8.26;
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 
 /// @title ACLManager
-/// @notice Role-based access control for the Aurelia protocol (Aave V3 pattern)
+/// @notice Role-based access control for the LiquidLP protocol (Aave V3 pattern)
 /// @dev Extends OZ AccessControl. Single source of truth for all permissions.
 ///      Deployed once, referenced by all contracts via ProtocolCore.aclManager().
 ///      DEFAULT_ADMIN_ROLE holder (owner multisig, later timelock) can grant/revoke all roles.
@@ -89,5 +89,17 @@ contract ACLManager is AccessControl {
     function renounceRole(bytes32 role, address callerConfirmation) public override {
         require(role != DEFAULT_ADMIN_ROLE, "CANNOT_RENOUNCE_ADMIN");
         super.renounceRole(role, callerConfirmation);
+    }
+
+    /// @notice Override revokeRole to prevent bricking — cannot revoke last DEFAULT_ADMIN_ROLE
+    /// @dev An admin revoking their own admin role would also brick the protocol
+    function revokeRole(bytes32 role, address account) public override onlyRole(getRoleAdmin(role)) {
+        if (role == DEFAULT_ADMIN_ROLE) {
+            // If revoking from self, ensure at least one other admin exists
+            // We can't easily count role members without AccessControlEnumerable,
+            // so we block self-revoke of DEFAULT_ADMIN_ROLE entirely
+            require(account != msg.sender, "CANNOT_SELF_REVOKE_ADMIN");
+        }
+        super.revokeRole(role, account);
     }
 }
