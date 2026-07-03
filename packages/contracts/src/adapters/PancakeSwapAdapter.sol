@@ -34,6 +34,11 @@ contract PancakeSwapAdapter is ILPAdapter {
         bool _isV3
     ) {
         require(_core != address(0), "ZERO_ADDRESS");
+        if (_isV3) {
+            require(_v3NftManager != address(0) && _v3Factory != address(0), "ZERO_V3_DEPS");
+        } else {
+            require(_v2Factory != address(0) && _v2Router != address(0), "ZERO_V2_DEPS");
+        }
         v2Factory = _v2Factory;
         v2Router = _v2Router;
         v3NftManager = _v3NftManager;
