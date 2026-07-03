@@ -4,6 +4,7 @@ pragma solidity ^0.8.26;
 import "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ProtocolCore} from "../../src/core/ProtocolCore.sol";
+import {ACLManager} from "../../src/core/ACLManager.sol";
 import {PositionManager} from "../../src/core/PositionManager.sol";
 import {LendingEngine} from "../../src/core/LendingEngine.sol";
 import {LiquidationEngine} from "../../src/core/LiquidationEngine.sol";
@@ -29,6 +30,7 @@ import {MockPriceFeedRegistry} from "../mocks/MockPriceFeedRegistry.sol";
 ///      - Profit/payout math (native borrow asset decimals)
 contract LiquidationDecimalTest is Test {
     ProtocolCore public core;
+    ACLManager public aclManager;
     PositionManager public pm;
     LendingEngine public le;
     LiquidationEngine public liq;
@@ -48,7 +50,8 @@ contract LiquidationDecimalTest is Test {
     function setUp() public {
         weth = new MockERC20("WETH", "WETH", 18);
         irm = new InterestRateModel(200, 600, 10_000, 8000);
-        core = new ProtocolCore(owner, guardian);
+        aclManager = new ACLManager(owner);
+        core = new ProtocolCore(owner, address(aclManager));
 
         LPOracleHub ohImpl = new LPOracleHub();
         oracleHub = LPOracleHub(
@@ -88,11 +91,13 @@ contract LiquidationDecimalTest is Test {
         oracle = new MockLPOracle();
 
         vm.startPrank(owner);
+        aclManager.addEmergencyAdmin(guardian);
+        aclManager.grantRole(aclManager.LENDING_ENGINE(), address(le));
+        aclManager.grantRole(aclManager.LIQUIDATION_ENGINE(), address(liq));
+        aclManager.grantRole(aclManager.POSITION_MANAGER(), address(pm));
         core.registerAdapter(ILPAdapter.LPType.UniswapV3, address(adapter));
         oracleHub.registerOracle(ILPAdapter.LPType.UniswapV3, address(oracle));
         core.whitelistPool(lpToken);
-        pm.setAuthorized(address(le), true);
-        pm.setAuthorized(address(liq), true);
         pm.setLendingEngine(address(le));
         vm.stopPrank();
     }

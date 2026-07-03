@@ -4,6 +4,7 @@ pragma solidity ^0.8.26;
 import {ILPOracle} from "../interfaces/ILPOracle.sol";
 import {ILPOracleHub} from "../interfaces/ILPOracleHub.sol";
 import {ProtocolCore} from "../core/ProtocolCore.sol";
+import {ACLManager} from "../core/ACLManager.sol";
 
 /// @title UniswapV2Oracle
 /// @notice Prices Uniswap V2 LP tokens using sqrt(k) fair pricing + Chainlink
@@ -25,8 +26,8 @@ contract UniswapV2Oracle is ILPOracle {
     event HaircutUpdated(uint256 oldValue, uint256 newValue);
     event PriceFeedUpdated(address indexed token, address indexed feed);
 
-    modifier onlyOwner() {
-        require(msg.sender == core.owner(), "NOT_OWNER");
+    modifier onlyPoolAdmin() {
+        require(core.aclManager().isPoolAdmin(msg.sender), "NOT_POOL_ADMIN");
         _;
     }
 
@@ -35,13 +36,13 @@ contract UniswapV2Oracle is ILPOracle {
         lastUpdateTimestamp = block.timestamp;
     }
 
-    function setDefaultHaircut(uint256 _haircutBps) external onlyOwner {
+    function setDefaultHaircut(uint256 _haircutBps) external onlyPoolAdmin {
         require(_haircutBps >= MIN_HAIRCUT_BPS && _haircutBps <= MAX_HAIRCUT_BPS, "OUT_OF_BOUNDS");
         emit HaircutUpdated(defaultHaircutBps, _haircutBps);
         defaultHaircutBps = _haircutBps;
     }
 
-    function setPriceFeed(address token, address feed) external onlyOwner {
+    function setPriceFeed(address token, address feed) external onlyPoolAdmin {
         require(token != address(0) && feed != address(0), "ZERO_ADDRESS");
         emit PriceFeedUpdated(token, feed);
         priceFeeds[token] = feed;

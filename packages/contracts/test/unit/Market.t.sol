@@ -4,6 +4,7 @@ pragma solidity ^0.8.26;
 import "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ProtocolCore} from "../../src/core/ProtocolCore.sol";
+import {ACLManager} from "../../src/core/ACLManager.sol";
 import {Market} from "../../src/markets/Market.sol";
 import {InterestRateModel} from "../../src/markets/InterestRateModel.sol";
 import {IMarket} from "../../src/interfaces/IMarket.sol";
@@ -12,6 +13,7 @@ import {MockERC20} from "../mocks/MockERC20.sol";
 
 contract MarketTest is Test {
     ProtocolCore public core;
+    ACLManager public aclManager;
     Market public market;
     MockERC20 public usdc;
     InterestRateModel public irm;
@@ -28,7 +30,8 @@ contract MarketTest is Test {
     function setUp() public {
         usdc = new MockERC20("USDC", "USDC", 6);
         irm = new InterestRateModel(200, 600, 10_000, 8000);
-        core = new ProtocolCore(owner, guardian);
+        aclManager = new ACLManager(owner);
+        core = new ProtocolCore(owner, address(aclManager));
 
         IMarket.MarketConfig memory config = IMarket.MarketConfig({
             lpType: ILPAdapter.LPType.UniswapV3,
@@ -46,10 +49,16 @@ contract MarketTest is Test {
         market = Market(
             address(
                 new ERC1967Proxy(
-                    address(impl), abi.encodeCall(Market.initialize, (config, address(irm), address(core), le))
+                    address(impl), abi.encodeCall(Market.initialize, (config, address(irm), address(core)))
                 )
             )
         );
+
+        // Grant le the LENDING_ENGINE role so it can call transferOut/transferIn
+        vm.startPrank(owner);
+        aclManager.addEmergencyAdmin(guardian);
+        aclManager.grantRole(aclManager.LENDING_ENGINE(), le);
+        vm.stopPrank();
     }
 
     function _fundAndApprove(address user, uint256 amount) internal {
@@ -62,7 +71,6 @@ contract MarketTest is Test {
 
     function test_initialize_setsState() public view {
         assertEq(address(market.core()), address(core));
-        assertEq(market.lendingEngine(), le);
         assertEq(market.borrowIndex(), 1e27);
     }
 
@@ -254,15 +262,15 @@ contract MarketTest is Test {
         market.transferIn(alice, 1000e6);
     }
 
-    // ========== MKT-2: setLendingEngine ==========
+    // ========== ACLManager: LendingEngine Role ==========
 
-    function test_setLendingEngine_success() public {
+    function test_lendingEngineRole_changeRole() public {
         address newLE = makeAddr("newLE");
 
-        vm.prank(owner);
-        market.setLendingEngine(newLE);
-
-        assertEq(market.lendingEngine(), newLE);
+        vm.startPrank(owner);
+        aclManager.revokeRole(aclManager.LENDING_ENGINE(), le);
+        aclManager.grantRole(aclManager.LENDING_ENGINE(), newLE);
+        vm.stopPrank();
 
         // Old LE can no longer call
         vm.prank(le);
@@ -278,32 +286,13 @@ contract MarketTest is Test {
         market.transferOut(makeAddr("x"), 100);
     }
 
-    function test_setLendingEngine_revertsNotOwner() public {
+    function test_lendingEngineRole_revertsNotAdmin() public {
+        bytes32 leRole = aclManager.LENDING_ENGINE();
+        bytes32 adminRole = aclManager.DEFAULT_ADMIN_ROLE();
+
         vm.prank(alice);
-        vm.expectRevert("NOT_OWNER");
-        market.setLendingEngine(makeAddr("x"));
-    }
-
-    function test_setLendingEngine_revertsZeroAddress() public {
-        vm.prank(owner);
-        vm.expectRevert("ZERO_ADDRESS");
-        market.setLendingEngine(address(0));
-    }
-
-    function test_setLendingEngine_emitsEvent() public {
-        address newLE = makeAddr("newLE");
-        vm.recordLogs();
-        vm.prank(owner);
-        market.setLendingEngine(newLE);
-
-        Vm.Log[] memory entries = vm.getRecordedLogs();
-        bool found = false;
-        for (uint256 i = 0; i < entries.length; i++) {
-            if (entries[i].topics[0] == keccak256("LendingEngineUpdated(address,address)")) {
-                found = true;
-            }
-        }
-        assertTrue(found, "LendingEngineUpdated event must be emitted");
+        vm.expectRevert(abi.encodeWithSignature("AccessControlUnauthorizedAccount(address,bytes32)", alice, adminRole));
+        aclManager.grantRole(leRole, makeAddr("x"));
     }
 
     // ========== Admin (owner via ProtocolCore) ==========
@@ -316,9 +305,9 @@ contract MarketTest is Test {
         assertEq(config.maxLtv, 7000);
     }
 
-    function test_updateConfig_revertsNotOwner() public {
+    function test_updateConfig_revertsNotRiskAdmin() public {
         vm.prank(alice);
-        vm.expectRevert("NOT_OWNER");
+        vm.expectRevert("NOT_RISK_ADMIN");
         market.updateConfig(7000, 8000, 600, 800, 20_000_000e6);
     }
 
@@ -328,10 +317,10 @@ contract MarketTest is Test {
         market.updateConfig(9600, 8000, 600, 800, 20_000_000e6);
     }
 
-    function test_upgrade_onlyOwner() public {
+    function test_upgrade_onlyPoolAdmin() public {
         Market newImpl = new Market();
         vm.prank(alice);
-        vm.expectRevert("NOT_OWNER");
+        vm.expectRevert("NOT_POOL_ADMIN");
         market.upgradeToAndCall(address(newImpl), "");
 
         vm.prank(owner);

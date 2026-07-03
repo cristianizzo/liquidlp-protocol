@@ -10,6 +10,7 @@ import {IERC20 as OZIERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {InterestRateModel} from "./InterestRateModel.sol";
 import {ProtocolCore} from "../core/ProtocolCore.sol";
+import {ACLManager} from "../core/ACLManager.sol";
 
 /// @title Market
 /// @notice Isolated lending market — single source of truth for interest accrual
@@ -28,9 +29,9 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
     /// @notice Reference to ProtocolCore for ownership/admin checks
     ProtocolCore public core;
 
-    /// @notice Authorized address for lending operations (transferOut/transferIn)
-    /// @dev Set to LendingEngine proxy address. Updatable by owner if LE is redeployed.
-    address public lendingEngine;
+    /// @dev Deprecated — was `lendingEngine` address. Kept for UUPS storage layout compatibility.
+    /// LendingEngine auth now checked via ACLManager.isLendingEngine().
+    address private __deprecated_lendingEngine;
 
     /// @notice Cumulative borrow interest index (RAY = 1e27 precision)
     uint256 public borrowIndex;
@@ -46,16 +47,25 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
     event InterestRateModelUpdated(address oldModel, address newModel);
     event MarketConfigUpdated(string field, uint256 oldValue, uint256 newValue);
     event InterestAccrued(uint256 interestAmount, uint256 newBorrowIndex, uint256 timestamp);
-    event LendingEngineUpdated(address indexed oldEngine, address indexed newEngine);
     event ProtocolFeeUpdated(uint256 oldValue, uint256 newValue);
 
-    modifier onlyOwner() {
-        require(msg.sender == core.owner(), "NOT_OWNER");
+    function _acl() internal view returns (ACLManager) {
+        return core.aclManager();
+    }
+
+    modifier onlyPoolAdmin() {
+        require(_acl().isPoolAdmin(msg.sender), "NOT_POOL_ADMIN");
+        _;
+    }
+
+    modifier onlyRiskAdmin() {
+        ACLManager acl = _acl();
+        require(acl.isRiskAdmin(msg.sender) || acl.isPoolAdmin(msg.sender), "NOT_RISK_ADMIN");
         _;
     }
 
     modifier onlyLendingEngine() {
-        require(msg.sender == lendingEngine, "NOT_LENDING_ENGINE");
+        require(_acl().isLendingEngine(msg.sender), "NOT_LENDING_ENGINE");
         _;
     }
 
@@ -64,44 +74,28 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
         _disableInitializers();
     }
 
-    function initialize(
-        MarketConfig memory _config,
-        address _interestRateModel,
-        address _core,
-        address _lendingEngine
-    )
-        external
-        initializer
-    {
+    function initialize(MarketConfig memory _config, address _interestRateModel, address _core) external initializer {
         require(_core != address(0), "ZERO_CORE");
         require(_interestRateModel != address(0), "ZERO_IRM");
         config = _config;
         interestRateModel = InterestRateModel(_interestRateModel);
         core = ProtocolCore(_core);
-        lendingEngine = _lendingEngine;
         state.lastAccrualTimestamp = block.timestamp;
         borrowIndex = RAY;
         protocolFeeBps = 30; // 0.3% default
     }
 
-    function _authorizeUpgrade(address) internal override onlyOwner {}
+    function _authorizeUpgrade(address) internal override onlyPoolAdmin {}
 
-    // --- Admin (DAO via ProtocolCore.owner()) ---
+    // --- Admin ---
 
-    /// @notice Set the LendingEngine address (updatable if LE is redeployed)
-    function setLendingEngine(address _lendingEngine) external onlyOwner {
-        require(_lendingEngine != address(0), "ZERO_ADDRESS");
-        emit LendingEngineUpdated(lendingEngine, _lendingEngine);
-        lendingEngine = _lendingEngine;
-    }
-
-    function setProtocolFee(uint256 _feeBps) external onlyOwner {
+    function setProtocolFee(uint256 _feeBps) external onlyPoolAdmin {
         require(_feeBps <= 5000, "FEE_TOO_HIGH"); // Max 50%
         emit ProtocolFeeUpdated(protocolFeeBps, _feeBps);
         protocolFeeBps = _feeBps;
     }
 
-    function setInterestRateModel(address _newModel) external onlyOwner {
+    function setInterestRateModel(address _newModel) external onlyPoolAdmin {
         require(_newModel != address(0), "ZERO_ADDRESS");
         accrueInterest();
         emit InterestRateModelUpdated(address(interestRateModel), _newModel);
@@ -116,7 +110,7 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
         uint256 _borrowCap
     )
         external
-        onlyOwner
+        onlyRiskAdmin
     {
         require(_maxLtv <= 9500, "LTV_TOO_HIGH");
         require(_liquidationThreshold <= 9800, "THRESHOLD_TOO_HIGH");

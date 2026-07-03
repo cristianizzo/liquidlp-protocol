@@ -4,6 +4,7 @@ pragma solidity ^0.8.26;
 import {ILPAdapter} from "../interfaces/ILPAdapter.sol";
 import {IPositionManager} from "../interfaces/IPositionManager.sol";
 import {ProtocolCore} from "../core/ProtocolCore.sol";
+import {ACLManager} from "../core/ACLManager.sol";
 import {PositionManager} from "../core/PositionManager.sol";
 
 /// @title LPCompounder
@@ -16,7 +17,7 @@ contract LPCompounder {
     event FeesCompounded(uint256 indexed positionId, uint256 fees0, uint256 fees1);
 
     modifier onlyKeeper() {
-        require(core.keepers(msg.sender) || msg.sender == core.owner(), "NOT_KEEPER");
+        require(core.aclManager().isKeeper(msg.sender) || core.aclManager().isPoolAdmin(msg.sender), "NOT_KEEPER");
         _;
     }
 

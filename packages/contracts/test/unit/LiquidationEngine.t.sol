@@ -4,6 +4,7 @@ pragma solidity ^0.8.26;
 import "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ProtocolCore} from "../../src/core/ProtocolCore.sol";
+import {ACLManager} from "../../src/core/ACLManager.sol";
 import {PositionManager} from "../../src/core/PositionManager.sol";
 import {LendingEngine} from "../../src/core/LendingEngine.sol";
 import {LiquidationEngine} from "../../src/core/LiquidationEngine.sol";
@@ -19,6 +20,7 @@ import {MockSwapRouter} from "../mocks/MockSwapRouter.sol";
 
 contract LiquidationEngineTest is Test {
     ProtocolCore public core;
+    ACLManager public aclManager;
     PositionManager public pm;
     LendingEngine public le;
     LiquidationEngine public liq;
@@ -56,7 +58,8 @@ contract LiquidationEngineTest is Test {
         weth = new MockERC20("WETH", "WETH", 18);
         irm = new InterestRateModel(200, 600, 10_000, 8000);
 
-        core = new ProtocolCore(owner, guardian);
+        aclManager = new ACLManager(owner);
+        core = new ProtocolCore(owner, address(aclManager));
 
         // OracleHub proxy
         LPOracleHub ohImpl = new LPOracleHub();
@@ -103,14 +106,16 @@ contract LiquidationEngineTest is Test {
         market = new MockMarket(address(usdc), address(irm));
         swapRouter = new MockSwapRouter(address(usdc));
 
-        // Register
+        // Register and grant roles
         vm.startPrank(owner);
+        aclManager.addEmergencyAdmin(guardian);
+        aclManager.grantRole(aclManager.LENDING_ENGINE(), address(le));
+        aclManager.grantRole(aclManager.LIQUIDATION_ENGINE(), address(liq));
+        aclManager.grantRole(aclManager.POSITION_MANAGER(), address(pm));
         core.registerAdapter(ILPAdapter.LPType.UniswapV3, address(adapter));
         oracleHub.registerOracle(ILPAdapter.LPType.UniswapV3, address(oracle));
         core.whitelistPool(lpToken);
         marketId = core.registerMarket(address(market));
-        pm.setAuthorized(address(le), true);
-        pm.setAuthorized(address(liq), true);
         pm.setLendingEngine(address(le));
         liq.setSwapRouter(address(swapRouter));
         vm.stopPrank();
@@ -185,7 +190,7 @@ contract LiquidationEngineTest is Test {
 
     function test_setSwapRouter_revertsNotOwner() public {
         vm.prank(alice);
-        vm.expectRevert("NOT_OWNER");
+        vm.expectRevert("NOT_POOL_ADMIN");
         liq.setSwapRouter(makeAddr("x"));
     }
 
@@ -458,7 +463,7 @@ contract LiquidationEngineTest is Test {
         LiquidationEngine newImpl = new LiquidationEngine();
 
         vm.prank(alice);
-        vm.expectRevert("NOT_OWNER");
+        vm.expectRevert("NOT_POOL_ADMIN");
         liq.upgradeToAndCall(address(newImpl), "");
     }
 
@@ -510,7 +515,7 @@ contract LiquidationEngineTest is Test {
         );
 
         vm.startPrank(owner);
-        pm.setAuthorized(address(liq2), true);
+        aclManager.grantRole(aclManager.LIQUIDATION_ENGINE(), address(liq2));
         // DO NOT set swap router on liq2
         vm.stopPrank();
 
@@ -542,7 +547,7 @@ contract LiquidationEngineTest is Test {
         weth.mint(address(liq), 5e18);
 
         vm.prank(alice);
-        vm.expectRevert("NOT_OWNER");
+        vm.expectRevert("NOT_POOL_ADMIN");
         liq.rescueTokens(address(weth), alice, 5e18);
     }
 

@@ -3,6 +3,7 @@ pragma solidity ^0.8.26;
 
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ProtocolCore} from "../core/ProtocolCore.sol";
+import {ACLManager} from "../core/ACLManager.sol";
 
 /// @notice Chainlink AggregatorV3 minimal interface
 interface IAggregatorV3 {
@@ -27,8 +28,8 @@ contract PriceFeedRegistry {
     event PriceFeedUpdated(address indexed token, address indexed feed);
     event MaxStalenessUpdated(uint256 oldValue, uint256 newValue);
 
-    modifier onlyOwner() {
-        require(msg.sender == core.owner(), "NOT_OWNER");
+    modifier onlyPoolAdmin() {
+        require(core.aclManager().isPoolAdmin(msg.sender), "NOT_POOL_ADMIN");
         _;
     }
 
@@ -39,7 +40,7 @@ contract PriceFeedRegistry {
     }
 
     /// @notice Set Chainlink price feed for a token
-    function setPriceFeed(address token, address feed) external onlyOwner {
+    function setPriceFeed(address token, address feed) external onlyPoolAdmin {
         require(token != address(0) && feed != address(0), "ZERO_ADDRESS");
         require(feed.code.length > 0, "NOT_CONTRACT");
         priceFeeds[token] = feed;
@@ -47,7 +48,7 @@ contract PriceFeedRegistry {
     }
 
     /// @notice Set max staleness for price feeds
-    function setMaxStaleness(uint256 _maxStaleness) external onlyOwner {
+    function setMaxStaleness(uint256 _maxStaleness) external onlyPoolAdmin {
         require(_maxStaleness >= 300 && _maxStaleness <= 86_400, "OUT_OF_BOUNDS");
         emit MaxStalenessUpdated(maxStaleness, _maxStaleness);
         maxStaleness = _maxStaleness;

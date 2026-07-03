@@ -7,6 +7,7 @@ import {IERC20 as OZIERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ILPAdapter} from "../interfaces/ILPAdapter.sol";
 import {ProtocolCore} from "./ProtocolCore.sol";
+import {ACLManager} from "./ACLManager.sol";
 
 /// @title FeeCollector
 /// @notice Collects and distributes protocol fees using Aave-style reserve factor model
@@ -51,9 +52,6 @@ contract FeeCollector is ReentrancyGuard {
     // --- Accumulated Fees ---
     mapping(address => uint256) public accumulatedFees; // token -> amount
 
-    // --- Authorized Callers ---
-    mapping(address => bool) public authorizedCallers;
-
     // --- Events ---
     event FeesCollected(address indexed token, uint256 amount, address indexed from, string feeType);
     event FeesDistributed(address indexed token, uint256 toTreasury, uint256 toInsurance);
@@ -64,17 +62,30 @@ contract FeeCollector is ReentrancyGuard {
     event InsuranceFundShareUpdated(uint256 oldValue, uint256 newValue);
     event TreasuryUpdated(address indexed oldAddr, address indexed newAddr);
     event InsuranceFundUpdated(address indexed oldAddr, address indexed newAddr);
-    event AuthorizedCallerUpdated(address indexed caller, bool status);
     event ExcessSwept(address indexed token, address indexed to, uint256 amount);
 
-    modifier onlyOwner() {
-        require(msg.sender == core.owner(), "NOT_OWNER");
+    function _acl() internal view returns (ACLManager) {
+        return core.aclManager();
+    }
+
+    modifier onlyPoolAdmin() {
+        require(_acl().isPoolAdmin(msg.sender), "NOT_POOL_ADMIN");
         _;
     }
 
+    modifier onlyRiskAdmin() {
+        ACLManager acl = _acl();
+        require(acl.isRiskAdmin(msg.sender) || acl.isPoolAdmin(msg.sender), "NOT_RISK_ADMIN");
+        _;
+    }
+
+    /// @dev Authorized = LendingEngine, LiquidationEngine, Keeper, or PoolAdmin
     modifier onlyAuthorized() {
+        ACLManager acl = _acl();
         require(
-            msg.sender == core.owner() || core.keepers(msg.sender) || authorizedCallers[msg.sender], "NOT_AUTHORIZED"
+            acl.isLiquidationEngine(msg.sender) || acl.isLendingEngine(msg.sender) || acl.isKeeper(msg.sender)
+                || acl.isPoolAdmin(msg.sender),
+            "NOT_AUTHORIZED"
         );
         _;
     }
@@ -147,7 +158,7 @@ contract FeeCollector is ReentrancyGuard {
 
     /// @notice Sweep tokens that were sent directly to this contract (not via collectFee)
     /// @dev Recovers balance - accumulatedFees[token] excess. Only callable by owner.
-    function sweepExcess(address token, address to) external onlyOwner {
+    function sweepExcess(address token, address to) external onlyPoolAdmin {
         require(token != address(0) && to != address(0), "ZERO_ADDRESS");
         uint256 balance = IERC20(token).balanceOf(address(this));
         uint256 tracked = accumulatedFees[token];
@@ -189,49 +200,43 @@ contract FeeCollector is ReentrancyGuard {
 
     // --- Admin (DAO controlled) ---
 
-    function setAuthorizedCaller(address caller, bool status) external onlyOwner {
-        require(caller != address(0), "ZERO_ADDRESS");
-        authorizedCallers[caller] = status;
-        emit AuthorizedCallerUpdated(caller, status);
-    }
-
-    function setReserveFactor(ILPAdapter.LPType lpType, uint256 _bps) external onlyOwner {
+    function setReserveFactor(ILPAdapter.LPType lpType, uint256 _bps) external onlyRiskAdmin {
         require(_bps >= MIN_RESERVE_FACTOR && _bps <= MAX_RESERVE_FACTOR, "OUT_OF_BOUNDS");
         emit ReserveFactorUpdated(lpType, reserveFactorBps[lpType], _bps);
         reserveFactorBps[lpType] = _bps;
     }
 
-    function setDefaultReserveFactor(uint256 _bps) external onlyOwner {
+    function setDefaultReserveFactor(uint256 _bps) external onlyRiskAdmin {
         require(_bps >= MIN_RESERVE_FACTOR && _bps <= MAX_RESERVE_FACTOR, "OUT_OF_BOUNDS");
         emit DefaultReserveFactorUpdated(defaultReserveFactorBps, _bps);
         defaultReserveFactorBps = _bps;
     }
 
-    function setLiquidationFee(uint256 _bps) external onlyOwner {
+    function setLiquidationFee(uint256 _bps) external onlyRiskAdmin {
         require(_bps <= MAX_LIQUIDATION_FEE, "TOO_HIGH");
         emit LiquidationFeeUpdated(liquidationFeeBps, _bps);
         liquidationFeeBps = _bps;
     }
 
-    function setManagementFee(uint256 _bps) external onlyOwner {
+    function setManagementFee(uint256 _bps) external onlyRiskAdmin {
         require(_bps <= MAX_MANAGEMENT_FEE, "TOO_HIGH");
         emit ManagementFeeUpdated(managementFeeBps, _bps);
         managementFeeBps = _bps;
     }
 
-    function setInsuranceFundShare(uint256 _bps) external onlyOwner {
+    function setInsuranceFundShare(uint256 _bps) external onlyRiskAdmin {
         require(_bps <= MAX_INSURANCE_SHARE, "TOO_HIGH");
         emit InsuranceFundShareUpdated(insuranceFundShareBps, _bps);
         insuranceFundShareBps = _bps;
     }
 
-    function setTreasury(address _treasury) external onlyOwner {
+    function setTreasury(address _treasury) external onlyPoolAdmin {
         require(_treasury != address(0), "ZERO_ADDRESS");
         emit TreasuryUpdated(treasury, _treasury);
         treasury = _treasury;
     }
 
-    function setInsuranceFund(address _insuranceFund) external onlyOwner {
+    function setInsuranceFund(address _insuranceFund) external onlyPoolAdmin {
         require(_insuranceFund != address(0), "ZERO_ADDRESS");
         emit InsuranceFundUpdated(insuranceFund, _insuranceFund);
         insuranceFund = _insuranceFund;

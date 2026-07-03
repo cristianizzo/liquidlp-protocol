@@ -3,6 +3,7 @@ pragma solidity ^0.8.26;
 
 import "forge-std/Script.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {ACLManager} from "../src/core/ACLManager.sol";
 import {ProtocolCore} from "../src/core/ProtocolCore.sol";
 import {PositionManager} from "../src/core/PositionManager.sol";
 import {LendingEngine} from "../src/core/LendingEngine.sol";
@@ -21,105 +22,127 @@ import {Router} from "../src/periphery/Router.sol";
 import {PositionViewer} from "../src/periphery/PositionViewer.sol";
 
 contract Deploy is Script {
+    // Deployed contract addresses stored as state to avoid stack-too-deep
+    ACLManager public aclManager;
+    ProtocolCore public core;
+    LPOracleHub public oracleHub;
+    PositionManager public positionManager;
+    LendingEngine public lendingEngine;
+    LiquidationEngine public liquidationEngine;
+    FeeCollector public feeCollector;
+    MarketFactory public marketFactory;
+
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
         address deployer = vm.addr(deployerPrivateKey);
 
         vm.startBroadcast(deployerPrivateKey);
 
-        // 1. ProtocolCore (not proxied — it IS the root of trust)
-        ProtocolCore core = new ProtocolCore(deployer, deployer);
+        _deployCore(deployer);
+        _deployProxies();
+        _deploySupportContracts(deployer);
+        _configureRoles();
 
-        // 2. LPOracleHub (UUPS proxy)
+        vm.stopBroadcast();
+
+        _logAddresses();
+    }
+
+    function _deployCore(address deployer) internal {
+        aclManager = new ACLManager(deployer);
+        core = new ProtocolCore(deployer, address(aclManager));
+
         LPOracleHub oracleHubImpl = new LPOracleHub();
-        ERC1967Proxy oracleHubProxy =
-            new ERC1967Proxy(address(oracleHubImpl), abi.encodeCall(LPOracleHub.initialize, (address(core))));
-        LPOracleHub oracleHub = LPOracleHub(address(oracleHubProxy));
-
-        // 3. PositionManager (UUPS proxy)
-        PositionManager positionManagerImpl = new PositionManager();
-        ERC1967Proxy positionManagerProxy = new ERC1967Proxy(
-            address(positionManagerImpl),
-            abi.encodeCall(PositionManager.initialize, (address(core), address(oracleHub)))
+        oracleHub = LPOracleHub(
+            address(new ERC1967Proxy(address(oracleHubImpl), abi.encodeCall(LPOracleHub.initialize, (address(core)))))
         );
-        PositionManager positionManager = PositionManager(address(positionManagerProxy));
+    }
 
-        // 4. LendingEngine (UUPS proxy)
-        LendingEngine lendingEngineImpl = new LendingEngine();
-        ERC1967Proxy lendingEngineProxy = new ERC1967Proxy(
-            address(lendingEngineImpl),
-            abi.encodeCall(LendingEngine.initialize, (address(core), address(positionManager)))
-        );
-        LendingEngine lendingEngine = LendingEngine(address(lendingEngineProxy));
-
-        // 5. LiquidationEngine (UUPS proxy)
-        LiquidationEngine liquidationEngineImpl = new LiquidationEngine();
-        ERC1967Proxy liquidationEngineProxy = new ERC1967Proxy(
-            address(liquidationEngineImpl),
-            abi.encodeCall(
-                LiquidationEngine.initialize, (address(core), address(positionManager), address(lendingEngine))
+    function _deployProxies() internal {
+        PositionManager pmImpl = new PositionManager();
+        positionManager = PositionManager(
+            address(
+                new ERC1967Proxy(
+                    address(pmImpl), abi.encodeCall(PositionManager.initialize, (address(core), address(oracleHub)))
+                )
             )
         );
-        LiquidationEngine liquidationEngine = LiquidationEngine(address(liquidationEngineProxy));
 
-        // 6. FeeCollector (not proxied — stateless enough to redeploy)
-        FeeCollector feeCollector = new FeeCollector(address(core), deployer, deployer);
+        LendingEngine leImpl = new LendingEngine();
+        lendingEngine = LendingEngine(
+            address(
+                new ERC1967Proxy(
+                    address(leImpl), abi.encodeCall(LendingEngine.initialize, (address(core), address(positionManager)))
+                )
+            )
+        );
 
-        // 7. Security (not proxied — replaceable via core references)
-        CircuitBreaker circuitBreaker = new CircuitBreaker(address(core));
-        RiskManager riskManager = new RiskManager(address(core));
-        PoolHealthMonitor poolHealthMonitor = new PoolHealthMonitor(address(core), address(circuitBreaker));
-        EmergencyModule emergencyModule = new EmergencyModule(address(core));
+        LiquidationEngine liqImpl = new LiquidationEngine();
+        liquidationEngine = LiquidationEngine(
+            address(
+                new ERC1967Proxy(
+                    address(liqImpl),
+                    abi.encodeCall(
+                        LiquidationEngine.initialize, (address(core), address(positionManager), address(lendingEngine))
+                    )
+                )
+            )
+        );
+    }
 
-        // 8. Interest Rate Models (immutable — deploy new ones to change curves)
+    function _deploySupportContracts(address deployer) internal {
+        feeCollector = new FeeCollector(address(core), deployer, deployer);
+
+        // Security
+        CircuitBreaker cb = new CircuitBreaker(address(core));
+        new RiskManager(address(core));
+        new PoolHealthMonitor(address(core), address(cb));
+        new EmergencyModule(address(core));
+
+        // Interest Rate Models
         InterestRateModel stableModel = new InterestRateModel(100, 400, 7500, 8500);
         InterestRateModel volatileModel = new InterestRateModel(200, 600, 10_000, 8000);
         InterestRateModel exoticModel = new InterestRateModel(500, 1000, 20_000, 7000);
 
-        // 9. Market implementation + factory
+        // Market implementation + factory
         Market marketImpl = new Market();
-        MarketFactory marketFactory = new MarketFactory(address(core), address(marketImpl));
-        MarketRegistry marketRegistry = new MarketRegistry(address(core));
+        marketFactory = new MarketFactory(address(core), address(marketImpl));
+        new MarketRegistry(address(core));
 
         marketFactory.setInterestRateModel("stable", address(stableModel));
         marketFactory.setInterestRateModel("volatile", address(volatileModel));
         marketFactory.setInterestRateModel("exotic", address(exoticModel));
 
-        // 10. Periphery (not proxied — stateless helpers)
-        Router router = new Router(address(positionManager), address(lendingEngine));
-        PositionViewer positionViewer =
-            new PositionViewer(address(core), address(positionManager), address(lendingEngine));
+        // Periphery
+        new Router(address(positionManager), address(lendingEngine));
+        new PositionViewer(address(core), address(positionManager), address(lendingEngine));
+    }
 
-        // 11. Authorize contracts
-        positionManager.setAuthorized(address(lendingEngine), true);
-        positionManager.setAuthorized(address(liquidationEngine), true);
+    function _configureRoles() internal {
+        aclManager.grantRole(aclManager.LENDING_ENGINE(), address(lendingEngine));
+        aclManager.grantRole(aclManager.LIQUIDATION_ENGINE(), address(liquidationEngine));
+        aclManager.grantRole(aclManager.POSITION_MANAGER(), address(positionManager));
+        positionManager.setLendingEngine(address(lendingEngine));
+        core.setMarketFactory(address(marketFactory));
+    }
 
-        vm.stopBroadcast();
-
-        // Log deployed addresses
-        console.log("=== LiquidLP Protocol Deployed (UUPS) ===");
+    function _logAddresses() internal view {
+        console.log("=== LiquidLP Protocol Deployed (UUPS + ACLManager) ===");
         console.log("");
-        console.log("--- Core (proxied) ---");
+        console.log("--- ACL ---");
+        console.log("ACLManager:             ", address(aclManager));
+        console.log("");
+        console.log("--- Core (not proxied) ---");
         console.log("ProtocolCore:           ", address(core));
+        console.log("");
+        console.log("--- Proxied (UUPS) ---");
         console.log("LPOracleHub proxy:      ", address(oracleHub));
-        console.log("LPOracleHub impl:       ", address(oracleHubImpl));
         console.log("PositionManager proxy:  ", address(positionManager));
-        console.log("PositionManager impl:   ", address(positionManagerImpl));
         console.log("LendingEngine proxy:    ", address(lendingEngine));
-        console.log("LendingEngine impl:     ", address(lendingEngineImpl));
         console.log("LiquidationEngine proxy:", address(liquidationEngine));
-        console.log("LiquidationEngine impl: ", address(liquidationEngineImpl));
         console.log("");
         console.log("--- Not proxied ---");
         console.log("FeeCollector:           ", address(feeCollector));
-        console.log("CircuitBreaker:         ", address(circuitBreaker));
-        console.log("RiskManager:            ", address(riskManager));
-        console.log("PoolHealthMonitor:      ", address(poolHealthMonitor));
-        console.log("EmergencyModule:        ", address(emergencyModule));
-        console.log("Market impl:            ", address(marketImpl));
         console.log("MarketFactory:          ", address(marketFactory));
-        console.log("MarketRegistry:         ", address(marketRegistry));
-        console.log("Router:                 ", address(router));
-        console.log("PositionViewer:         ", address(positionViewer));
     }
 }

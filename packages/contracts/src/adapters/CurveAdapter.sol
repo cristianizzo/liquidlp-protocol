@@ -2,29 +2,35 @@
 pragma solidity ^0.8.26;
 
 import {ILPAdapter} from "../interfaces/ILPAdapter.sol";
+import {ProtocolCore} from "../core/ProtocolCore.sol";
+import {ACLManager} from "../core/ACLManager.sol";
 
 /// @title CurveAdapter
 /// @notice Handles Curve LP token deposits, withdrawals, and unwinding
 contract CurveAdapter is ILPAdapter {
-    address public protocol;
-
-    // Curve pool registry for validation
+    ProtocolCore public immutable core;
     address public immutable curveRegistry;
 
+    function _acl() internal view returns (ACLManager) {
+        return core.aclManager();
+    }
+
     modifier onlyProtocol() {
-        require(msg.sender == protocol, "NOT_PROTOCOL");
+        ACLManager acl = _acl();
+        require(acl.isPositionManager(msg.sender) || acl.isLiquidationEngine(msg.sender), "NOT_AUTHORIZED");
         _;
     }
 
-    constructor(address _curveRegistry, address _protocol) {
+    constructor(address _curveRegistry, address _core) {
+        require(_curveRegistry != address(0) && _core != address(0), "ZERO_ADDRESS");
         curveRegistry = _curveRegistry;
-        protocol = _protocol;
+        core = ProtocolCore(_core);
     }
 
     /// @inheritdoc ILPAdapter
     function validateAndLock(
         address lpToken,
-        uint256, /* tokenId */
+        uint256,
         uint256 amount,
         address from
     )
@@ -33,61 +39,29 @@ contract CurveAdapter is ILPAdapter {
         returns (LPInfo memory info)
     {
         require(amount > 0, "ZERO_AMOUNT");
-
-        // Verify LP token is from a registered Curve pool
-        // address pool = ICurveRegistry(curveRegistry).get_pool_from_lp_token(lpToken);
-        // require(pool != address(0), "INVALID_CURVE_LP");
-
-        // Get underlying tokens
-        // address[8] memory coins = ICurveRegistry(curveRegistry).get_coins(pool);
-
-        // Transfer LP tokens from user
-        // IERC20(lpToken).transferFrom(from, address(this), amount);
-
-        // info = LPInfo({
-        //     lpType: LPType.Curve,
-        //     token0: coins[0],
-        //     token1: coins[1],
-        //     feeTier: 400, // Curve typically 0.04%
-        //     tickLower: 0,
-        //     tickUpper: 0,
-        //     liquidity: uint128(amount),
-        //     pool: pool
-        // });
+        // TODO: Curve implementation
     }
 
     /// @inheritdoc ILPAdapter
     function unlock(address lpToken, uint256, uint256 amount, address to) external onlyProtocol {
-        // IERC20(lpToken).transfer(to, amount);
+        // TODO: Curve implementation
     }
 
     /// @inheritdoc ILPAdapter
     function unwind(
         address lpToken,
-        uint256, /* tokenId */
+        uint256,
         uint128 liquidityToRemove
     )
         external
         onlyProtocol
         returns (uint256 amount0, uint256 amount1)
     {
-        // Get pool from LP token
-        // address pool = ICurveRegistry(curveRegistry).get_pool_from_lp_token(lpToken);
-
-        // Remove liquidity — Curve uses remove_liquidity or remove_liquidity_one_coin
-        // For liquidation, remove proportionally:
-        // uint256[2] memory minAmounts = [uint256(0), uint256(0)];
-        // ICurvePool(pool).remove_liquidity(uint256(liquidityToRemove), minAmounts);
-
-        // Or remove as single coin (e.g., USDC) for simpler liquidation:
-        // amount0 = ICurvePool(pool).remove_liquidity_one_coin(
-        //     uint256(liquidityToRemove), 0, 0
-        // );
+        // TODO: Curve implementation
     }
 
     /// @inheritdoc ILPAdapter
     function collectFees(address, uint256) external pure returns (uint256, uint256) {
-        // Curve LP auto-compounds fees via virtual price increase
         return (0, 0);
     }
 
@@ -97,12 +71,7 @@ contract CurveAdapter is ILPAdapter {
     }
 
     /// @inheritdoc ILPAdapter
-    function isSupported(address lpToken) external view returns (bool) {
-        // try ICurveRegistry(curveRegistry).get_pool_from_lp_token(lpToken) returns (address pool) {
-        //     return pool != address(0);
-        // } catch {
-        //     return false;
-        // }
-        return false;
+    function isSupported(address) external pure returns (bool) {
+        return false; // TODO: implement
     }
 }

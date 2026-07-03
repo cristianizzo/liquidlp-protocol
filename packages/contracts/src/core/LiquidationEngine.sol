@@ -13,6 +13,7 @@ import {ISwapRouter} from "../interfaces/ISwapRouter.sol";
 import {IERC20} from "../interfaces/IERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ProtocolCore} from "./ProtocolCore.sol";
+import {ACLManager} from "./ACLManager.sol";
 import {PositionManager} from "./PositionManager.sol";
 import {LendingEngine} from "./LendingEngine.sol";
 import {FeeCollector} from "./FeeCollector.sol";
@@ -53,13 +54,23 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
     event FeeCollectorUpdated(address oldCollector, address newCollector);
     event TokensRescued(address indexed token, address indexed to, uint256 amount);
 
+    function _acl() internal view returns (ACLManager) {
+        return core.aclManager();
+    }
+
     modifier whenNotPaused() {
         require(!core.paused(), "PAUSED");
         _;
     }
 
-    modifier onlyOwner() {
-        require(msg.sender == core.owner(), "NOT_OWNER");
+    modifier onlyPoolAdmin() {
+        require(_acl().isPoolAdmin(msg.sender), "NOT_POOL_ADMIN");
+        _;
+    }
+
+    modifier onlyRiskAdmin() {
+        ACLManager acl = _acl();
+        require(acl.isRiskAdmin(msg.sender) || acl.isPoolAdmin(msg.sender), "NOT_RISK_ADMIN");
         _;
     }
 
@@ -79,31 +90,31 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
         maxSwapSlippageBps = 300;
     }
 
-    function _authorizeUpgrade(address) internal override onlyOwner {}
+    function _authorizeUpgrade(address) internal override onlyPoolAdmin {}
 
     // --- Admin Setters ---
 
-    function setSwapRouter(address _swapRouter) external onlyOwner {
+    function setSwapRouter(address _swapRouter) external onlyPoolAdmin {
         require(_swapRouter != address(0), "ZERO_ADDRESS");
         emit SwapRouterUpdated(address(swapRouter), _swapRouter);
         swapRouter = ISwapRouter(_swapRouter);
     }
 
-    function setMaxLiquidationPortion(uint256 _maxLiquidationPortion) external onlyOwner {
+    function setMaxLiquidationPortion(uint256 _maxLiquidationPortion) external onlyRiskAdmin {
         require(_maxLiquidationPortion >= MIN_LIQUIDATION_PORTION, "BELOW_MIN");
         require(_maxLiquidationPortion <= MAX_LIQUIDATION_PORTION_CAP, "ABOVE_MAX");
         emit MaxLiquidationPortionUpdated(maxLiquidationPortion, _maxLiquidationPortion);
         maxLiquidationPortion = _maxLiquidationPortion;
     }
 
-    function setMaxSwapSlippage(uint256 _maxSwapSlippageBps) external onlyOwner {
+    function setMaxSwapSlippage(uint256 _maxSwapSlippageBps) external onlyRiskAdmin {
         require(_maxSwapSlippageBps >= MIN_SWAP_SLIPPAGE, "BELOW_MIN");
         require(_maxSwapSlippageBps <= MAX_SWAP_SLIPPAGE_CAP, "ABOVE_MAX");
         emit MaxSwapSlippageUpdated(maxSwapSlippageBps, _maxSwapSlippageBps);
         maxSwapSlippageBps = _maxSwapSlippageBps;
     }
 
-    function setFeeCollector(address _feeCollector) external onlyOwner {
+    function setFeeCollector(address _feeCollector) external onlyPoolAdmin {
         require(_feeCollector != address(0), "ZERO_ADDRESS");
         emit FeeCollectorUpdated(address(feeCollector), _feeCollector);
         feeCollector = FeeCollector(_feeCollector);
@@ -282,7 +293,7 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
 
     /// @notice Rescue tokens stuck in this contract (e.g., failed swap, unexpected transfer)
     /// @dev Only callable by owner (DAO). Cannot rescue tokens during an active liquidation (nonReentrant).
-    function rescueTokens(address token, address to, uint256 amount) external onlyOwner nonReentrant {
+    function rescueTokens(address token, address to, uint256 amount) external onlyPoolAdmin nonReentrant {
         require(token != address(0) && to != address(0), "ZERO_ADDRESS");
         require(amount > 0, "ZERO_AMOUNT");
         OZIERC20(token).safeTransfer(to, amount);

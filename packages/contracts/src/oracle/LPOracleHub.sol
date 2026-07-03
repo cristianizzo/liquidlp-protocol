@@ -7,6 +7,7 @@ import {ILPOracleHub} from "../interfaces/ILPOracleHub.sol";
 import {ILPOracle} from "../interfaces/ILPOracle.sol";
 import {ILPAdapter} from "../interfaces/ILPAdapter.sol";
 import {ProtocolCore} from "../core/ProtocolCore.sol";
+import {ACLManager} from "../core/ACLManager.sol";
 
 /// @title LPOracleHub
 /// @notice Central oracle router that delegates pricing to type-specific oracles
@@ -16,8 +17,8 @@ contract LPOracleHub is ILPOracleHub, Initializable, UUPSUpgradeable {
 
     mapping(ILPAdapter.LPType => address) public oracles;
 
-    modifier onlyOwner() {
-        require(msg.sender == core.owner(), "NOT_OWNER");
+    modifier onlyPoolAdmin() {
+        require(core.aclManager().isPoolAdmin(msg.sender), "NOT_POOL_ADMIN");
         _;
     }
 
@@ -30,10 +31,10 @@ contract LPOracleHub is ILPOracleHub, Initializable, UUPSUpgradeable {
         core = ProtocolCore(_core);
     }
 
-    function _authorizeUpgrade(address) internal override onlyOwner {}
+    function _authorizeUpgrade(address) internal override onlyPoolAdmin {}
 
     /// @inheritdoc ILPOracleHub
-    function registerOracle(ILPAdapter.LPType lpType, address oracle) external onlyOwner {
+    function registerOracle(ILPAdapter.LPType lpType, address oracle) external onlyPoolAdmin {
         require(oracle != address(0), "ZERO_ADDRESS");
         oracles[lpType] = oracle;
     }

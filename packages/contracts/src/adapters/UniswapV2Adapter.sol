@@ -4,6 +4,7 @@ pragma solidity ^0.8.26;
 import {ILPAdapter} from "../interfaces/ILPAdapter.sol";
 import {IUniswapV2Pair, IUniswapV2Factory, IUniswapV2Router} from "../interfaces/external/IUniswapV2.sol";
 import {ProtocolCore} from "../core/ProtocolCore.sol";
+import {ACLManager} from "../core/ACLManager.sol";
 
 /// @title UniswapV2Adapter
 /// @notice Handles Uniswap V2 ERC-20 LP token deposits, withdrawals, and unwinding
@@ -17,41 +18,26 @@ contract UniswapV2Adapter is ILPAdapter {
     IUniswapV2Router public immutable v2Router;
     ProtocolCore public immutable core;
 
-    address public protocol;
-
     // --- Events ---
     event PositionLocked(address indexed pair, address indexed from, uint256 amount);
     event PositionUnlocked(address indexed pair, address indexed to, uint256 amount);
     event LiquidityUnwound(address indexed pair, uint256 liquidityRemoved, uint256 amount0, uint256 amount1);
-    event ProtocolUpdated(address indexed oldProtocol, address indexed newProtocol);
+
+    function _acl() internal view returns (ACLManager) {
+        return core.aclManager();
+    }
 
     modifier onlyProtocol() {
-        require(msg.sender == protocol, "NOT_PROTOCOL");
+        ACLManager acl = _acl();
+        require(acl.isPositionManager(msg.sender) || acl.isLiquidationEngine(msg.sender), "NOT_AUTHORIZED");
         _;
     }
 
-    modifier onlyOwner() {
-        require(msg.sender == core.owner(), "NOT_OWNER");
-        _;
-    }
-
-    constructor(address _factory, address _router, address _core, address _protocol) {
-        require(
-            _factory != address(0) && _router != address(0) && _core != address(0) && _protocol != address(0),
-            "ZERO_ADDRESS"
-        );
+    constructor(address _factory, address _router, address _core) {
+        require(_factory != address(0) && _router != address(0) && _core != address(0), "ZERO_ADDRESS");
         v2Factory = IUniswapV2Factory(_factory);
         v2Router = IUniswapV2Router(_router);
         core = ProtocolCore(_core);
-        protocol = _protocol;
-    }
-
-    // --- Admin ---
-
-    function setProtocol(address _protocol) external onlyOwner {
-        require(_protocol != address(0), "ZERO_ADDRESS");
-        emit ProtocolUpdated(protocol, _protocol);
-        protocol = _protocol;
     }
 
     // --- ILPAdapter ---

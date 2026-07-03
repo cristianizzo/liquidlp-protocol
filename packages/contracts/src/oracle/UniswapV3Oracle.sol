@@ -5,6 +5,7 @@ import {ILPOracle} from "../interfaces/ILPOracle.sol";
 import {ILPOracleHub} from "../interfaces/ILPOracleHub.sol";
 import {IERC20} from "../interfaces/IERC20.sol";
 import {ProtocolCore} from "../core/ProtocolCore.sol";
+import {ACLManager} from "../core/ACLManager.sol";
 import {LPMath} from "../libraries/LPMath.sol";
 import {INonfungiblePositionManager, IUniswapV3Pool, IUniswapV3Factory} from "../interfaces/external/IUniswapV3.sol";
 
@@ -208,8 +209,8 @@ contract UniswapV3Oracle is ILPOracle {
     event PriceFeedUpdated(address indexed token, address indexed feed);
     event MaxStalenessUpdated(uint256 oldValue, uint256 newValue);
 
-    modifier onlyOwner() {
-        require(msg.sender == core.owner(), "NOT_OWNER");
+    modifier onlyPoolAdmin() {
+        require(core.aclManager().isPoolAdmin(msg.sender), "NOT_POOL_ADMIN");
         _;
     }
 
@@ -221,49 +222,49 @@ contract UniswapV3Oracle is ILPOracle {
 
     // --- Admin ---
 
-    function setTwapPeriod(uint32 _twapPeriod) external onlyOwner {
+    function setTwapPeriod(uint32 _twapPeriod) external onlyPoolAdmin {
         require(_twapPeriod >= MIN_TWAP_PERIOD && _twapPeriod <= MAX_TWAP_PERIOD, "OUT_OF_BOUNDS");
         emit TwapPeriodUpdated(twapPeriod, _twapPeriod);
         twapPeriod = _twapPeriod;
     }
 
-    function setMaxDeviation(uint256 _maxDeviationBps) external onlyOwner {
+    function setMaxDeviation(uint256 _maxDeviationBps) external onlyPoolAdmin {
         require(_maxDeviationBps >= MIN_DEVIATION_BPS && _maxDeviationBps <= MAX_DEVIATION_BPS_CAP, "OUT_OF_BOUNDS");
         emit MaxDeviationUpdated(maxDeviationBps, _maxDeviationBps);
         maxDeviationBps = _maxDeviationBps;
     }
 
-    function setDefaultHaircut(uint256 _bps) external onlyOwner {
+    function setDefaultHaircut(uint256 _bps) external onlyPoolAdmin {
         require(_bps >= MIN_HAIRCUT_BPS && _bps <= MAX_HAIRCUT_BPS, "OUT_OF_BOUNDS");
         emit HaircutUpdated("default", defaultHaircutBps, _bps);
         defaultHaircutBps = _bps;
     }
 
-    function setNarrowRangeHaircut(uint256 _bps) external onlyOwner {
+    function setNarrowRangeHaircut(uint256 _bps) external onlyPoolAdmin {
         require(_bps >= MIN_HAIRCUT_BPS && _bps <= MAX_HAIRCUT_BPS, "OUT_OF_BOUNDS");
         emit HaircutUpdated("narrowRange", narrowRangeHaircutBps, _bps);
         narrowRangeHaircutBps = _bps;
     }
 
-    function setOutOfRangeHaircut(uint256 _bps) external onlyOwner {
+    function setOutOfRangeHaircut(uint256 _bps) external onlyPoolAdmin {
         require(_bps >= MIN_HAIRCUT_BPS && _bps <= MAX_HAIRCUT_BPS, "OUT_OF_BOUNDS");
         emit HaircutUpdated("outOfRange", outOfRangeHaircutBps, _bps);
         outOfRangeHaircutBps = _bps;
     }
 
-    function setVolatilityHaircut(uint256 _bps) external onlyOwner {
+    function setVolatilityHaircut(uint256 _bps) external onlyPoolAdmin {
         require(_bps >= MIN_HAIRCUT_BPS / 2 && _bps <= MAX_HAIRCUT_BPS, "OUT_OF_BOUNDS");
         emit HaircutUpdated("volatility", volatilityHaircutBps, _bps);
         volatilityHaircutBps = _bps;
     }
 
-    function setMaxStaleness(uint256 _maxStaleness) external onlyOwner {
+    function setMaxStaleness(uint256 _maxStaleness) external onlyPoolAdmin {
         require(_maxStaleness >= 300 && _maxStaleness <= 86_400, "OUT_OF_BOUNDS");
         emit MaxStalenessUpdated(maxStaleness, _maxStaleness);
         maxStaleness = _maxStaleness;
     }
 
-    function setPriceFeed(address token, address feed) external onlyOwner {
+    function setPriceFeed(address token, address feed) external onlyPoolAdmin {
         require(token != address(0) && feed != address(0), "ZERO_ADDRESS");
         emit PriceFeedUpdated(token, feed);
         priceFeeds[token] = feed;

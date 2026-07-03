@@ -4,6 +4,7 @@ pragma solidity ^0.8.26;
 import {ILPOracle} from "../interfaces/ILPOracle.sol";
 import {ILPOracleHub} from "../interfaces/ILPOracleHub.sol";
 import {ProtocolCore} from "../core/ProtocolCore.sol";
+import {ACLManager} from "../core/ACLManager.sol";
 
 /// @title CurveOracle
 /// @notice Prices Curve LP tokens using virtual price + Chainlink validation
@@ -31,8 +32,8 @@ contract CurveOracle is ILPOracle {
     event VPDeviationUpdated(uint256 oldValue, uint256 newValue);
     event PriceFeedUpdated(address indexed token, address indexed feed);
 
-    modifier onlyOwner() {
-        require(msg.sender == core.owner(), "NOT_OWNER");
+    modifier onlyPoolAdmin() {
+        require(core.aclManager().isPoolAdmin(msg.sender), "NOT_POOL_ADMIN");
         _;
     }
 
@@ -41,19 +42,19 @@ contract CurveOracle is ILPOracle {
         lastUpdateTimestamp = block.timestamp;
     }
 
-    function setDefaultHaircut(uint256 _haircutBps) external onlyOwner {
+    function setDefaultHaircut(uint256 _haircutBps) external onlyPoolAdmin {
         require(_haircutBps >= MIN_HAIRCUT_BPS && _haircutBps <= MAX_HAIRCUT_BPS, "OUT_OF_BOUNDS");
         emit HaircutUpdated(defaultHaircutBps, _haircutBps);
         defaultHaircutBps = _haircutBps;
     }
 
-    function setMaxVirtualPriceDeviation(uint256 _deviationBps) external onlyOwner {
+    function setMaxVirtualPriceDeviation(uint256 _deviationBps) external onlyPoolAdmin {
         require(_deviationBps >= MIN_VP_DEVIATION_BPS && _deviationBps <= MAX_VP_DEVIATION_BPS, "OUT_OF_BOUNDS");
         emit VPDeviationUpdated(maxVirtualPriceDeviationBps, _deviationBps);
         maxVirtualPriceDeviationBps = _deviationBps;
     }
 
-    function setPriceFeed(address token, address feed) external onlyOwner {
+    function setPriceFeed(address token, address feed) external onlyPoolAdmin {
         require(token != address(0) && feed != address(0), "ZERO_ADDRESS");
         emit PriceFeedUpdated(token, feed);
         priceFeeds[token] = feed;

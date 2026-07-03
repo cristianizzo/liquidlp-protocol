@@ -6,6 +6,7 @@ import {IMarket} from "../interfaces/IMarket.sol";
 import {ILPAdapter} from "../interfaces/ILPAdapter.sol";
 import {Market} from "./Market.sol";
 import {ProtocolCore} from "../core/ProtocolCore.sol";
+import {ACLManager} from "../core/ACLManager.sol";
 
 /// @title MarketFactory
 /// @notice Deploys new isolated lending markets as UUPS proxies
@@ -15,9 +16,6 @@ contract MarketFactory {
     /// @notice The Market implementation contract that all proxies point to
     address public marketImplementation;
 
-    /// @notice LendingEngine address set on newly created markets
-    address public lendingEngine;
-
     // Pre-deployed interest rate models
     mapping(string => address) public interestRateModels;
 
@@ -26,8 +24,8 @@ contract MarketFactory {
     );
     event MarketImplementationUpdated(address oldImpl, address newImpl);
 
-    modifier onlyOwner() {
-        require(msg.sender == core.owner(), "NOT_OWNER");
+    modifier onlyPoolAdmin() {
+        require(core.aclManager().isPoolAdmin(msg.sender), "NOT_POOL_ADMIN");
         _;
     }
 
@@ -50,7 +48,7 @@ contract MarketFactory {
         string calldata rateModelType
     )
         external
-        onlyOwner
+        onlyPoolAdmin
         returns (uint256 marketId, address marketAddr)
     {
         address rateModel = interestRateModels[rateModelType];
@@ -70,7 +68,7 @@ contract MarketFactory {
         });
 
         // Deploy ERC1967 proxy pointing to the Market implementation
-        bytes memory initData = abi.encodeCall(Market.initialize, (config, rateModel, address(core), lendingEngine));
+        bytes memory initData = abi.encodeCall(Market.initialize, (config, rateModel, address(core)));
         ERC1967Proxy proxy = new ERC1967Proxy(marketImplementation, initData);
         marketAddr = address(proxy);
 
@@ -82,17 +80,13 @@ contract MarketFactory {
 
     /// @notice Update the implementation for future market deployments
     /// @dev Does NOT upgrade existing markets — they keep their current impl
-    function setMarketImplementation(address _impl) external onlyOwner {
+    function setMarketImplementation(address _impl) external onlyPoolAdmin {
         require(_impl != address(0), "ZERO_ADDRESS");
         emit MarketImplementationUpdated(marketImplementation, _impl);
         marketImplementation = _impl;
     }
 
-    function setLendingEngine(address _lendingEngine) external onlyOwner {
-        lendingEngine = _lendingEngine;
-    }
-
-    function setInterestRateModel(string calldata modelType, address model) external onlyOwner {
+    function setInterestRateModel(string calldata modelType, address model) external onlyPoolAdmin {
         interestRateModels[modelType] = model;
     }
 }

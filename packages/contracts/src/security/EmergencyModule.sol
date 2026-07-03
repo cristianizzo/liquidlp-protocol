@@ -2,9 +2,10 @@
 pragma solidity ^0.8.26;
 
 import {ProtocolCore} from "../core/ProtocolCore.sol";
+import {ACLManager} from "../core/ACLManager.sol";
 
 /// @title EmergencyModule
-/// @notice Guardian-controlled emergency actions with configurable timelock
+/// @notice Emergency actions controlled via ACLManager roles
 contract EmergencyModule {
     ProtocolCore public immutable core;
 
@@ -29,13 +30,18 @@ contract EmergencyModule {
     event ActionCancelled(bytes32 indexed actionHash);
     event TimelockDelayUpdated(uint256 oldDelay, uint256 newDelay);
 
-    modifier onlyGuardian() {
-        require(msg.sender == core.guardian() || msg.sender == core.owner(), "NOT_GUARDIAN");
+    function _acl() internal view returns (ACLManager) {
+        return core.aclManager();
+    }
+
+    modifier onlyEmergencyAdmin() {
+        ACLManager acl = _acl();
+        require(acl.isEmergencyAdmin(msg.sender) || acl.isPoolAdmin(msg.sender), "NOT_EMERGENCY_ADMIN");
         _;
     }
 
-    modifier onlyOwner() {
-        require(msg.sender == core.owner(), "NOT_OWNER");
+    modifier onlyPoolAdmin() {
+        require(_acl().isPoolAdmin(msg.sender), "NOT_POOL_ADMIN");
         _;
     }
 
@@ -47,7 +53,7 @@ contract EmergencyModule {
 
     /// @notice Update the timelock delay. This change is itself timelocked.
     /// @dev Must queue via queueAction first, then call this after delay passes.
-    function setTimelockDelay(uint256 _delay) external onlyOwner {
+    function setTimelockDelay(uint256 _delay) external onlyPoolAdmin {
         require(_delay >= MIN_TIMELOCK_DELAY, "BELOW_MIN");
         require(_delay <= MAX_TIMELOCK_DELAY, "ABOVE_MAX");
 
@@ -66,7 +72,7 @@ contract EmergencyModule {
     // --- Emergency ---
 
     /// @notice Emergency: pause entire protocol immediately (no timelock)
-    function emergencyPauseAll() external onlyGuardian {
+    function emergencyPauseAll() external onlyEmergencyAdmin {
         core.pause();
         emit EmergencyPauseAll(msg.sender);
     }
@@ -74,14 +80,14 @@ contract EmergencyModule {
     // --- Timelock ---
 
     /// @notice Queue a timelocked action
-    function queueAction(bytes32 actionHash) external onlyOwner {
+    function queueAction(bytes32 actionHash) external onlyPoolAdmin {
         timelockActions[actionHash] =
             TimelockAction({actionHash: actionHash, executeAfter: block.timestamp + timelockDelay, executed: false});
         emit ActionQueued(actionHash, block.timestamp + timelockDelay);
     }
 
     /// @notice Execute a queued action after timelock expires
-    function executeAction(bytes32 actionHash) external onlyOwner {
+    function executeAction(bytes32 actionHash) external onlyPoolAdmin {
         TimelockAction storage action = timelockActions[actionHash];
         require(action.executeAfter > 0, "NOT_QUEUED");
         require(block.timestamp >= action.executeAfter, "TIMELOCK_NOT_EXPIRED");
@@ -92,7 +98,7 @@ contract EmergencyModule {
     }
 
     /// @notice Cancel a queued action
-    function cancelAction(bytes32 actionHash) external onlyOwner {
+    function cancelAction(bytes32 actionHash) external onlyPoolAdmin {
         delete timelockActions[actionHash];
         emit ActionCancelled(actionHash);
     }
