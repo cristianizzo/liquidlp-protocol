@@ -344,15 +344,6 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
         }
     }
 
-    /// @notice Normalize a token amount to 18 decimals
-    /// @dev USDC (6 dec): 1_000_000 → 1_000_000_000_000_000_000 (1e18)
-    ///      DAI (18 dec): 1_000_000_000_000_000_000 → 1_000_000_000_000_000_000 (unchanged)
-    function _normalizeTo18(uint256 amount, uint8 decimals) internal pure returns (uint256) {
-        if (decimals == 18) return amount;
-        if (decimals < 18) return amount * (10 ** (18 - decimals));
-        return amount / (10 ** (decimals - 18));
-    }
-
     // --- Storage Gap (UUPS upgrade safety) ---
     uint256[50] private __gap;
 }
