@@ -6,7 +6,9 @@ import {ILPAdapter} from "../interfaces/ILPAdapter.sol";
 /// @title ProtocolCore
 /// @notice Central registry and access control for the LiquidLP protocol
 /// @dev All core contracts reference this for shared state and permissions.
-///      Not proxied — this IS the root of trust. owner = DAO.
+///      Not proxied — this IS the root of trust. owner = DAO multisig.
+///      Adapter/oracle registrations are sparse — maxRegisteredLPType may exceed
+///      the number of active adapters. Downstream code handles zero addresses.
 contract ProtocolCore {
     // --- Roles ---
     address public owner;
@@ -18,11 +20,13 @@ contract ProtocolCore {
     mapping(ILPAdapter.LPType => address) public adapters;
     mapping(ILPAdapter.LPType => address) public oracles;
     mapping(uint256 => address) public markets;
+    mapping(address => bool) public registeredMarkets; // duplicate protection
     uint256 public nextMarketId;
+    address public marketFactory;
 
     /// @notice Highest LP type index with a registered adapter
     /// @dev Used by PositionManager._detectLPType to avoid hardcoded loop bounds.
-    ///      Auto-updated when registerAdapter is called.
+    ///      Only increases — sparse enum slots with no adapter are handled downstream.
     uint8 public maxRegisteredLPType;
 
     // --- Protocol State ---
@@ -34,11 +38,13 @@ contract ProtocolCore {
     event AdapterRegistered(ILPAdapter.LPType indexed lpType, address indexed adapter);
     event OracleRegistered(ILPAdapter.LPType indexed lpType, address indexed oracle);
     event MarketRegistered(uint256 indexed marketId, address indexed market);
+    event MarketFactoryUpdated(address indexed oldFactory, address indexed newFactory);
     event PoolWhitelisted(address indexed pool);
     event PoolRemoved(address indexed pool);
     event Paused(address indexed by);
     event Unpaused(address indexed by);
     event OwnershipTransferStarted(address indexed currentOwner, address indexed pendingOwner);
+    event OwnershipTransferCancelled(address indexed currentOwner, address indexed cancelledPendingOwner);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event GuardianUpdated(address indexed previousGuardian, address indexed newGuardian);
     event KeeperUpdated(address indexed keeper, bool status);
@@ -54,11 +60,6 @@ contract ProtocolCore {
         _;
     }
 
-    modifier whenNotPaused() {
-        require(!paused, "PAUSED");
-        _;
-    }
-
     constructor(address _owner, address _guardian) {
         require(_owner != address(0), "ZERO_OWNER");
         require(_guardian != address(0), "ZERO_GUARDIAN");
@@ -70,6 +71,7 @@ contract ProtocolCore {
 
     function registerAdapter(ILPAdapter.LPType lpType, address adapter) external onlyOwner {
         require(adapter != address(0), "ZERO_ADDRESS");
+        require(adapter.code.length > 0, "NOT_CONTRACT");
         adapters[lpType] = adapter;
         if (uint8(lpType) > maxRegisteredLPType) {
             maxRegisteredLPType = uint8(lpType);
@@ -79,12 +81,24 @@ contract ProtocolCore {
 
     function registerOracle(ILPAdapter.LPType lpType, address oracle) external onlyOwner {
         require(oracle != address(0), "ZERO_ADDRESS");
+        require(oracle.code.length > 0, "NOT_CONTRACT");
         oracles[lpType] = oracle;
         emit OracleRegistered(lpType, oracle);
     }
 
-    function registerMarket(address market) external onlyOwner returns (uint256 marketId) {
+    function setMarketFactory(address _factory) external onlyOwner {
+        require(_factory != address(0), "ZERO_ADDRESS");
+        require(_factory.code.length > 0, "NOT_CONTRACT");
+        emit MarketFactoryUpdated(marketFactory, _factory);
+        marketFactory = _factory;
+    }
+
+    function registerMarket(address market) external returns (uint256 marketId) {
+        require(msg.sender == owner || msg.sender == marketFactory, "NOT_AUTHORIZED");
         require(market != address(0), "ZERO_ADDRESS");
+        require(market.code.length > 0, "NOT_CONTRACT");
+        require(!registeredMarkets[market], "MARKET_ALREADY_REGISTERED");
+        registeredMarkets[market] = true;
         marketId = nextMarketId++;
         markets[marketId] = market;
         emit MarketRegistered(marketId, market);
@@ -103,7 +117,6 @@ contract ProtocolCore {
     function removePool(address pool) external onlyOwner {
         require(supportedPools[pool], "NOT_WHITELISTED");
         supportedPools[pool] = false;
-        // Keep poolAddedAt for historical reference
         emit PoolRemoved(pool);
     }
 
@@ -116,10 +129,21 @@ contract ProtocolCore {
     }
 
     /// @notice Step 1: Propose new owner (two-step transfer)
+    /// @dev Overwrites any existing pending transfer with a cancellation event
     function transferOwnership(address newOwner) external onlyOwner {
         require(newOwner != address(0), "ZERO_ADDRESS");
+        if (pendingOwner != address(0)) {
+            emit OwnershipTransferCancelled(owner, pendingOwner);
+        }
         pendingOwner = newOwner;
         emit OwnershipTransferStarted(owner, newOwner);
+    }
+
+    /// @notice Cancel a pending ownership transfer
+    function cancelOwnershipTransfer() external onlyOwner {
+        require(pendingOwner != address(0), "NO_PENDING_TRANSFER");
+        emit OwnershipTransferCancelled(owner, pendingOwner);
+        pendingOwner = address(0);
     }
 
     /// @notice Step 2: New owner accepts ownership
@@ -168,7 +192,9 @@ contract ProtocolCore {
         return supportedPools[pool];
     }
 
+    /// @notice Get pool age in seconds (returns 0 if pool is not currently supported)
     function getPoolAge(address pool) external view returns (uint256) {
+        if (!supportedPools[pool]) return 0;
         uint256 addedAt = poolAddedAt[pool];
         if (addedAt == 0) return 0;
         return block.timestamp - addedAt;

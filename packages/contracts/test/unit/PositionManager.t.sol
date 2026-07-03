@@ -13,6 +13,7 @@ import {MockLPAdapter} from "../mocks/MockLPAdapter.sol";
 import {MockLPOracle} from "../mocks/MockLPOracle.sol";
 import {MockMarket} from "../mocks/MockMarket.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
+import {MockPriceFeedRegistry} from "../mocks/MockPriceFeedRegistry.sol";
 import {InterestRateModel} from "../../src/markets/InterestRateModel.sol";
 
 contract PositionManagerTest is Test {
@@ -543,13 +544,14 @@ contract PositionManagerTest is Test {
         vm.prank(alice);
         uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
 
-        // Mock LendingEngine.getDebt to return $5,000
+        // Mock LendingEngine.getDebt to return $5,000 in 6-dec USDC (market's borrow asset)
         vm.mockCall(
-            lendingEngine, abi.encodeWithSelector(LendingEngine.getDebt.selector, posId), abi.encode(uint256(5000e18))
+            lendingEngine, abi.encodeWithSelector(LendingEngine.getDebt.selector, posId), abi.encode(uint256(5000e6))
         );
 
         uint256 hf = pm.getHealthFactor(posId);
-        // HF = (10000 * 7500 * 1e18) / (5000 * 10000) = 1.5e18
+        // debtUsd = 5000e6 normalized to 18 dec = 5000e18
+        // HF = (10000e18 * 7500 * 1e18) / (5000e18 * 10000) = 1.5e18
         assertEq(hf, 1.5e18);
 
         vm.clearMockedCalls();
@@ -559,9 +561,9 @@ contract PositionManagerTest is Test {
         vm.prank(alice);
         uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
 
-        // Mock LendingEngine.getDebt to return $5,000
+        // Mock LendingEngine.getDebt to return $5,000 in 6-dec USDC
         vm.mockCall(
-            lendingEngine, abi.encodeWithSelector(LendingEngine.getDebt.selector, posId), abi.encode(uint256(5000e18))
+            lendingEngine, abi.encodeWithSelector(LendingEngine.getDebt.selector, posId), abi.encode(uint256(5000e6))
         );
 
         // Set oracle to 0 after deposit
@@ -714,5 +716,109 @@ contract PositionManagerTest is Test {
         vm.prank(alice);
         vm.expectRevert("NOT_ACTIVE");
         pm.withdraw(posId);
+    }
+
+    // ========== Health Factor with PriceFeedRegistry (Aave-style) ==========
+
+    function test_getHealthFactor_withPriceFeedRegistry_6decUSDC() public {
+        // Set up a MockPriceFeedRegistry with USDC at $1
+        MockPriceFeedRegistry registry = new MockPriceFeedRegistry();
+        MockERC20 usdc6 = new MockERC20("USDC", "USDC", 6);
+        registry.setPrice(address(usdc6), 1e18); // $1.00
+
+        // Create a market with 6-decimal USDC
+        InterestRateModel irm6 = new InterestRateModel(200, 600, 10_000, 8000);
+        MockMarket market6 = new MockMarket(address(usdc6), address(irm6));
+        vm.startPrank(owner);
+        uint256 marketId6 = core.registerMarket(address(market6));
+        pm.setPriceFeedRegistry(address(registry));
+        vm.stopPrank();
+
+        oracle.setPrice(10_000e18); // $10K collateral
+
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId6);
+
+        // Mock debt: 5000 USDC in 6 decimals
+        vm.mockCall(
+            lendingEngine, abi.encodeWithSelector(LendingEngine.getDebt.selector, posId), abi.encode(uint256(5000e6))
+        );
+
+        uint256 hf = pm.getHealthFactor(posId);
+        // debtUsd = 5000e6 * 1e18 / 1e6 = 5000e18
+        // HF = (10000e18 * 7500 * 1e18) / (5000e18 * 10000) = 1.5e18
+        assertEq(hf, 1.5e18, "HF must be correct with 6-dec USDC via PriceFeedRegistry");
+
+        vm.clearMockedCalls();
+    }
+
+    function test_getHealthFactor_withPriceFeedRegistry_8decWBTC() public {
+        // WBTC at $60,000 as borrow asset
+        MockPriceFeedRegistry registry = new MockPriceFeedRegistry();
+        MockERC20 wbtc = new MockERC20("WBTC", "WBTC", 8);
+        registry.setPrice(address(wbtc), 60_000e18); // $60K per BTC
+
+        InterestRateModel irm8 = new InterestRateModel(200, 600, 10_000, 8000);
+        MockMarket market8 = new MockMarket(address(wbtc), address(irm8));
+        vm.startPrank(owner);
+        uint256 marketId8 = core.registerMarket(address(market8));
+        pm.setPriceFeedRegistry(address(registry));
+        vm.stopPrank();
+
+        oracle.setPrice(100_000e18); // $100K collateral
+
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId8);
+
+        // Mock debt: 0.5 WBTC = $30K
+        vm.mockCall(
+            lendingEngine, abi.encodeWithSelector(LendingEngine.getDebt.selector, posId), abi.encode(uint256(5e7))
+        );
+
+        uint256 hf = pm.getHealthFactor(posId);
+        // debtUsd = 5e7 * 60_000e18 / 1e8 = 30_000e18
+        // HF = (100_000e18 * 7500 * 1e18) / (30_000e18 * 10_000) = 2.5e18
+        assertEq(hf, 2.5e18, "HF must be correct with 8-dec WBTC via PriceFeedRegistry");
+
+        vm.clearMockedCalls();
+    }
+
+    function test_getHealthFactor_fallbackWithoutRegistry() public {
+        // Without PriceFeedRegistry, fallback normalizes 6-dec debt to 18-dec USD
+        oracle.setPrice(10_000e18);
+
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+
+        // Market uses 6-dec USDC, so mock debt in 6 decimals
+        vm.mockCall(
+            lendingEngine, abi.encodeWithSelector(LendingEngine.getDebt.selector, posId), abi.encode(uint256(5000e6))
+        );
+
+        uint256 hf = pm.getHealthFactor(posId);
+        assertEq(hf, 1.5e18, "Fallback must normalize 6-dec debt correctly");
+
+        vm.clearMockedCalls();
+    }
+
+    function test_setPriceFeedRegistry_onlyOwner() public {
+        vm.prank(alice);
+        vm.expectRevert("NOT_OWNER");
+        pm.setPriceFeedRegistry(makeAddr("registry"));
+    }
+
+    function test_setPriceFeedRegistry_allowsZero() public {
+        // Can set to address(0) to revert to fallback normalization mode
+        MockPriceFeedRegistry registry = new MockPriceFeedRegistry();
+        registry.setPrice(address(0x1), 1e18);
+
+        vm.prank(owner);
+        pm.setPriceFeedRegistry(address(registry));
+        assertEq(address(pm.priceFeedRegistry()), address(registry));
+
+        // Unset → fallback mode
+        vm.prank(owner);
+        pm.setPriceFeedRegistry(address(0));
+        assertEq(address(pm.priceFeedRegistry()), address(0));
     }
 }

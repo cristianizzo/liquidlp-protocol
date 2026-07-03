@@ -42,7 +42,7 @@ contract LendingEngineTest is Test {
 
     function setUp() public {
         // Deploy tokens
-        usdc = new MockERC20("USDC", "USDC", 6);
+        usdc = new MockERC20("USDC", "USDC", 18);
         irm = new InterestRateModel(200, 600, 10_000, 8000);
 
         // Deploy core

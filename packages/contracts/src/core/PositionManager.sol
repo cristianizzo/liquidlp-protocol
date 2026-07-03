@@ -9,7 +9,10 @@ import {ILPAdapter} from "../interfaces/ILPAdapter.sol";
 import {ILPOracleHub} from "../interfaces/ILPOracleHub.sol";
 import {ILendingEngine} from "../interfaces/ILendingEngine.sol";
 import {IMarket} from "../interfaces/IMarket.sol";
+import {IERC20} from "../interfaces/IERC20.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ProtocolCore} from "./ProtocolCore.sol";
+import {PriceFeedRegistry} from "../oracle/PriceFeedRegistry.sol";
 
 /// @title PositionManager
 /// @notice Manages LP position deposits, withdrawals, and position state tracking
@@ -28,6 +31,8 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     // --- Events ---
     event AuthorizationUpdated(address indexed addr, bool status);
     event PositionAmountReduced(uint256 indexed positionId, uint256 amountRemoved, uint256 newAmount);
+    event LendingEngineUpdated(address indexed oldEngine, address indexed newEngine);
+    event PriceFeedRegistryUpdated(address indexed oldRegistry, address indexed newRegistry);
 
     // --- Modifiers ---
     modifier onlyOwner() {
@@ -67,7 +72,16 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     /// @notice Set the LendingEngine reference (needed for accurate health factor)
     function setLendingEngine(address _lendingEngine) external onlyOwner {
         require(_lendingEngine != address(0), "ZERO_ADDRESS");
+        emit LendingEngineUpdated(address(lendingEngine), _lendingEngine);
         lendingEngine = ILendingEngine(_lendingEngine);
+    }
+
+    /// @notice Set the PriceFeedRegistry (needed for debt → USD conversion in health factor)
+    /// @dev Set to address(0) to revert to fallback decimal normalization mode
+    function setPriceFeedRegistry(address _registry) external onlyOwner {
+        require(_registry == address(0) || _registry.code.length > 0, "NOT_CONTRACT");
+        emit PriceFeedRegistryUpdated(address(priceFeedRegistry), _registry);
+        priceFeedRegistry = PriceFeedRegistry(_registry);
     }
 
     // --- Admin ---
@@ -94,10 +108,16 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     {
         require(lpToken != address(0), "ZERO_LP_TOKEN");
         require(amount > 0 || tokenId > 0, "ZERO_AMOUNT"); // V2: amount > 0, V3: tokenId > 0
-        require(core.markets(marketId) != address(0), "INVALID_MARKET");
+        address marketAddr = core.markets(marketId);
+        require(marketAddr != address(0), "INVALID_MARKET");
 
         // Auto-detect LP type by querying each registered adapter
         ILPAdapter.LPType lpType = _detectLPType(lpToken);
+
+        // Validate LP type matches market's configured LP type (prevents risk parameter mismatch)
+        IMarket.MarketConfig memory mConfig = IMarket(marketAddr).getConfig();
+        require(lpType == mConfig.lpType, "LP_TYPE_MISMATCH");
+
         address adapterAddr = core.adapters(lpType);
         require(adapterAddr != address(0), "NO_ADAPTER");
 
@@ -143,17 +163,26 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         require(positionDebt[positionId] == 0, "HAS_DEBT");
         require(pos.status == PositionStatus.Active, "NOT_ACTIVE");
 
-        // Unlock LP via adapter (external call — reentrancy protected)
-        address adapterAddr = core.adapters(pos.lpType);
-        ILPAdapter(adapterAddr).unlock(pos.lpToken, pos.tokenId, pos.amount, msg.sender);
+        // Defense-in-depth: also check live debt from LendingEngine
+        if (address(lendingEngine) != address(0)) {
+            require(lendingEngine.getDebt(positionId) == 0, "HAS_LIVE_DEBT");
+        }
 
+        address adapterAddr = core.adapters(pos.lpType);
+        require(adapterAddr != address(0), "ADAPTER_NOT_FOUND");
+
+        // CEI: update state BEFORE external call
         pos.status = PositionStatus.Closed;
         emit PositionClosed(positionId, msg.sender);
+
+        // Unlock LP via adapter (external call — reentrancy protected)
+        ILPAdapter(adapterAddr).unlock(pos.lpToken, pos.tokenId, pos.amount, msg.sender);
     }
 
     // --- State Updates (authorized contracts only) ---
 
     /// @notice Update position debt (called by LendingEngine)
+    /// @dev Prevents zombie positions: cannot transition to Active if amount is 0
     function updateDebt(uint256 positionId, uint256 newDebt) external onlyAuthorized positionExists(positionId) {
         Position storage pos = _positions[positionId];
         require(pos.status == PositionStatus.Active || pos.status == PositionStatus.Borrowed, "POSITION_NOT_BORROWABLE");
@@ -162,7 +191,10 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         if (newDebt > 0 && pos.status == PositionStatus.Active) {
             pos.status = PositionStatus.Borrowed;
         } else if (newDebt == 0 && pos.status == PositionStatus.Borrowed) {
-            pos.status = PositionStatus.Active;
+            // Only return to Active if position still has collateral
+            if (pos.amount > 0) {
+                pos.status = PositionStatus.Active;
+            }
         }
     }
 
@@ -185,6 +217,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     }
 
     /// @notice Mark position as liquidated (called by LiquidationEngine)
+    /// @dev Terminal state — position cannot re-enter active lifecycle after this
     function markLiquidated(
         uint256 positionId,
         address liquidator,
@@ -195,7 +228,9 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         positionExists(positionId)
     {
         require(liquidator != address(0), "ZERO_LIQUIDATOR");
-        _positions[positionId].status = PositionStatus.Liquidated;
+        Position storage pos = _positions[positionId];
+        require(pos.status == PositionStatus.Borrowed || pos.status == PositionStatus.Active, "NOT_LIQUIDATABLE_STATUS");
+        pos.status = PositionStatus.Liquidated;
         positionDebt[positionId] = 0;
         emit PositionLiquidated(positionId, liquidator, debtRepaid);
     }
@@ -222,7 +257,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
 
     /// @inheritdoc IPositionManager
     function getHealthFactor(uint256 positionId) external view returns (uint256) {
-        // Use interest-accrued debt from LendingEngine (not stale positionDebt)
+        require(positionId < nextPositionId && _positions[positionId].owner != address(0), "POSITION_NOT_FOUND");
         require(address(lendingEngine) != address(0), "LENDING_ENGINE_NOT_SET");
         uint256 debt = lendingEngine.getDebt(positionId);
         if (debt == 0) return type(uint256).max;
@@ -232,11 +267,34 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
 
         Position memory pos = _positions[positionId];
         address marketAddr = core.markets(pos.marketId);
+        require(marketAddr != address(0), "MARKET_NOT_FOUND");
         IMarket.MarketConfig memory config = IMarket(marketAddr).getConfig();
 
-        // HF = (collateralValue * liquidationThreshold) / (debt * 10000)
+        // Convert debt from borrow asset decimals to 18-dec USD value (Aave-style)
+        uint256 debtUsd;
+        if (address(priceFeedRegistry) != address(0)) {
+            uint8 borrowDecimals = IERC20(config.borrowAsset).decimals();
+            debtUsd = priceFeedRegistry.getUsdValue(config.borrowAsset, debt, borrowDecimals);
+        } else {
+            // Fallback: normalize debt to 18 decimals (assumes USD-pegged borrow asset)
+            uint8 borrowDecimals = IERC20(config.borrowAsset).decimals();
+            require(borrowDecimals <= 36, "INVALID_DECIMALS");
+            if (borrowDecimals < 18) {
+                debtUsd = Math.mulDiv(debt, 10 ** (18 - borrowDecimals), 1);
+            } else if (borrowDecimals > 18) {
+                debtUsd = debt / (10 ** (borrowDecimals - 18));
+            } else {
+                debtUsd = debt;
+            }
+        }
+
+        // HF = (collateralValue * liquidationThreshold * 1e18) / (debtUsd * 10000)
+        // Both collateralValue and debtUsd are in 18-dec USD
         // Scaled by 1e18 (1e18 = health factor of 1.0)
-        return (collateralValue * config.liquidationThreshold * 1e18) / (debt * 10_000);
+        // Two-step mulDiv to avoid overflow: first scale by threshold, then by 1e18
+        if (debtUsd == 0) return type(uint256).max; // Dust debt rounds to 0 USD → treat as no debt
+        uint256 numerator = Math.mulDiv(collateralValue, config.liquidationThreshold, 10_000);
+        return Math.mulDiv(numerator, 1e18, debtUsd);
     }
 
     /// @notice Get the block number when a position was deposited (for borrow cooldown)
@@ -244,10 +302,14 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         return _positions[positionId].depositBlock;
     }
 
+    // --- New state vars (appended for UUPS upgrade safety) ---
+    PriceFeedRegistry public priceFeedRegistry;
+
     // --- Storage Gap (UUPS upgrade safety) ---
-    // Reserve 50 slots so future upgrades can add state variables
+    // Reserve slots so future upgrades can add state variables
     // without colliding with child contract storage.
-    uint256[50] private __gap;
+    // Reduced from 50 to 49 after adding priceFeedRegistry (1 slot used).
+    uint256[49] private __gap;
 
     // --- Internal ---
 
