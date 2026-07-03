@@ -28,6 +28,8 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     mapping(address => uint256[]) internal _ownerPositions;
     uint256 public nextPositionId;
     mapping(uint256 => uint256) public positionDebt;
+    /// @dev Deprecated — was `authorized` mapping. Kept for UUPS storage layout compatibility.
+    mapping(address => bool) private __deprecated_authorized;
 
     // --- Events ---
     event PositionAmountReduced(uint256 indexed positionId, uint256 amountRemoved, uint256 newAmount);

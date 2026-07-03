@@ -94,9 +94,9 @@ contract Deploy is Script {
         feeCollector = new FeeCollector(address(core), deployer, deployer);
 
         // Security
-        new CircuitBreaker(address(core));
+        CircuitBreaker cb = new CircuitBreaker(address(core));
         new RiskManager(address(core));
-        new PoolHealthMonitor(address(core), address(new CircuitBreaker(address(core))));
+        new PoolHealthMonitor(address(core), address(cb));
         new EmergencyModule(address(core));
 
         // Interest Rate Models

@@ -29,6 +29,10 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
     /// @notice Reference to ProtocolCore for ownership/admin checks
     ProtocolCore public core;
 
+    /// @dev Deprecated — was `lendingEngine` address. Kept for UUPS storage layout compatibility.
+    /// LendingEngine auth now checked via ACLManager.isLendingEngine().
+    address private __deprecated_lendingEngine;
+
     /// @notice Cumulative borrow interest index (RAY = 1e27 precision)
     uint256 public borrowIndex;
 
