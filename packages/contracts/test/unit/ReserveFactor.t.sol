@@ -65,10 +65,7 @@ contract ReserveFactorTest is Test {
         market.setFeeCollector(address(fc));
         vm.stopPrank();
 
-        // Fund market with liquidity
-        usdc.mint(address(market), 1_000_000e18);
-
-        // Lender supplies
+        // Lender supplies (this is the market's liquidity)
         usdc.mint(lender, 100_000e18);
         vm.prank(lender);
         usdc.approve(address(market), 100_000e18);

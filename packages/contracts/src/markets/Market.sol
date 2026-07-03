@@ -116,6 +116,7 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
     /// @notice Distribute accumulated protocol reserves to FeeCollector
     /// @dev Permissionless — anyone can trigger (keeper, user, DAO)
     function distributeReserves() external {
+        accrueInterest(); // Ensure reserves are up-to-date
         uint256 amount = protocolReserves;
         require(amount > 0, "NO_RESERVES");
         require(address(feeCollector) != address(0), "NO_FEE_COLLECTOR");
@@ -298,11 +299,13 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
             state.utilization = (state.totalBorrow * 10_000) / state.totalSupply;
         }
         state.borrowRate = interestRateModel.getBorrowRate(state.utilization);
-        state.supplyRate = interestRateModel.getSupplyRate(state.utilization, protocolFeeBps);
+        // Use reserveFactorBps for supply rate (protocol's actual cut from interest)
+        uint256 effectiveFee = reserveFactorBps > 0 ? reserveFactorBps : protocolFeeBps;
+        state.supplyRate = interestRateModel.getSupplyRate(state.utilization, effectiveFee);
     }
 
     // --- New state vars (appended for UUPS upgrade safety) ---
-    /// @notice Reserve factor: % of interest kept by protocol (bps). Default 2000 = 20%.
+    /// @notice Reserve factor: % of interest kept by protocol (bps). Set via setReserveFactor().
     uint256 public reserveFactorBps;
     /// @notice Accumulated protocol reserves (in borrow asset decimals)
     uint256 public protocolReserves;
