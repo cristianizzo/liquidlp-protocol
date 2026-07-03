@@ -34,6 +34,7 @@ contract PriceFeedRegistry {
 
     constructor(address _core) {
         require(_core != address(0), "ZERO_CORE");
+        require(_core.code.length > 0, "NOT_CONTRACT");
         core = ProtocolCore(_core);
     }
 

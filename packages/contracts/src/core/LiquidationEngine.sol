@@ -11,6 +11,7 @@ import {ILPAdapter} from "../interfaces/ILPAdapter.sol";
 import {IMarket} from "../interfaces/IMarket.sol";
 import {ISwapRouter} from "../interfaces/ISwapRouter.sol";
 import {IERC20} from "../interfaces/IERC20.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ProtocolCore} from "./ProtocolCore.sol";
 import {PositionManager} from "./PositionManager.sol";
 import {LendingEngine} from "./LendingEngine.sol";
@@ -296,8 +297,13 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
         if (address(registry) != address(0)) {
             return registry.getUsdValue(borrowAsset, amount, decimals);
         }
-        // Fallback: assume USD-pegged (1 token = $1)
-        return _normalizeTo18(amount, decimals);
+        // Fallback: assume USD-pegged (1 token = $1), overflow-safe
+        if (decimals < 18) {
+            return Math.mulDiv(amount, 10 ** (18 - decimals), 1);
+        } else if (decimals > 18) {
+            return amount / (10 ** (decimals - 18));
+        }
+        return amount;
     }
 
     /// @dev Swap non-borrow-asset tokens to borrow asset.
