@@ -14,6 +14,7 @@ import {ACLManager} from "./ACLManager.sol";
 import {PriceFeedRegistry} from "../oracle/PriceFeedRegistry.sol";
 import {PositionManager} from "./PositionManager.sol";
 import {Market} from "../markets/Market.sol";
+import {RiskManager} from "../security/RiskManager.sol";
 
 /// @title LendingEngine
 /// @notice Handles borrowing against LP positions and repayment with interest
@@ -43,7 +44,10 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
     uint256 public constant MIN_COOLDOWN = 1;
     uint256 public constant MAX_COOLDOWN = 50;
 
+    RiskManager public riskManager;
+
     event BorrowCooldownUpdated(uint256 oldValue, uint256 newValue);
+    event RiskManagerUpdated(address indexed oldManager, address indexed newManager);
 
     // --- ACL Helpers ---
     function _acl() internal view returns (ACLManager) {
@@ -81,6 +85,12 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
         borrowCooldownBlocks = _blocks;
     }
 
+    function setRiskManager(address _riskManager) external onlyPoolAdmin {
+        require(_riskManager == address(0) || _riskManager.code.length > 0, "NOT_CONTRACT");
+        emit RiskManagerUpdated(address(riskManager), _riskManager);
+        riskManager = RiskManager(_riskManager);
+    }
+
     // --- Core Logic ---
 
     /// @inheritdoc ILendingEngine
@@ -105,6 +115,16 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
         uint256 newTotalDebt = currentDebt + amount;
         uint256 maxBorrow = _getMaxBorrow(positionId, marketAddr);
         require(newTotalDebt <= maxBorrow, "EXCEEDS_MAX_LTV");
+
+        // RiskManager: validate caps (all in 18-dec USD)
+        if (address(riskManager) != address(0)) {
+            uint256 positionValue = positionManager.getPositionValue(positionId);
+            IMarket.MarketConfig memory config = IMarket(marketAddr).getConfig();
+            uint256 amountUsd = _toUsd(amount, config.borrowAsset);
+            (bool valid, string memory reason) = riskManager.validateBorrow(amountUsd, positionValue, pos.lpType);
+            require(valid, reason);
+            riskManager.recordBorrow(amountUsd, pos.lpType);
+        }
 
         uint256 currentBorrowIndex = market.borrowIndex();
         require(currentBorrowIndex > 0, "MARKET_NOT_INITIALIZED");
@@ -174,6 +194,13 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
 
         market.transferIn(payer, repayAmount);
 
+        // RiskManager: track repayment (18-dec USD)
+        if (address(riskManager) != address(0)) {
+            IMarket.MarketConfig memory config = IMarket(marketAddr).getConfig();
+            uint256 repayUsd = _toUsd(repayAmount, config.borrowAsset);
+            riskManager.recordRepay(repayUsd, pos.lpType);
+        }
+
         emit Repaid(positionId, payer, repayAmount, remainingDebt);
     }
 
@@ -210,6 +237,20 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
         return maxBorrowUsd;
     }
 
+    /// @notice Convert borrow asset amount to 18-dec USD
+    function _toUsd(uint256 amount, address borrowAsset) internal view returns (uint256) {
+        uint8 dec = IERC20(borrowAsset).decimals();
+        require(dec <= 36, "INVALID_DECIMALS");
+        PriceFeedRegistry registry = positionManager.priceFeedRegistry();
+        if (address(registry) != address(0)) {
+            return registry.getUsdValue(borrowAsset, amount, dec);
+        }
+        // Fallback: normalize to 18 dec (assumes USD-pegged)
+        if (dec < 18) return Math.mulDiv(amount, 10 ** (18 - dec), 1);
+        if (dec > 18) return amount / (10 ** (dec - 18));
+        return amount;
+    }
+
     function _getMarketAddr(uint256 marketId) internal view returns (address) {
         address marketAddr = core.markets(marketId);
         require(marketAddr != address(0), "MARKET_NOT_FOUND");
@@ -217,5 +258,6 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
     }
 
     // --- Storage Gap ---
-    uint256[50] private __gap;
+    // Reduced from 50 to 49 after adding riskManager.
+    uint256[49] private __gap;
 }

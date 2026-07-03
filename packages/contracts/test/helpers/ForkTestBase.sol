@@ -193,6 +193,10 @@ abstract contract ForkTestBase is Test {
         // 14. Set MarketFactory on ProtocolCore
         core.setMarketFactory(address(marketFactory));
 
+        // 15. Wire RiskManager
+        lendingEngine.setRiskManager(address(riskManager));
+        positionManager.setRiskManager(address(riskManager));
+
         vm.stopPrank();
     }
 
