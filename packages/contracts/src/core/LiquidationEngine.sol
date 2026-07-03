@@ -225,17 +225,18 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
             OZIERC20(borrowAsset).safeTransfer(msg.sender, liquidatorPayout);
         }
 
-        // Step 10: If fully liquidated, return remaining LP THEN mark as liquidated
+        // Step 10: Handle full debt repayment
         uint256 remainingDebt = lendingEngine.getDebt(positionId);
         if (remainingDebt == 0) {
-            // Return remaining LP to borrower BEFORE marking as liquidated
-            // (markLiquidated sets status to Liquidated, after which unlock would be blocked)
             PositionManager.Position memory freshPos = positionManager.getPosition(positionId);
+
             if (freshPos.amount > 0) {
+                // Remaining LP exists — return to borrower, then reduce tracked amount to 0
                 adapter.unlock(freshPos.lpToken, freshPos.tokenId, freshPos.amount, freshPos.owner);
+                positionManager.reducePositionAmount(positionId, freshPos.amount);
             }
 
-            // Now mark as liquidated (clears debt, sets status)
+            // Mark as terminal state (clears debt, sets status to Liquidated)
             positionManager.markLiquidated(positionId, msg.sender, repayAmount);
         }
 
