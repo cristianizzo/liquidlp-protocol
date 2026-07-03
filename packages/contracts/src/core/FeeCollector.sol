@@ -156,6 +156,22 @@ contract FeeCollector is ReentrancyGuard {
         emit FeesDistributed(token, toTreasury, toInsurance);
     }
 
+    /// @notice Accept reserve transfers from Market contracts
+    /// @dev Called after Market.distributeReserves() transfers tokens. Uses balance delta.
+    ///      Permissionless — anyone can call, but only records tokens actually received.
+    function depositReserves(address token, uint256 expectedAmount) external {
+        require(token != address(0), "ZERO_TOKEN");
+        require(expectedAmount > 0, "ZERO_AMOUNT");
+
+        uint256 balanceBefore = IERC20(token).balanceOf(address(this));
+        OZIERC20(token).safeTransferFrom(msg.sender, address(this), expectedAmount);
+        uint256 actualReceived = IERC20(token).balanceOf(address(this)) - balanceBefore;
+        require(actualReceived > 0, "ZERO_RECEIVED");
+
+        accumulatedFees[token] += actualReceived;
+        emit FeesCollected(token, actualReceived, msg.sender, "reserve");
+    }
+
     /// @notice Sweep tokens that were sent directly to this contract (not via collectFee)
     /// @dev Recovers balance - accumulatedFees[token] excess. Only callable by owner.
     function sweepExcess(address token, address to) external onlyPoolAdmin {

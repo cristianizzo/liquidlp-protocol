@@ -11,6 +11,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {InterestRateModel} from "./InterestRateModel.sol";
 import {ProtocolCore} from "../core/ProtocolCore.sol";
 import {ACLManager} from "../core/ACLManager.sol";
+import {FeeCollector} from "../core/FeeCollector.sol";
 
 /// @title Market
 /// @notice Isolated lending market — single source of truth for interest accrual
@@ -46,8 +47,11 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
 
     event InterestRateModelUpdated(address oldModel, address newModel);
     event MarketConfigUpdated(string field, uint256 oldValue, uint256 newValue);
-    event InterestAccrued(uint256 interestAmount, uint256 newBorrowIndex, uint256 timestamp);
+    event InterestAccrued(uint256 interestAmount, uint256 protocolShare, uint256 newBorrowIndex, uint256 timestamp);
     event ProtocolFeeUpdated(uint256 oldValue, uint256 newValue);
+    event ReserveFactorUpdated(uint256 oldValue, uint256 newValue);
+    event FeeCollectorUpdated(address indexed oldCollector, address indexed newCollector);
+    event ReservesDistributed(uint256 amount, address indexed feeCollector);
 
     function _acl() internal view returns (ACLManager) {
         return core.aclManager();
@@ -93,6 +97,36 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
         require(_feeBps <= 5000, "FEE_TOO_HIGH"); // Max 50%
         emit ProtocolFeeUpdated(protocolFeeBps, _feeBps);
         protocolFeeBps = _feeBps;
+    }
+
+    function setReserveFactor(uint256 _bps) external onlyRiskAdmin {
+        require(_bps <= 5000, "RESERVE_TOO_HIGH"); // Max 50%
+        accrueInterest();
+        emit ReserveFactorUpdated(reserveFactorBps, _bps);
+        reserveFactorBps = _bps;
+    }
+
+    function setFeeCollector(address _feeCollector) external onlyPoolAdmin {
+        require(_feeCollector != address(0), "ZERO_ADDRESS");
+        require(_feeCollector.code.length > 0, "NOT_CONTRACT");
+        emit FeeCollectorUpdated(address(feeCollector), _feeCollector);
+        feeCollector = FeeCollector(_feeCollector);
+    }
+
+    /// @notice Distribute accumulated protocol reserves to FeeCollector
+    /// @dev Permissionless — anyone can trigger (keeper, user, DAO)
+    function distributeReserves() external {
+        uint256 amount = protocolReserves;
+        require(amount > 0, "NO_RESERVES");
+        require(address(feeCollector) != address(0), "NO_FEE_COLLECTOR");
+
+        protocolReserves = 0;
+
+        // Approve FeeCollector to pull, then call depositReserves
+        OZIERC20(config.borrowAsset).forceApprove(address(feeCollector), amount);
+        feeCollector.depositReserves(config.borrowAsset, amount);
+
+        emit ReservesDistributed(amount, address(feeCollector));
     }
 
     function setInterestRateModel(address _newModel) external onlyPoolAdmin {
@@ -150,18 +184,22 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
 
         uint256 interestAccrued = (state.totalBorrow * borrowRatePerSecond * elapsed) / 1e18;
 
-        state.totalBorrow += interestAccrued;
-        state.totalSupply += interestAccrued;
+        // Split interest: protocol keeps reserveFactorBps%, lenders get the rest
+        uint256 protocolShare = (interestAccrued * reserveFactorBps) / 10_000;
+        uint256 lenderShare = interestAccrued - protocolShare;
+
+        state.totalBorrow += interestAccrued; // Borrowers owe full interest
+        state.totalSupply += lenderShare; // Lenders earn less than 100%
+        protocolReserves += protocolShare; // Protocol's cut stored separately
         state.lastAccrualTimestamp = block.timestamp;
 
         // borrowRatePerSecond is 1e18 scale, borrowIndex is RAY (1e27) scale
-        // Must scale rate to RAY before adding: rate * elapsed * 1e9 (= * RAY / 1e18)
         uint256 interestFactor = RAY + ((borrowRatePerSecond * elapsed * RAY) / 1e18);
         borrowIndex = (borrowIndex * interestFactor) / RAY;
 
         _updateRates();
 
-        emit InterestAccrued(interestAccrued, borrowIndex, block.timestamp);
+        emit InterestAccrued(interestAccrued, protocolShare, borrowIndex, block.timestamp);
     }
 
     // --- Lender Operations ---
@@ -263,6 +301,15 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
         state.supplyRate = interestRateModel.getSupplyRate(state.utilization, protocolFeeBps);
     }
 
-    // --- Storage Gap (UUPS upgrade safety) ---
-    uint256[50] private __gap;
+    // --- New state vars (appended for UUPS upgrade safety) ---
+    /// @notice Reserve factor: % of interest kept by protocol (bps). Default 2000 = 20%.
+    uint256 public reserveFactorBps;
+    /// @notice Accumulated protocol reserves (in borrow asset decimals)
+    uint256 public protocolReserves;
+    /// @notice FeeCollector address for reserve distribution
+    FeeCollector public feeCollector;
+
+    // --- Storage Gap ---
+    // Reduced from 50 to 47 after adding 3 new state vars.
+    uint256[47] private __gap;
 }
