@@ -14,6 +14,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ProtocolCore} from "./ProtocolCore.sol";
 import {ACLManager} from "./ACLManager.sol";
 import {PriceFeedRegistry} from "../oracle/PriceFeedRegistry.sol";
+import {RiskManager} from "../security/RiskManager.sol";
 
 /// @title PositionManager
 /// @notice Manages LP position deposits, withdrawals, and position state tracking
@@ -35,6 +36,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     event PositionAmountReduced(uint256 indexed positionId, uint256 amountRemoved, uint256 newAmount);
     event LendingEngineUpdated(address indexed oldEngine, address indexed newEngine);
     event PriceFeedRegistryUpdated(address indexed oldRegistry, address indexed newRegistry);
+    event RiskManagerUpdated(address indexed oldManager, address indexed newManager);
 
     // --- ACL Helpers ---
     function _acl() internal view returns (ACLManager) {
@@ -102,6 +104,13 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         priceFeedRegistry = PriceFeedRegistry(_registry);
     }
 
+    /// @notice Set RiskManager for position/borrow cap enforcement
+    function setRiskManager(address _riskManager) external onlyPoolAdmin {
+        require(_riskManager == address(0) || _riskManager.code.length > 0, "NOT_CONTRACT");
+        emit RiskManagerUpdated(address(riskManager), _riskManager);
+        riskManager = RiskManager(_riskManager);
+    }
+
     // --- Core Logic ---
 
     /// @inheritdoc IPositionManager
@@ -143,6 +152,14 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         ILPOracleHub.PriceResult memory price = oracleHub.getPrice(lpToken, tokenId, amount, lpType);
         require(price.totalValue > 0, "ZERO_VALUE");
 
+        // RiskManager: validate deposit caps
+        if (address(riskManager) != address(0)) {
+            (bool valid, string memory reason) =
+                riskManager.validateDeposit(msg.sender, price.totalValue, marketId, _ownerPositions[msg.sender].length);
+            require(valid, reason);
+            riskManager.recordDeposit(price.totalValue, marketId);
+        }
+
         // Create position
         positionId = nextPositionId++;
         _positions[positionId] = Position({
@@ -180,6 +197,12 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
 
         address adapterAddr = core.adapters(pos.lpType);
         require(adapterAddr != address(0), "ADAPTER_NOT_FOUND");
+
+        // RiskManager: track withdrawal for supply cap
+        if (address(riskManager) != address(0)) {
+            uint256 posValue = getPositionValue(positionId);
+            riskManager.recordWithdraw(posValue, pos.marketId);
+        }
 
         // CEI: update state BEFORE external call
         pos.status = PositionStatus.Closed;
@@ -303,11 +326,11 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
 
     // --- New state vars (appended for UUPS upgrade safety) ---
     PriceFeedRegistry public priceFeedRegistry;
+    RiskManager public riskManager;
 
     // --- Storage Gap ---
-    // Reduced from 50 to 49 after adding priceFeedRegistry.
-    // Note: `authorized` mapping preserved as `__deprecated_authorized` for UUPS layout safety.
-    uint256[49] private __gap;
+    // Reduced from 50 to 48 after adding priceFeedRegistry + riskManager.
+    uint256[48] private __gap;
 
     // --- Internal ---
 
