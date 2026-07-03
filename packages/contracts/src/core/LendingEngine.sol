@@ -240,6 +240,7 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
     /// @notice Convert borrow asset amount to 18-dec USD
     function _toUsd(uint256 amount, address borrowAsset) internal view returns (uint256) {
         uint8 dec = IERC20(borrowAsset).decimals();
+        require(dec <= 36, "INVALID_DECIMALS");
         PriceFeedRegistry registry = positionManager.priceFeedRegistry();
         if (address(registry) != address(0)) {
             return registry.getUsdValue(borrowAsset, amount, dec);

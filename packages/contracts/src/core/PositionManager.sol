@@ -154,8 +154,9 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
 
         // RiskManager: validate deposit caps
         if (address(riskManager) != address(0)) {
+            uint256 activeCount = _countActivePositions(msg.sender);
             (bool valid, string memory reason) =
-                riskManager.validateDeposit(msg.sender, price.totalValue, marketId, _ownerPositions[msg.sender].length);
+                riskManager.validateDeposit(msg.sender, price.totalValue, marketId, activeCount);
             require(valid, reason);
             riskManager.recordDeposit(price.totalValue, marketId);
         }
@@ -333,6 +334,17 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     uint256[48] private __gap;
 
     // --- Internal ---
+
+    /// @notice Count active (non-closed, non-liquidated) positions for a user
+    function _countActivePositions(address user) internal view returns (uint256 count) {
+        uint256[] storage ids = _ownerPositions[user];
+        for (uint256 i = 0; i < ids.length; i++) {
+            PositionStatus s = _positions[ids[i]].status;
+            if (s == PositionStatus.Active || s == PositionStatus.Borrowed) {
+                count++;
+            }
+        }
+    }
 
     function _detectLPType(address lpToken) internal view returns (ILPAdapter.LPType) {
         uint8 maxType = core.maxRegisteredLPType();
