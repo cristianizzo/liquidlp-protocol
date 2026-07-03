@@ -160,6 +160,7 @@ contract FeeCollector is ReentrancyGuard {
     /// @dev Called by Market.distributeReserves() which approves this contract first.
     ///      Pulls tokens via safeTransferFrom and tracks via balance delta.
     function depositReserves(address token, uint256 expectedAmount) external nonReentrant {
+        require(!core.paused(), "PAUSED");
         require(core.registeredMarkets(msg.sender), "NOT_REGISTERED_MARKET");
         require(token != address(0), "ZERO_TOKEN");
         require(expectedAmount > 0, "ZERO_AMOUNT");

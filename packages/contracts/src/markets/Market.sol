@@ -37,7 +37,7 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
     /// @notice Cumulative borrow interest index (RAY = 1e27 precision)
     uint256 public borrowIndex;
 
-    /// @notice Protocol fee passed to IRM for supply rate calc (bps). Default 30 = 0.3%
+    /// @dev Deprecated — supply rate now uses reserveFactorBps. Kept for UUPS storage layout.
     uint256 public protocolFeeBps = 30;
 
     uint256 internal constant RAY = 1e27;
@@ -118,7 +118,7 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
     ///      At high utilization, reserves may exceed cash (tokens lent out).
     ///      In that case, only available cash is distributed. Remaining reserves
     ///      stay tracked and can be distributed after repayments bring cash back.
-    function distributeReserves() external {
+    function distributeReserves() external nonReentrant {
         accrueInterest(); // Ensure reserves are up-to-date
         uint256 amount = protocolReserves;
         require(amount > 0, "NO_RESERVES");
