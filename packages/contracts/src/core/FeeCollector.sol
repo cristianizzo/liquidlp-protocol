@@ -65,6 +65,7 @@ contract FeeCollector is ReentrancyGuard {
     event TreasuryUpdated(address indexed oldAddr, address indexed newAddr);
     event InsuranceFundUpdated(address indexed oldAddr, address indexed newAddr);
     event AuthorizedCallerUpdated(address indexed caller, bool status);
+    event ExcessSwept(address indexed token, address indexed to, uint256 amount);
 
     modifier onlyOwner() {
         require(msg.sender == core.owner(), "NOT_OWNER");
@@ -99,6 +100,7 @@ contract FeeCollector is ReentrancyGuard {
     /// @notice Pull fee tokens from a source into FeeCollector and record actual received amount
     /// @dev Measures balance before/after transfer to handle fee-on-transfer tokens correctly.
     function collectFee(address token, uint256 amount, address from, string calldata feeType) external onlyAuthorized {
+        require(!core.paused(), "PAUSED");
         require(amount > 0, "ZERO_AMOUNT");
         require(token != address(0), "ZERO_TOKEN");
         require(from != address(0), "ZERO_FROM");
@@ -116,6 +118,7 @@ contract FeeCollector is ReentrancyGuard {
     /// @notice Distribute accumulated fees to treasury and insurance fund
     /// @dev Uses OZ ReentrancyGuard — cannot get permanently stuck on revert
     function distribute(address token) external onlyAuthorized nonReentrant {
+        require(!core.paused(), "PAUSED");
         require(token != address(0), "ZERO_TOKEN");
         require(treasury != address(0), "TREASURY_NOT_SET");
         require(insuranceFund != address(0), "INSURANCE_NOT_SET");
@@ -140,6 +143,18 @@ contract FeeCollector is ReentrancyGuard {
         }
 
         emit FeesDistributed(token, toTreasury, toInsurance);
+    }
+
+    /// @notice Sweep tokens that were sent directly to this contract (not via collectFee)
+    /// @dev Recovers balance - accumulatedFees[token] excess. Only callable by owner.
+    function sweepExcess(address token, address to) external onlyOwner {
+        require(token != address(0) && to != address(0), "ZERO_ADDRESS");
+        uint256 balance = IERC20(token).balanceOf(address(this));
+        uint256 tracked = accumulatedFees[token];
+        require(balance > tracked, "NO_EXCESS");
+        uint256 excess = balance - tracked;
+        OZIERC20(token).safeTransfer(to, excess);
+        emit ExcessSwept(token, to, excess);
     }
 
     // --- View ---
