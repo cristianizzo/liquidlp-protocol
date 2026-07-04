@@ -134,7 +134,9 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
         feeCollector.depositReserves(config.borrowAsset, amount);
 
         // Use balance delta to track actual amount sent (fee-on-transfer safe)
-        uint256 actualSent = balanceBefore - IERC20(config.borrowAsset).balanceOf(address(this));
+        uint256 balanceAfter = IERC20(config.borrowAsset).balanceOf(address(this));
+        uint256 actualSent = balanceBefore > balanceAfter ? balanceBefore - balanceAfter : 0;
+        if (actualSent > protocolReserves) actualSent = protocolReserves;
         protocolReserves -= actualSent;
 
         _updateRates(); // Refresh utilization after reserves change
