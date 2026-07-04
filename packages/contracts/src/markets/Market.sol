@@ -11,6 +11,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {InterestRateModel} from "./InterestRateModel.sol";
 import {ProtocolCore} from "../core/ProtocolCore.sol";
 import {ACLManager} from "../core/ACLManager.sol";
+import {FeeCollector} from "../core/FeeCollector.sol";
 
 /// @title Market
 /// @notice Isolated lending market — single source of truth for interest accrual
@@ -36,8 +37,9 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
     /// @notice Cumulative borrow interest index (RAY = 1e27 precision)
     uint256 public borrowIndex;
 
-    /// @notice Protocol fee passed to IRM for supply rate calc (bps). Default 30 = 0.3%
-    uint256 public protocolFeeBps = 30;
+    /// @dev Deprecated — supply rate now uses reserveFactorBps. Kept for UUPS storage layout.
+    ///      Inline `= 30` removed (misleading for proxies — proxy storage defaults to 0).
+    uint256 public protocolFeeBps;
 
     uint256 internal constant RAY = 1e27;
 
@@ -46,8 +48,11 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
 
     event InterestRateModelUpdated(address oldModel, address newModel);
     event MarketConfigUpdated(string field, uint256 oldValue, uint256 newValue);
-    event InterestAccrued(uint256 interestAmount, uint256 newBorrowIndex, uint256 timestamp);
-    event ProtocolFeeUpdated(uint256 oldValue, uint256 newValue);
+    event InterestAccrued(uint256 interestAmount, uint256 protocolShare, uint256 newBorrowIndex, uint256 timestamp);
+    /// @dev ProtocolFeeUpdated removed — protocolFeeBps is deprecated, use ReserveFactorUpdated
+    event ReserveFactorUpdated(uint256 oldValue, uint256 newValue);
+    event FeeCollectorUpdated(address indexed oldCollector, address indexed newCollector);
+    event ReservesDistributed(uint256 amount, address indexed feeCollector);
 
     function _acl() internal view returns (ACLManager) {
         return core.aclManager();
@@ -82,17 +87,65 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
         core = ProtocolCore(_core);
         state.lastAccrualTimestamp = block.timestamp;
         borrowIndex = RAY;
-        protocolFeeBps = 30; // 0.3% default
+        // protocolFeeBps is deprecated — kept in storage for UUPS layout.
+        // Use setReserveFactor() to configure the protocol's interest share.
     }
 
     function _authorizeUpgrade(address) internal override onlyPoolAdmin {}
 
     // --- Admin ---
 
-    function setProtocolFee(uint256 _feeBps) external onlyPoolAdmin {
-        require(_feeBps <= 5000, "FEE_TOO_HIGH"); // Max 50%
-        emit ProtocolFeeUpdated(protocolFeeBps, _feeBps);
-        protocolFeeBps = _feeBps;
+    /// @dev Deprecated — use setReserveFactor() instead. Kept for UUPS storage compatibility.
+    function setProtocolFee(uint256) external pure {
+        revert("DEPRECATED_USE_RESERVE_FACTOR");
+    }
+
+    function setReserveFactor(uint256 _bps) external onlyRiskAdmin {
+        require(_bps <= 5000, "RESERVE_TOO_HIGH"); // Max 50%
+        accrueInterest();
+        emit ReserveFactorUpdated(reserveFactorBps, _bps);
+        reserveFactorBps = _bps;
+        _updateRates();
+    }
+
+    function setFeeCollector(address _feeCollector) external onlyPoolAdmin {
+        require(_feeCollector != address(0), "ZERO_ADDRESS");
+        require(_feeCollector.code.length > 0, "NOT_CONTRACT");
+        require(address(FeeCollector(_feeCollector).core()) == address(core), "CORE_MISMATCH");
+        emit FeeCollectorUpdated(address(feeCollector), _feeCollector);
+        feeCollector = FeeCollector(_feeCollector);
+    }
+
+    /// @notice Distribute accumulated protocol reserves to FeeCollector
+    /// @dev Permissionless — anyone can trigger (keeper, user, DAO).
+    ///      At high utilization, reserves may exceed cash (tokens lent out).
+    ///      In that case, only available cash is distributed. Remaining reserves
+    ///      stay tracked and can be distributed after repayments bring cash back.
+    function distributeReserves() external nonReentrant {
+        accrueInterest(); // Ensure reserves are up-to-date
+        uint256 amount = protocolReserves;
+        require(amount > 0, "NO_RESERVES");
+        require(address(feeCollector) != address(0), "NO_FEE_COLLECTOR");
+
+        // Cap at available cash (reserves may exceed balance at high utilization).
+        // If no cash available, silently return — reserves stay tracked for later.
+        uint256 balanceBefore = IERC20(config.borrowAsset).balanceOf(address(this));
+        if (amount > balanceBefore) amount = balanceBefore;
+        if (amount == 0) return; // No cash to distribute — try again after repayments
+
+        // Approve FeeCollector to pull, then call depositReserves
+        OZIERC20(config.borrowAsset).forceApprove(address(feeCollector), amount);
+        feeCollector.depositReserves(config.borrowAsset, amount);
+
+        // Use balance delta to track actual amount sent (fee-on-transfer safe)
+        uint256 balanceAfter = IERC20(config.borrowAsset).balanceOf(address(this));
+        uint256 actualSent = balanceBefore > balanceAfter ? balanceBefore - balanceAfter : 0;
+        if (actualSent > protocolReserves) actualSent = protocolReserves;
+        protocolReserves -= actualSent;
+
+        _updateRates();
+
+        emit ReservesDistributed(actualSent, address(feeCollector));
     }
 
     function setInterestRateModel(address _newModel) external onlyPoolAdmin {
@@ -145,23 +198,28 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
         }
 
         uint256 elapsed = block.timestamp - state.lastAccrualTimestamp;
-        uint256 currentUtilization = (state.totalBorrow * 10_000) / state.totalSupply;
+        uint256 totalPoolAssets = state.totalSupply + protocolReserves;
+        uint256 currentUtilization = (state.totalBorrow * 10_000) / totalPoolAssets;
         uint256 borrowRatePerSecond = interestRateModel.getBorrowRate(currentUtilization);
 
         uint256 interestAccrued = (state.totalBorrow * borrowRatePerSecond * elapsed) / 1e18;
 
-        state.totalBorrow += interestAccrued;
-        state.totalSupply += interestAccrued;
+        // Split interest: protocol keeps reserveFactorBps%, lenders get the rest
+        uint256 protocolShare = (interestAccrued * reserveFactorBps) / 10_000;
+        uint256 lenderShare = interestAccrued - protocolShare;
+
+        state.totalBorrow += interestAccrued; // Borrowers owe full interest
+        state.totalSupply += lenderShare; // Lenders earn less than 100%
+        protocolReserves += protocolShare; // Protocol's cut stored separately
         state.lastAccrualTimestamp = block.timestamp;
 
         // borrowRatePerSecond is 1e18 scale, borrowIndex is RAY (1e27) scale
-        // Must scale rate to RAY before adding: rate * elapsed * 1e9 (= * RAY / 1e18)
         uint256 interestFactor = RAY + ((borrowRatePerSecond * elapsed * RAY) / 1e18);
         borrowIndex = (borrowIndex * interestFactor) / RAY;
 
         _updateRates();
 
-        emit InterestAccrued(interestAccrued, borrowIndex, block.timestamp);
+        emit InterestAccrued(interestAccrued, protocolShare, borrowIndex, block.timestamp);
     }
 
     // --- Lender Operations ---
@@ -199,7 +257,9 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
 
         amount = (sharesToBurn * state.totalSupply) / totalShares;
 
-        uint256 availableLiquidity = state.totalSupply - state.totalBorrow;
+        // Available = actual token balance (protocol reserves are accounting claims,
+        // not locked cash — lenders have priority over reserves)
+        uint256 availableLiquidity = IERC20(config.borrowAsset).balanceOf(address(this));
         require(amount <= availableLiquidity, "INSUFFICIENT_LIQUIDITY");
 
         shares[msg.sender] -= sharesToBurn;
@@ -215,7 +275,9 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
 
     function transferOut(address to, uint256 amount) external onlyLendingEngine {
         require(to != address(0), "ZERO_RECIPIENT");
-        uint256 available = state.totalSupply - state.totalBorrow;
+        require(state.totalSupply > 0, "NO_SUPPLY");
+        // Available = actual balance (reserves are accounting claims, not locked)
+        uint256 available = IERC20(config.borrowAsset).balanceOf(address(this));
         require(amount <= available, "INSUFFICIENT_LIQUIDITY");
 
         // Enforce borrow cap (MKT-6)
@@ -254,15 +316,27 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
     // --- Internal ---
 
     function _updateRates() internal {
-        if (state.totalSupply == 0) {
+        // Total pool assets = lender share + protocol reserves
+        uint256 totalPoolAssets = state.totalSupply + protocolReserves;
+        if (totalPoolAssets == 0) {
             state.utilization = 0;
         } else {
-            state.utilization = (state.totalBorrow * 10_000) / state.totalSupply;
+            state.utilization = (state.totalBorrow * 10_000) / totalPoolAssets;
         }
         state.borrowRate = interestRateModel.getBorrowRate(state.utilization);
-        state.supplyRate = interestRateModel.getSupplyRate(state.utilization, protocolFeeBps);
+        // Supply rate reflects actual protocol cut from interest
+        state.supplyRate = interestRateModel.getSupplyRate(state.utilization, reserveFactorBps);
     }
 
-    // --- Storage Gap (UUPS upgrade safety) ---
-    uint256[50] private __gap;
+    // --- New state vars (appended for UUPS upgrade safety) ---
+    /// @notice Reserve factor: % of interest kept by protocol (bps). Set via setReserveFactor().
+    uint256 public reserveFactorBps;
+    /// @notice Accumulated protocol reserves (in borrow asset decimals)
+    uint256 public protocolReserves;
+    /// @notice FeeCollector address for reserve distribution
+    FeeCollector public feeCollector;
+
+    // --- Storage Gap ---
+    // Reduced from 50 to 47 after adding 3 new state vars.
+    uint256[47] private __gap;
 }
