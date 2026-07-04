@@ -57,12 +57,13 @@ contract UniswapV2Adapter is ILPAdapter {
         require(amount <= type(uint128).max, "AMOUNT_OVERFLOW");
         require(from != address(0), "ZERO_FROM");
 
-        // Verify this is a valid V2 pair from our factory
+        // Verify this is a valid V2 pair from our factory (validate before interacting)
+        require(lpToken.code.length > 0, "NOT_CONTRACT");
         IUniswapV2Pair pair = IUniswapV2Pair(lpToken);
+        require(pair.factory() == address(v2Factory), "NOT_OUR_FACTORY");
         address token0 = pair.token0();
         address token1 = pair.token1();
-        address expectedPair = v2Factory.getPair(token0, token1);
-        require(lpToken == expectedPair, "INVALID_PAIR");
+        require(v2Factory.getPair(token0, token1) == lpToken, "INVALID_PAIR");
 
         // Transfer LP tokens from user to adapter
         require(pair.transferFrom(from, address(this), amount), "TRANSFER_FAILED");
@@ -114,11 +115,15 @@ contract UniswapV2Adapter is ILPAdapter {
     {
         require(liquidityToRemove > 0, "ZERO_LIQUIDITY");
 
+        // Validate pair before interacting
+        require(lpToken.code.length > 0, "NOT_CONTRACT");
         IUniswapV2Pair pair = IUniswapV2Pair(lpToken);
+        require(pair.factory() == address(v2Factory), "NOT_OUR_FACTORY");
         address token0 = pair.token0();
         address token1 = pair.token1();
 
-        // Approve router
+        // Safe approval: reset to 0 first (USDT-style compatibility)
+        pair.approve(address(v2Router), 0);
         require(pair.approve(address(v2Router), uint256(liquidityToRemove)), "APPROVE_FAILED");
 
         // Remove liquidity — tokens to caller

@@ -42,19 +42,20 @@ library LPMath {
         returns (uint256 value)
     {
         require(totalSupply > 0, "ZERO_TOTAL_SUPPLY");
+        if (amount == 0) return 0;
 
-        // sqrt(k) = sqrt(reserve0 * reserve1) — use mulDiv to prevent overflow
-        uint256 k = Math.mulDiv(reserve0, reserve1, 1);
-        uint256 sqrtK = sqrt(k);
+        // sqrt(k) = sqrt(reserve0 * reserve1) — mulDiv for overflow-safe product
+        uint256 sqrtK = sqrt(Math.mulDiv(reserve0, reserve1, 1));
 
-        // sqrt(price0 * price1) — use mulDiv to prevent overflow
-        uint256 pp = Math.mulDiv(price0, price1, 1);
-        uint256 sqrtP = sqrt(pp);
+        // sqrt(price0 * price1) — mulDiv for overflow-safe product
+        uint256 sqrtP = sqrt(Math.mulDiv(price0, price1, 1));
 
         // value = 2 * sqrtK * sqrtP * amount / (totalSupply * 1e18)
-        // Split into two mulDiv calls to prevent overflow on the numerator
-        uint256 numerator = Math.mulDiv(2 * sqrtK, sqrtP, 1);
-        value = Math.mulDiv(numerator, amount, totalSupply * 1e18);
+        // Chain mulDiv to maximize precision while preventing overflow:
+        // Step 1: sqrtK * sqrtP * amount / totalSupply (keep precision by multiplying first)
+        uint256 scaled = Math.mulDiv(Math.mulDiv(sqrtK, sqrtP, 1), amount, totalSupply);
+        // Step 2: scaled * 2 / 1e18
+        value = Math.mulDiv(scaled, 2, 1e18);
     }
 
     /// @notice Apply haircut (safety discount) to a value

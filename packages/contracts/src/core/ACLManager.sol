@@ -1,20 +1,22 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+import {AccessControlEnumerable} from "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
+import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 
 /// @title ACLManager
 /// @notice Role-based access control for the LiquidLP protocol (Aave V3 pattern)
-/// @dev Extends OZ AccessControl. Single source of truth for all permissions.
-///      Deployed once, referenced by all contracts via ProtocolCore.aclManager().
+/// @dev Extends OZ AccessControlEnumerable for role member counting.
+///      Single source of truth for all permissions.
 ///      DEFAULT_ADMIN_ROLE holder (owner multisig, later timelock) can grant/revoke all roles.
-contract ACLManager is AccessControl {
+contract ACLManager is AccessControlEnumerable {
     // --- Admin Roles (humans / multisigs / governance) ---
     bytes32 public constant POOL_ADMIN = keccak256("POOL_ADMIN");
     bytes32 public constant EMERGENCY_ADMIN = keccak256("EMERGENCY_ADMIN");
     bytes32 public constant RISK_ADMIN = keccak256("RISK_ADMIN");
 
-    // --- Contract Roles (protocol contracts only) ---
+    // --- Contract Roles (protocol contracts + automation bots) ---
     bytes32 public constant LENDING_ENGINE = keccak256("LENDING_ENGINE");
     bytes32 public constant LIQUIDATION_ENGINE = keccak256("LIQUIDATION_ENGINE");
     bytes32 public constant POSITION_MANAGER = keccak256("POSITION_MANAGER");
@@ -68,7 +70,7 @@ contract ACLManager is AccessControl {
         return hasRole(RISK_ADMIN, admin);
     }
 
-    // --- Contract Roles (granted during deployment) ---
+    // --- Contract Roles ---
     function isLendingEngine(address addr) external view returns (bool) {
         return hasRole(LENDING_ENGINE, addr);
     }
@@ -85,20 +87,25 @@ contract ACLManager is AccessControl {
         return hasRole(KEEPER, addr);
     }
 
-    /// @notice Override renounceRole to prevent bricking — cannot renounce DEFAULT_ADMIN_ROLE
-    function renounceRole(bytes32 role, address callerConfirmation) public override {
+    // --- Anti-bricking: protect last DEFAULT_ADMIN_ROLE ---
+
+    /// @notice Cannot renounce DEFAULT_ADMIN_ROLE (prevents bricking)
+    function renounceRole(bytes32 role, address callerConfirmation) public override(AccessControl, IAccessControl) {
         require(role != DEFAULT_ADMIN_ROLE, "CANNOT_RENOUNCE_ADMIN");
         super.renounceRole(role, callerConfirmation);
     }
 
-    /// @notice Override revokeRole to prevent bricking — cannot revoke last DEFAULT_ADMIN_ROLE
-    /// @dev An admin revoking their own admin role would also brick the protocol
-    function revokeRole(bytes32 role, address account) public override onlyRole(getRoleAdmin(role)) {
-        if (role == DEFAULT_ADMIN_ROLE) {
-            // If revoking from self, ensure at least one other admin exists
-            // We can't easily count role members without AccessControlEnumerable,
-            // so we block self-revoke of DEFAULT_ADMIN_ROLE entirely
-            require(account != msg.sender, "CANNOT_SELF_REVOKE_ADMIN");
+    /// @notice Cannot revoke last DEFAULT_ADMIN_ROLE holder (prevents bricking)
+    function revokeRole(
+        bytes32 role,
+        address account
+    )
+        public
+        override(AccessControl, IAccessControl)
+        onlyRole(getRoleAdmin(role))
+    {
+        if (role == DEFAULT_ADMIN_ROLE && hasRole(DEFAULT_ADMIN_ROLE, account)) {
+            require(getRoleMemberCount(DEFAULT_ADMIN_ROLE) > 1, "CANNOT_REMOVE_LAST_ADMIN");
         }
         super.revokeRole(role, account);
     }
