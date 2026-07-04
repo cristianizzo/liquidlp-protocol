@@ -22,8 +22,8 @@ library LPMath {
     /// @notice Calculate fair value of V2 LP token using sqrt(k) method
     /// @dev Formula: value = 2 * sqrt(reserve0 * reserve1) * sqrt(price0 * price1) * amount / (totalSupply * 1e18)
     ///      Uses mulDiv to prevent overflow on reserve0 * reserve1 and price0 * price1.
-    /// @param reserve0 Reserve of token0 (native decimals)
-    /// @param reserve1 Reserve of token1 (native decimals)
+    /// @param reserve0 Reserve of token0 (18 decimals, caller must normalize)
+    /// @param reserve1 Reserve of token1 (18 decimals, caller must normalize)
     /// @param totalSupply Total LP token supply
     /// @param price0 Chainlink price of token0 (18 decimals USD)
     /// @param price1 Chainlink price of token1 (18 decimals USD)

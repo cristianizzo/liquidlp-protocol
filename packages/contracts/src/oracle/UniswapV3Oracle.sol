@@ -266,6 +266,7 @@ contract UniswapV3Oracle is ILPOracle {
 
     function setPriceFeed(address token, address feed) external onlyPoolAdmin {
         require(token != address(0) && feed != address(0), "ZERO_ADDRESS");
+        require(feed.code.length > 0, "NOT_CONTRACT");
         emit PriceFeedUpdated(token, feed);
         priceFeeds[token] = feed;
     }
@@ -416,9 +417,11 @@ contract UniswapV3Oracle is ILPOracle {
         address feed = priceFeeds[token];
         require(feed != address(0), "NO_PRICE_FEED");
 
-        (, int256 answer,, uint256 updatedAt,) = IAggregatorV3(feed).latestRoundData();
+        (uint80 roundId, int256 answer,, uint256 updatedAt, uint80 answeredInRound) =
+            IAggregatorV3(feed).latestRoundData();
         require(answer > 0, "INVALID_PRICE");
-        require(block.timestamp - updatedAt <= maxStaleness, "STALE_PRICE");
+        require(updatedAt > 0 && answeredInRound >= roundId, "STALE_ROUND");
+        require(block.timestamp >= updatedAt && block.timestamp - updatedAt <= maxStaleness, "STALE_PRICE");
 
         uint8 feedDecimals = IAggregatorV3(feed).decimals();
         if (feedDecimals < 18) {
