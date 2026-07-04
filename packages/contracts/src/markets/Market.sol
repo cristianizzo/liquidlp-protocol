@@ -38,7 +38,8 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
     uint256 public borrowIndex;
 
     /// @dev Deprecated — supply rate now uses reserveFactorBps. Kept for UUPS storage layout.
-    uint256 public protocolFeeBps = 30;
+    ///      Inline `= 30` removed (misleading for proxies — proxy storage defaults to 0).
+    uint256 public protocolFeeBps;
 
     uint256 internal constant RAY = 1e27;
 
