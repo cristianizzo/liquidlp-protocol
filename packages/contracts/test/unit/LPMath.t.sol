@@ -4,8 +4,36 @@ pragma solidity ^0.8.26;
 import "forge-std/Test.sol";
 import {LPMath} from "../../src/libraries/LPMath.sol";
 
+/// @dev Wrapper to make internal LPMath functions callable externally (for vm.expectRevert)
+contract LPMathWrapper {
+    function fairLPValueV2(
+        uint256 r0,
+        uint256 r1,
+        uint256 ts,
+        uint256 p0,
+        uint256 p1,
+        uint256 amt
+    )
+        external
+        pure
+        returns (uint256)
+    {
+        return LPMath.fairLPValueV2(r0, r1, ts, p0, p1, amt);
+    }
+
+    function applyHaircut(uint256 value, uint256 bps) external pure returns (uint256) {
+        return LPMath.applyHaircut(value, bps);
+    }
+}
+
 contract LPMathTest is Test {
     using LPMath for uint256;
+
+    LPMathWrapper public wrapper;
+
+    function setUp() public {
+        wrapper = new LPMathWrapper();
+    }
 
     function test_sqrt() public pure {
         assertEq(LPMath.sqrt(0), 0);
@@ -69,6 +97,21 @@ contract LPMathTest is Test {
         // With sqrt method the value should be close
         assertGt(value, 3500e18);
         assertLt(value, 4500e18);
+    }
+
+    function test_fairLPValueV2_revertsZeroTotalSupply() public {
+        vm.expectRevert("ZERO_TOTAL_SUPPLY");
+        wrapper.fairLPValueV2(1000e18, 1000e6, 0, 2000e18, 1e18, 100e18);
+    }
+
+    function test_applyHaircut_revertsExceedsMax() public {
+        vm.expectRevert("HAIRCUT_TOO_LARGE");
+        wrapper.applyHaircut(1000e18, 10_001);
+    }
+
+    function test_applyHaircut_maxHaircutReturnsZero() public pure {
+        uint256 result = LPMath.applyHaircut(1000e18, 10_000);
+        assertEq(result, 0);
     }
 
     function testFuzz_haircutNeverExceedsValue(uint256 value, uint256 haircutBps) public pure {
