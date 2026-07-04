@@ -193,62 +193,29 @@ contract TimelockTest is Test {
     // ========== Role Transfer via Timelock (Bootstrap) ==========
 
     function test_fullRoleTransfer_throughTimelock() public {
-        // Schedule revocation of deployer's roles THROUGH the timelock
         bytes32 poolAdminRole = aclManager.POOL_ADMIN();
         bytes32 defaultAdminRole = aclManager.DEFAULT_ADMIN_ROLE();
 
-        bytes memory revokePool = abi.encodeWithSelector(aclManager.revokeRole.selector, poolAdminRole, deployer);
-        bytes memory revokeAdmin = abi.encodeWithSelector(aclManager.revokeRole.selector, defaultAdminRole, deployer);
-
-        vm.startPrank(deployer);
-        timelock.schedule(address(aclManager), 0, revokePool, bytes32(0), bytes32("salt1"), MIN_DELAY);
-        timelock.schedule(address(aclManager), 0, revokeAdmin, bytes32(0), bytes32("salt2"), MIN_DELAY);
-        vm.stopPrank();
-
-        // Before delay: deployer still has roles
+        // Before: deployer has both
         assertTrue(aclManager.hasRole(poolAdminRole, deployer));
         assertTrue(aclManager.hasRole(defaultAdminRole, deployer));
 
-        // Wait 48h
-        vm.warp(block.timestamp + MIN_DELAY);
+        // Transfer via timelock (48h delay)
+        _revokeDeployerRolesThroughTimelock();
 
-        // Execute revocations
-        vm.startPrank(deployer);
-        timelock.execute(address(aclManager), 0, revokePool, bytes32(0), bytes32("salt1"));
-        timelock.execute(address(aclManager), 0, revokeAdmin, bytes32(0), bytes32("salt2"));
-        vm.stopPrank();
-
-        // Deployer lost all admin roles
+        // After: deployer lost all, timelock is sole admin
         assertFalse(aclManager.hasRole(poolAdminRole, deployer));
         assertFalse(aclManager.hasRole(defaultAdminRole, deployer));
-
-        // Timelock is sole admin
         assertTrue(aclManager.hasRole(defaultAdminRole, address(timelock)));
         assertTrue(aclManager.hasRole(poolAdminRole, address(timelock)));
     }
 
     function test_afterTransfer_onlyTimelockCanGrantRoles() public {
-        // Do full transfer through timelock
-        bytes32 poolAdminRole = aclManager.POOL_ADMIN();
-        bytes32 defaultAdminRole = aclManager.DEFAULT_ADMIN_ROLE();
-
-        bytes memory revokePool = abi.encodeWithSelector(aclManager.revokeRole.selector, poolAdminRole, deployer);
-        bytes memory revokeAdmin = abi.encodeWithSelector(aclManager.revokeRole.selector, defaultAdminRole, deployer);
-
-        vm.startPrank(deployer);
-        timelock.schedule(address(aclManager), 0, revokePool, bytes32(0), bytes32("s1"), MIN_DELAY);
-        timelock.schedule(address(aclManager), 0, revokeAdmin, bytes32(0), bytes32("s2"), MIN_DELAY);
-        vm.stopPrank();
-
-        vm.warp(block.timestamp + MIN_DELAY);
-
-        vm.startPrank(deployer);
-        timelock.execute(address(aclManager), 0, revokePool, bytes32(0), bytes32("s1"));
-        timelock.execute(address(aclManager), 0, revokeAdmin, bytes32(0), bytes32("s2"));
-        vm.stopPrank();
+        _revokeDeployerRolesThroughTimelock();
 
         // Deployer can no longer grant roles
         address newAdmin = makeAddr("newAdmin");
+        bytes32 poolAdminRole = aclManager.POOL_ADMIN();
         vm.prank(deployer);
         vm.expectRevert();
         aclManager.grantRole(poolAdminRole, newAdmin);
@@ -268,23 +235,7 @@ contract TimelockTest is Test {
 
     function test_guardianCanPause_afterFullTransfer() public {
         // Full transfer through timelock
-        bytes32 poolAdminRole = aclManager.POOL_ADMIN();
-        bytes32 defaultAdminRole = aclManager.DEFAULT_ADMIN_ROLE();
-
-        bytes memory revokePool = abi.encodeWithSelector(aclManager.revokeRole.selector, poolAdminRole, deployer);
-        bytes memory revokeAdmin = abi.encodeWithSelector(aclManager.revokeRole.selector, defaultAdminRole, deployer);
-
-        vm.startPrank(deployer);
-        timelock.schedule(address(aclManager), 0, revokePool, bytes32(0), bytes32("p"), MIN_DELAY);
-        timelock.schedule(address(aclManager), 0, revokeAdmin, bytes32(0), bytes32("a"), MIN_DELAY);
-        vm.stopPrank();
-
-        vm.warp(block.timestamp + MIN_DELAY);
-
-        vm.startPrank(deployer);
-        timelock.execute(address(aclManager), 0, revokePool, bytes32(0), bytes32("p"));
-        timelock.execute(address(aclManager), 0, revokeAdmin, bytes32(0), bytes32("a"));
-        vm.stopPrank();
+        _revokeDeployerRolesThroughTimelock();
 
         // Guardian can still pause instantly
         vm.prank(guardian);
