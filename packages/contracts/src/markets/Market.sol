@@ -272,6 +272,7 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
 
     function transferOut(address to, uint256 amount) external onlyLendingEngine {
         require(to != address(0), "ZERO_RECIPIENT");
+        require(state.totalSupply > 0, "NO_SUPPLY");
         // Available = actual balance (reserves are accounting claims, not locked)
         uint256 available = IERC20(config.borrowAsset).balanceOf(address(this));
         require(amount <= available, "INSUFFICIENT_LIQUIDITY");
