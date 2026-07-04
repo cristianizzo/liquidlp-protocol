@@ -92,6 +92,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     /// @notice Set the LendingEngine reference (needed for accurate health factor)
     function setLendingEngine(address _lendingEngine) external onlyPoolAdmin {
         require(_lendingEngine != address(0), "ZERO_ADDRESS");
+        require(_lendingEngine.code.length > 0, "NOT_CONTRACT");
         emit LendingEngineUpdated(address(lendingEngine), _lendingEngine);
         lendingEngine = ILendingEngine(_lendingEngine);
     }
@@ -154,9 +155,8 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
 
         // RiskManager: validate deposit caps
         if (address(riskManager) != address(0)) {
-            uint256 activeCount = _countActivePositions(msg.sender);
             (bool valid, string memory reason) =
-                riskManager.validateDeposit(msg.sender, price.totalValue, marketId, activeCount);
+                riskManager.validateDeposit(msg.sender, price.totalValue, marketId, activePositionCount[msg.sender]);
             require(valid, reason);
             riskManager.recordDeposit(price.totalValue, marketId);
         }
@@ -180,6 +180,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         });
 
         _ownerPositions[msg.sender].push(positionId);
+        activePositionCount[msg.sender]++;
 
         emit PositionCreated(positionId, msg.sender, lpToken, tokenId, lpType, price.totalValue);
     }
@@ -207,6 +208,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
 
         // CEI: update state BEFORE external call
         pos.status = PositionStatus.Closed;
+        activePositionCount[msg.sender]--;
         emit PositionClosed(positionId, msg.sender);
 
         // Unlock LP via adapter
@@ -261,6 +263,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         require(pos.status == PositionStatus.Borrowed || pos.status == PositionStatus.Active, "NOT_LIQUIDATABLE_STATUS");
         pos.status = PositionStatus.Liquidated;
         positionDebt[positionId] = 0;
+        activePositionCount[pos.owner]--;
         emit PositionLiquidated(positionId, liquidator, debtRepaid);
     }
 
@@ -328,23 +331,13 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     // --- New state vars (appended for UUPS upgrade safety) ---
     PriceFeedRegistry public priceFeedRegistry;
     RiskManager public riskManager;
+    mapping(address => uint256) public activePositionCount;
 
     // --- Storage Gap ---
-    // Reduced from 50 to 48 after adding priceFeedRegistry + riskManager.
-    uint256[48] private __gap;
+    // Reduced from 50 to 47 after adding priceFeedRegistry + riskManager + activePositionCount.
+    uint256[47] private __gap;
 
     // --- Internal ---
-
-    /// @notice Count active (non-closed, non-liquidated) positions for a user
-    function _countActivePositions(address user) internal view returns (uint256 count) {
-        uint256[] storage ids = _ownerPositions[user];
-        for (uint256 i = 0; i < ids.length; i++) {
-            PositionStatus s = _positions[ids[i]].status;
-            if (s == PositionStatus.Active || s == PositionStatus.Borrowed) {
-                count++;
-            }
-        }
-    }
 
     function _detectLPType(address lpToken) internal view returns (ILPAdapter.LPType) {
         uint8 maxType = core.maxRegisteredLPType();

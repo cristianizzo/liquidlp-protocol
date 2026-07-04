@@ -136,6 +136,7 @@ contract ProtocolCore {
     function removePool(address pool) external onlyPoolAdmin {
         require(supportedPools[pool], "NOT_WHITELISTED");
         supportedPools[pool] = false;
+        delete poolAddedAt[pool];
         emit PoolRemoved(pool);
     }
 

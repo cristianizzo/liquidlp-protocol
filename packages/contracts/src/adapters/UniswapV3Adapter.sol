@@ -93,7 +93,7 @@ contract UniswapV3Adapter is ILPAdapter {
 
     /// @inheritdoc ILPAdapter
     function unlock(
-        address, /* lpToken */
+        address lpToken,
         uint256 tokenId,
         uint256, /* amount */
         address to
@@ -101,6 +101,7 @@ contract UniswapV3Adapter is ILPAdapter {
         external
         onlyProtocol
     {
+        require(lpToken == address(nftManager), "NOT_UNISWAP_V3");
         require(to != address(0), "ZERO_RECIPIENT");
         require(to != address(this), "CANNOT_UNLOCK_TO_SELF");
         require(nftManager.ownerOf(tokenId) == address(this), "NOT_HELD");
@@ -116,7 +117,7 @@ contract UniswapV3Adapter is ILPAdapter {
     ///      Slippage on decreaseLiquidity is 0 because protection is at the LiquidationEngine
     ///      level via oracle-based post-swap validation (SWAP_SLIPPAGE_EXCEEDED check).
     function unwind(
-        address, /* lpToken */
+        address lpToken,
         uint256 tokenId,
         uint128 liquidityToRemove
     )
@@ -124,6 +125,7 @@ contract UniswapV3Adapter is ILPAdapter {
         onlyProtocol
         returns (uint256 amount0, uint256 amount1)
     {
+        require(lpToken == address(nftManager), "NOT_UNISWAP_V3");
         require(liquidityToRemove > 0, "ZERO_LIQUIDITY");
         require(nftManager.ownerOf(tokenId) == address(this), "NOT_HELD");
 
@@ -149,21 +151,19 @@ contract UniswapV3Adapter is ILPAdapter {
     ///      Calls decreaseLiquidity(1) to trigger fee accounting update in the pool
     ///      (Uniswap V3 requires a burn to sync tokensOwed with feeGrowthInside).
     ///      The 1 wei of liquidity removed is negligible.
-    function collectFees(
-        address, /* lpToken */
-        uint256 tokenId
-    )
+    function collectFees(address lpToken, uint256 tokenId)
         external
         onlyProtocol
         returns (uint256 fees0, uint256 fees1)
     {
+        require(lpToken == address(nftManager), "NOT_UNISWAP_V3");
         require(nftManager.ownerOf(tokenId) == address(this), "NOT_HELD");
 
         // Check if position has liquidity (can't decrease if already 0)
         (,,,,,,, uint128 currentLiquidity,,,,) = nftManager.positions(tokenId);
 
-        if (currentLiquidity > 0) {
-            // Burn 1 wei of liquidity to trigger fee accounting sync
+        if (currentLiquidity > 1) {
+            // Burn 1 wei of liquidity to trigger fee accounting sync (skip if only 1 left)
             nftManager.decreaseLiquidity(
                 INonfungiblePositionManager.DecreaseLiquidityParams({
                     tokenId: tokenId, liquidity: 1, amount0Min: 0, amount1Min: 0, deadline: block.timestamp

@@ -229,28 +229,33 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
         require(amount > 0, "ZERO_AMOUNT");
         accrueInterest();
 
+        // Balance delta for fee-on-transfer safety
+        uint256 balBefore = IERC20(config.borrowAsset).balanceOf(address(this));
         OZIERC20(config.borrowAsset).safeTransferFrom(msg.sender, address(this), amount);
+        uint256 received = IERC20(config.borrowAsset).balanceOf(address(this)) - balBefore;
+        require(received > 0, "ZERO_RECEIVED");
 
         if (totalShares == 0) {
-            require(amount > DEAD_SHARES, "BELOW_MINIMUM_DEPOSIT");
-            sharesToMint = amount - DEAD_SHARES;
+            require(received > DEAD_SHARES, "BELOW_MINIMUM_DEPOSIT");
+            sharesToMint = received - DEAD_SHARES;
 
             shares[DEAD_ADDRESS] += DEAD_SHARES;
             totalShares += DEAD_SHARES;
         } else {
-            sharesToMint = (amount * totalShares) / state.totalSupply;
+            sharesToMint = (received * totalShares) / state.totalSupply;
             require(sharesToMint > 0, "DEPOSIT_TOO_SMALL");
         }
 
         shares[msg.sender] += sharesToMint;
         totalShares += sharesToMint;
-        state.totalSupply += amount;
+        state.totalSupply += received;
 
-        emit Supply(msg.sender, amount, sharesToMint);
+        emit Supply(msg.sender, received, sharesToMint);
     }
 
     /// @inheritdoc IMarket
     function withdraw(uint256 sharesToBurn) external nonReentrant returns (uint256 amount) {
+        require(sharesToBurn > 0, "ZERO_SHARES");
         accrueInterest();
 
         require(shares[msg.sender] >= sharesToBurn, "INSUFFICIENT_SHARES");
@@ -295,10 +300,13 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
         require(from != address(0), "ZERO_SENDER");
         require(amount <= state.totalBorrow, "REPAY_EXCEEDS_BORROW");
 
-        state.totalBorrow -= amount;
-        _updateRates();
-
+        // Balance delta for fee-on-transfer safety
+        uint256 balBefore = IERC20(config.borrowAsset).balanceOf(address(this));
         OZIERC20(config.borrowAsset).safeTransferFrom(from, address(this), amount);
+        uint256 received = IERC20(config.borrowAsset).balanceOf(address(this)) - balBefore;
+
+        state.totalBorrow -= received;
+        _updateRates();
     }
 
     // --- View ---

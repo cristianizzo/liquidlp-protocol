@@ -284,8 +284,8 @@ contract ProtocolCoreTest is Test {
         vm.stopPrank();
 
         assertFalse(core.isPoolSupported(pool));
-        // poolAddedAt preserved for historical reference
-        assertGt(core.poolAddedAt(pool), 0);
+        // poolAddedAt cleared on removal
+        assertEq(core.poolAddedAt(pool), 0);
     }
 
     function test_removePool_revertsNotWhitelisted() public {

@@ -96,6 +96,7 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
 
     function setSwapRouter(address _swapRouter) external onlyPoolAdmin {
         require(_swapRouter != address(0), "ZERO_ADDRESS");
+        require(_swapRouter.code.length > 0, "NOT_CONTRACT");
         emit SwapRouterUpdated(address(swapRouter), _swapRouter);
         swapRouter = ISwapRouter(_swapRouter);
     }

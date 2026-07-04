@@ -178,7 +178,7 @@ contract LiquidationEngineTest is Test {
     // ========== Admin Setters ==========
 
     function test_setSwapRouter_success() public {
-        address newRouter = makeAddr("newRouter");
+        address newRouter = address(new MockSwapRouter(address(usdc)));
 
         vm.expectEmit(false, false, false, true);
         emit SwapRouterUpdated(address(swapRouter), newRouter);
@@ -481,9 +481,10 @@ contract LiquidationEngineTest is Test {
     // ========== LIQ-2: Swap router not set + rescue ==========
 
     function test_liquidate_revertsWhenSwapRouterNotSet() public {
-        // Remove swap router
+        // Set a temporary router (must be contract)
+        MockSwapRouter tempRouter = new MockSwapRouter(address(usdc));
         vm.prank(owner);
-        liq.setSwapRouter(makeAddr("tempRouter")); // can't set to 0, so set then test with unset adapter tokens
+        liq.setSwapRouter(address(tempRouter));
 
         // Create a position where both tokens need swapping (neither is borrow asset)
         adapter.setTokenReturns(address(weth), address(weth)); // Both non-USDC
