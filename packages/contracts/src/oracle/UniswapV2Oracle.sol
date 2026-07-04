@@ -21,7 +21,7 @@ interface IAggregatorV3 {
 /// @title UniswapV2Oracle
 /// @notice Prices Uniswap V2 LP tokens using sqrt(k) fair pricing + Chainlink
 /// @dev Fair pricing formula (manipulation-resistant):
-///      value = 2 * sqrt(reserve0 * reserve1) * sqrt(price0 * price1) * amount / totalSupply
+///      value = 2 * sqrt(reserve0 * reserve1) * sqrt(price0 * price1) * amount / (totalSupply * 1e18)
 ///      This is resistant to reserve manipulation because it uses the geometric mean
 ///      of reserves, not spot reserves directly.
 ///      See: https://blog.alphaventuredao.io/fair-lp-token-pricing/
