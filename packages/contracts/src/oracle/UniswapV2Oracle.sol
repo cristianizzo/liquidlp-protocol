@@ -3,27 +3,48 @@ pragma solidity ^0.8.26;
 
 import {ILPOracle} from "../interfaces/ILPOracle.sol";
 import {ILPOracleHub} from "../interfaces/ILPOracleHub.sol";
+import {IUniswapV2Pair} from "../interfaces/external/IUniswapV2.sol";
+import {IERC20} from "../interfaces/IERC20.sol";
 import {ProtocolCore} from "../core/ProtocolCore.sol";
 import {ACLManager} from "../core/ACLManager.sol";
+import {LPMath} from "../libraries/LPMath.sol";
+
+/// @notice Chainlink AggregatorV3 minimal interface
+interface IAggregatorV3 {
+    function latestRoundData()
+        external
+        view
+        returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound);
+    function decimals() external view returns (uint8);
+}
 
 /// @title UniswapV2Oracle
 /// @notice Prices Uniswap V2 LP tokens using sqrt(k) fair pricing + Chainlink
-/// @dev Uses ProtocolCore for ownership — DAO controls all parameters.
+/// @dev Fair pricing formula (manipulation-resistant):
+///      value = 2 * sqrt(reserve0 * reserve1) * sqrt(price0 * price1) * amount / (totalSupply * 1e18)
+///      This is resistant to reserve manipulation because it uses the geometric mean
+///      of reserves, not spot reserves directly.
+///      See: https://blog.alphaventuredao.io/fair-lp-token-pricing/
+///
+///      Reserves are normalized to 18 decimals before sqrt(k) computation.
+///      Chainlink prices are normalized to 18 decimals.
+///      Result is in 18-decimal USD.
 contract UniswapV2Oracle is ILPOracle {
     ProtocolCore public immutable core;
 
-    mapping(address => address) public priceFeeds;
+    mapping(address => address) public priceFeeds; // token → Chainlink feed
 
     // --- Configurable Parameters ---
     uint256 public defaultHaircutBps = 500; // 5%
+    uint256 public maxStaleness = 3600; // 1 hour
 
     // --- Absolute Bounds ---
     uint256 public constant MIN_HAIRCUT_BPS = 100;
     uint256 public constant MAX_HAIRCUT_BPS = 2000;
 
-    uint256 public lastUpdateTimestamp;
-
+    // --- Events ---
     event HaircutUpdated(uint256 oldValue, uint256 newValue);
+    event MaxStalenessUpdated(uint256 oldValue, uint256 newValue);
     event PriceFeedUpdated(address indexed token, address indexed feed);
 
     modifier onlyPoolAdmin() {
@@ -32,9 +53,12 @@ contract UniswapV2Oracle is ILPOracle {
     }
 
     constructor(address _core) {
+        require(_core != address(0), "ZERO_CORE");
+        require(_core.code.length > 0, "NOT_CONTRACT");
         core = ProtocolCore(_core);
-        lastUpdateTimestamp = block.timestamp;
     }
+
+    // --- Admin ---
 
     function setDefaultHaircut(uint256 _haircutBps) external onlyPoolAdmin {
         require(_haircutBps >= MIN_HAIRCUT_BPS && _haircutBps <= MAX_HAIRCUT_BPS, "OUT_OF_BOUNDS");
@@ -42,18 +66,38 @@ contract UniswapV2Oracle is ILPOracle {
         defaultHaircutBps = _haircutBps;
     }
 
+    function setMaxStaleness(uint256 _maxStaleness) external onlyPoolAdmin {
+        require(_maxStaleness >= 300 && _maxStaleness <= 86_400, "OUT_OF_BOUNDS");
+        emit MaxStalenessUpdated(maxStaleness, _maxStaleness);
+        maxStaleness = _maxStaleness;
+    }
+
     function setPriceFeed(address token, address feed) external onlyPoolAdmin {
         require(token != address(0) && feed != address(0), "ZERO_ADDRESS");
+        require(feed.code.length > 0, "NOT_CONTRACT");
         emit PriceFeedUpdated(token, feed);
         priceFeeds[token] = feed;
     }
 
+    // --- ILPOracle Implementation ---
+
     /// @inheritdoc ILPOracle
-    function getPrice(address, uint256, uint256) external view returns (ILPOracleHub.PriceResult memory result) {
+    /// @dev lpToken = V2 pair address, tokenId unused (0), amount = LP token amount
+    function getPrice(
+        address lpToken,
+        uint256,
+        uint256 amount
+    )
+        external
+        view
+        returns (ILPOracleHub.PriceResult memory result)
+    {
+        uint256 rawValue = _computePrice(lpToken, amount);
+
         result = ILPOracleHub.PriceResult({
-            totalValue: 0,
-            principalValue: 0,
-            feeValue: 0,
+            totalValue: LPMath.applyHaircut(rawValue, defaultHaircutBps),
+            principalValue: rawValue,
+            feeValue: 0, // V2 fees auto-compound into reserves
             haircut: defaultHaircutBps,
             confidence: 10_000,
             timestamp: block.timestamp
@@ -61,12 +105,72 @@ contract UniswapV2Oracle is ILPOracle {
     }
 
     /// @inheritdoc ILPOracle
-    function getRawPrice(address, uint256, uint256) external view returns (uint256) {
-        return 0;
+    function getRawPrice(address lpToken, uint256, uint256 amount) external view returns (uint256) {
+        return _computePrice(lpToken, amount);
     }
 
     /// @inheritdoc ILPOracle
-    function isHealthy() external view returns (bool) {
-        return (block.timestamp - lastUpdateTimestamp) < 3600;
+    function isHealthy() external pure returns (bool) {
+        return true; // Health checked per-call via staleness in _getChainlinkPrice
+    }
+
+    // --- Internal ---
+
+    /// @notice Compute fair LP value using sqrt(k) method
+    /// @dev Normalizes reserves to 18 decimals before computation.
+    ///      Uses Chainlink for token prices. All results in 18-decimal USD.
+    function _computePrice(address lpToken, uint256 amount) internal view returns (uint256) {
+        if (amount == 0) return 0;
+
+        IUniswapV2Pair pair = IUniswapV2Pair(lpToken);
+        (uint112 reserve0Raw, uint112 reserve1Raw,) = pair.getReserves();
+        uint256 totalSupply = pair.totalSupply();
+
+        if (totalSupply == 0) return 0;
+
+        address token0 = pair.token0();
+        address token1 = pair.token1();
+
+        // Normalize reserves to 18 decimals
+        uint8 dec0 = IERC20(token0).decimals();
+        uint8 dec1 = IERC20(token1).decimals();
+        uint256 reserve0 = _normalizeTo18(uint256(reserve0Raw), dec0);
+        uint256 reserve1 = _normalizeTo18(uint256(reserve1Raw), dec1);
+
+        // Get Chainlink prices (18-decimal USD)
+        uint256 price0 = _getChainlinkPrice(token0);
+        uint256 price1 = _getChainlinkPrice(token1);
+
+        // Fair LP value via sqrt(k) formula
+        return LPMath.fairLPValueV2(reserve0, reserve1, totalSupply, price0, price1, amount);
+    }
+
+    /// @notice Get token price from Chainlink (18 decimals)
+    function _getChainlinkPrice(address token) internal view returns (uint256) {
+        address feed = priceFeeds[token];
+        require(feed != address(0), "NO_PRICE_FEED");
+
+        (uint80 roundId, int256 answer,, uint256 updatedAt, uint80 answeredInRound) =
+            IAggregatorV3(feed).latestRoundData();
+        require(answer > 0, "INVALID_PRICE");
+        require(updatedAt > 0 && answeredInRound >= roundId, "STALE_ROUND");
+        require(block.timestamp >= updatedAt && block.timestamp - updatedAt <= maxStaleness, "STALE_PRICE");
+
+        uint8 feedDecimals = IAggregatorV3(feed).decimals();
+        require(feedDecimals <= 36, "INVALID_FEED_DECIMALS");
+        if (feedDecimals < 18) {
+            return uint256(answer) * (10 ** (18 - feedDecimals));
+        } else if (feedDecimals > 18) {
+            return uint256(answer) / (10 ** (feedDecimals - 18));
+        }
+        return uint256(answer);
+    }
+
+    /// @notice Normalize token amount to 18 decimals
+    function _normalizeTo18(uint256 amount, uint8 decimals) internal pure returns (uint256) {
+        require(decimals <= 36, "INVALID_DECIMALS");
+        if (decimals == 18) return amount;
+        if (decimals < 18) return amount * (10 ** (18 - decimals));
+        return amount / (10 ** (decimals - 18));
     }
 }
