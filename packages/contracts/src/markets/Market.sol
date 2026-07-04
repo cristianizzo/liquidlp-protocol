@@ -93,10 +93,9 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
 
     // --- Admin ---
 
-    function setProtocolFee(uint256 _feeBps) external onlyPoolAdmin {
-        require(_feeBps <= 5000, "FEE_TOO_HIGH"); // Max 50%
-        emit ProtocolFeeUpdated(protocolFeeBps, _feeBps);
-        protocolFeeBps = _feeBps;
+    /// @dev Deprecated — use setReserveFactor() instead. Kept for UUPS storage compatibility.
+    function setProtocolFee(uint256) external pure {
+        revert("DEPRECATED_USE_RESERVE_FACTOR");
     }
 
     function setReserveFactor(uint256 _bps) external onlyRiskAdmin {
@@ -188,7 +187,8 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
         }
 
         uint256 elapsed = block.timestamp - state.lastAccrualTimestamp;
-        uint256 currentUtilization = (state.totalBorrow * 10_000) / state.totalSupply;
+        uint256 totalPoolAssets = state.totalSupply + protocolReserves;
+        uint256 currentUtilization = (state.totalBorrow * 10_000) / totalPoolAssets;
         uint256 borrowRatePerSecond = interestRateModel.getBorrowRate(currentUtilization);
 
         uint256 interestAccrued = (state.totalBorrow * borrowRatePerSecond * elapsed) / 1e18;
@@ -304,10 +304,12 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
     // --- Internal ---
 
     function _updateRates() internal {
-        if (state.totalSupply == 0) {
+        // Total pool assets = lender share + protocol reserves
+        uint256 totalPoolAssets = state.totalSupply + protocolReserves;
+        if (totalPoolAssets == 0) {
             state.utilization = 0;
         } else {
-            state.utilization = (state.totalBorrow * 10_000) / state.totalSupply;
+            state.utilization = (state.totalBorrow * 10_000) / totalPoolAssets;
         }
         state.borrowRate = interestRateModel.getBorrowRate(state.utilization);
         // Supply rate reflects actual protocol cut from interest

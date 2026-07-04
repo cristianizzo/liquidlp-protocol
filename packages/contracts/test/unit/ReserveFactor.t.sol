@@ -191,8 +191,7 @@ contract ReserveFactorTest is Test {
         vm.prank(owner);
         market2.setReserveFactor(2000);
 
-        // Supply and borrow
-        usdc.mint(address(market2), 500_000e18);
+        // Supply and borrow (no direct mint — use supply() for proper accounting)
         usdc.mint(lender, 100_000e18);
         vm.prank(lender);
         usdc.approve(address(market2), 100_000e18);
