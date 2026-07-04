@@ -3,7 +3,6 @@ pragma solidity ^0.8.26;
 
 import "forge-std/Test.sol";
 import {TimelockController} from "@openzeppelin/contracts/governance/TimelockController.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ACLManager} from "../../src/core/ACLManager.sol";
 import {ProtocolCore} from "../../src/core/ProtocolCore.sol";
 import {RiskManager} from "../../src/security/RiskManager.sol";
@@ -130,17 +129,10 @@ contract TimelockTest is Test {
     // ========== Cannot Bypass Timelock ==========
 
     function test_registerAdapter_directCall_reverts_afterTransfer() public {
-        // Revoke deployer's POOL_ADMIN through timelock (scheduled)
-        bytes32 poolAdminRole = aclManager.POOL_ADMIN();
-        bytes memory revokeData = abi.encodeWithSelector(aclManager.revokeRole.selector, poolAdminRole, deployer);
+        // Revoke BOTH deployer roles through timelock (scheduled)
+        _revokeDeployerRolesThroughTimelock();
 
-        vm.prank(deployer);
-        timelock.schedule(address(aclManager), 0, revokeData, bytes32(0), bytes32(0), MIN_DELAY);
-        vm.warp(block.timestamp + MIN_DELAY);
-        vm.prank(deployer);
-        timelock.execute(address(aclManager), 0, revokeData, bytes32(0), bytes32(0));
-
-        // Now deployer can't register directly
+        // Now deployer can't register directly (no POOL_ADMIN, can't re-grant via DEFAULT_ADMIN)
         address adapter = address(new StubContract());
         vm.prank(deployer);
         vm.expectRevert("NOT_POOL_ADMIN");
@@ -148,18 +140,32 @@ contract TimelockTest is Test {
     }
 
     function test_whitelistPool_directCall_reverts_afterTransfer() public {
-        bytes32 poolAdminRole = aclManager.POOL_ADMIN();
-        bytes memory revokeData = abi.encodeWithSelector(aclManager.revokeRole.selector, poolAdminRole, deployer);
-
-        vm.prank(deployer);
-        timelock.schedule(address(aclManager), 0, revokeData, bytes32(0), bytes32(0), MIN_DELAY);
-        vm.warp(block.timestamp + MIN_DELAY);
-        vm.prank(deployer);
-        timelock.execute(address(aclManager), 0, revokeData, bytes32(0), bytes32(0));
+        _revokeDeployerRolesThroughTimelock();
 
         vm.prank(deployer);
         vm.expectRevert("NOT_POOL_ADMIN");
         core.whitelistPool(makeAddr("pool"));
+    }
+
+    /// @dev Helper: schedule + execute revocation of deployer's POOL_ADMIN and DEFAULT_ADMIN
+    function _revokeDeployerRolesThroughTimelock() internal {
+        bytes32 poolAdminRole = aclManager.POOL_ADMIN();
+        bytes32 defaultAdminRole = aclManager.DEFAULT_ADMIN_ROLE();
+
+        bytes memory revokePool = abi.encodeWithSelector(aclManager.revokeRole.selector, poolAdminRole, deployer);
+        bytes memory revokeAdmin = abi.encodeWithSelector(aclManager.revokeRole.selector, defaultAdminRole, deployer);
+
+        vm.startPrank(deployer);
+        timelock.schedule(address(aclManager), 0, revokePool, bytes32(0), bytes32("rp"), MIN_DELAY);
+        timelock.schedule(address(aclManager), 0, revokeAdmin, bytes32(0), bytes32("ra"), MIN_DELAY);
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + MIN_DELAY);
+
+        vm.startPrank(deployer);
+        timelock.execute(address(aclManager), 0, revokePool, bytes32(0), bytes32("rp"));
+        timelock.execute(address(aclManager), 0, revokeAdmin, bytes32(0), bytes32("ra"));
+        vm.stopPrank();
     }
 
     // ========== Cancellation ==========
