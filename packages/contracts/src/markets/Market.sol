@@ -48,7 +48,7 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
     event InterestRateModelUpdated(address oldModel, address newModel);
     event MarketConfigUpdated(string field, uint256 oldValue, uint256 newValue);
     event InterestAccrued(uint256 interestAmount, uint256 protocolShare, uint256 newBorrowIndex, uint256 timestamp);
-    event ProtocolFeeUpdated(uint256 oldValue, uint256 newValue);
+    /// @dev ProtocolFeeUpdated removed — protocolFeeBps is deprecated, use ReserveFactorUpdated
     event ReserveFactorUpdated(uint256 oldValue, uint256 newValue);
     event FeeCollectorUpdated(address indexed oldCollector, address indexed newCollector);
     event ReservesDistributed(uint256 amount, address indexed feeCollector);
@@ -86,7 +86,8 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
         core = ProtocolCore(_core);
         state.lastAccrualTimestamp = block.timestamp;
         borrowIndex = RAY;
-        protocolFeeBps = 30; // 0.3% default
+        // protocolFeeBps is deprecated — kept in storage for UUPS layout.
+        // Use setReserveFactor() to configure the protocol's interest share.
     }
 
     function _authorizeUpgrade(address) internal override onlyPoolAdmin {}
@@ -109,6 +110,7 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
     function setFeeCollector(address _feeCollector) external onlyPoolAdmin {
         require(_feeCollector != address(0), "ZERO_ADDRESS");
         require(_feeCollector.code.length > 0, "NOT_CONTRACT");
+        require(address(FeeCollector(_feeCollector).core()) == address(core), "CORE_MISMATCH");
         emit FeeCollectorUpdated(address(feeCollector), _feeCollector);
         feeCollector = FeeCollector(_feeCollector);
     }
