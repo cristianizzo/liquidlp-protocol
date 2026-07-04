@@ -208,7 +208,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
 
         // CEI: update state BEFORE external call
         pos.status = PositionStatus.Closed;
-        activePositionCount[msg.sender]--;
+        if (activePositionCount[msg.sender] > 0) activePositionCount[msg.sender]--;
         emit PositionClosed(positionId, msg.sender);
 
         // Unlock LP via adapter
@@ -263,7 +263,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         require(pos.status == PositionStatus.Borrowed || pos.status == PositionStatus.Active, "NOT_LIQUIDATABLE_STATUS");
         pos.status = PositionStatus.Liquidated;
         positionDebt[positionId] = 0;
-        activePositionCount[pos.owner]--;
+        if (activePositionCount[pos.owner] > 0) activePositionCount[pos.owner]--;
         emit PositionLiquidated(positionId, liquidator, debtRepaid);
     }
 

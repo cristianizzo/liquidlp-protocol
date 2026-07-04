@@ -304,6 +304,7 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
         uint256 balBefore = IERC20(config.borrowAsset).balanceOf(address(this));
         OZIERC20(config.borrowAsset).safeTransferFrom(from, address(this), amount);
         uint256 received = IERC20(config.borrowAsset).balanceOf(address(this)) - balBefore;
+        require(received > 0 && received <= amount, "INVALID_TRANSFER_AMOUNT");
 
         state.totalBorrow -= received;
         _updateRates();

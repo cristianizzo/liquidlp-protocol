@@ -104,7 +104,7 @@ contract ACLManager is AccessControlEnumerable {
         override(AccessControl, IAccessControl)
         onlyRole(getRoleAdmin(role))
     {
-        if (role == DEFAULT_ADMIN_ROLE) {
+        if (role == DEFAULT_ADMIN_ROLE && hasRole(DEFAULT_ADMIN_ROLE, account)) {
             require(getRoleMemberCount(DEFAULT_ADMIN_ROLE) > 1, "CANNOT_REMOVE_LAST_ADMIN");
         }
         super.revokeRole(role, account);

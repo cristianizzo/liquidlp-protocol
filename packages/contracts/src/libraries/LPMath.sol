@@ -51,13 +51,11 @@ library LPMath {
         uint256 sqrtP = sqrt(Math.mulDiv(price0, price1, 1));
 
         // value = 2 * sqrtK * sqrtP * amount / (totalSupply * 1e18)
-        // Chain mulDiv to avoid overflow at every step:
-        // Step 1: sqrtK * sqrtP / totalSupply
-        uint256 perLP = Math.mulDiv(sqrtK, sqrtP, totalSupply);
-        // Step 2: perLP * amount / 1e18
-        uint256 halfValue = Math.mulDiv(perLP, amount, 1e18);
-        // Step 3: multiply by 2 (safe — halfValue is already divided down)
-        value = halfValue * 2;
+        // Chain mulDiv to maximize precision while preventing overflow:
+        // Step 1: sqrtK * sqrtP * amount / totalSupply (keep precision by multiplying first)
+        uint256 scaled = Math.mulDiv(Math.mulDiv(sqrtK, sqrtP, 1), amount, totalSupply);
+        // Step 2: scaled * 2 / 1e18
+        value = Math.mulDiv(scaled, 2, 1e18);
     }
 
     /// @notice Apply haircut (safety discount) to a value
