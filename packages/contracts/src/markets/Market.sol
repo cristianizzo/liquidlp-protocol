@@ -124,10 +124,11 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
         require(amount > 0, "NO_RESERVES");
         require(address(feeCollector) != address(0), "NO_FEE_COLLECTOR");
 
-        // Ensure we have enough cash (reserves may exceed balance at high utilization)
+        // Cap at available cash (reserves may exceed balance at high utilization).
+        // If no cash available, silently return — reserves stay tracked for later.
         uint256 balanceBefore = IERC20(config.borrowAsset).balanceOf(address(this));
         if (amount > balanceBefore) amount = balanceBefore;
-        require(amount > 0, "NO_CASH");
+        if (amount == 0) return; // No cash to distribute — try again after repayments
 
         // Approve FeeCollector to pull, then call depositReserves
         OZIERC20(config.borrowAsset).forceApprove(address(feeCollector), amount);
@@ -139,9 +140,9 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
         if (actualSent > protocolReserves) actualSent = protocolReserves;
         protocolReserves -= actualSent;
 
-        _updateRates(); // Refresh utilization after reserves change
+        _updateRates();
 
-        emit ReservesDistributed(amount, address(feeCollector));
+        emit ReservesDistributed(actualSent, address(feeCollector));
     }
 
     function setInterestRateModel(address _newModel) external onlyPoolAdmin {
