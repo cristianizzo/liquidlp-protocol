@@ -270,6 +270,16 @@ contract ReserveFactorTest is Test {
         market.setFeeCollector(address(fc));
     }
 
+    function test_setFeeCollector_revertsCoresMismatch() public {
+        ACLManager otherAcl = new ACLManager(owner);
+        ProtocolCore otherCore = new ProtocolCore(owner, address(otherAcl));
+        FeeCollector badFc = new FeeCollector(address(otherCore), treasury, insurance);
+
+        vm.prank(owner);
+        vm.expectRevert("CORE_MISMATCH");
+        market.setFeeCollector(address(badFc));
+    }
+
     // ========== Invariant: totalBorrow = totalSupply + protocolReserves ==========
 
     function test_invariant_borrowEqualsSplitSum() public {
