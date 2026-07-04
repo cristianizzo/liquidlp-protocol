@@ -125,15 +125,17 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
         require(address(feeCollector) != address(0), "NO_FEE_COLLECTOR");
 
         // Ensure we have enough cash (reserves may exceed balance at high utilization)
-        uint256 balance = IERC20(config.borrowAsset).balanceOf(address(this));
-        if (amount > balance) amount = balance;
+        uint256 balanceBefore = IERC20(config.borrowAsset).balanceOf(address(this));
+        if (amount > balanceBefore) amount = balanceBefore;
         require(amount > 0, "NO_CASH");
-
-        protocolReserves -= amount; // May leave dust if capped by balance
 
         // Approve FeeCollector to pull, then call depositReserves
         OZIERC20(config.borrowAsset).forceApprove(address(feeCollector), amount);
         feeCollector.depositReserves(config.borrowAsset, amount);
+
+        // Use balance delta to track actual amount sent (fee-on-transfer safe)
+        uint256 actualSent = balanceBefore - IERC20(config.borrowAsset).balanceOf(address(this));
+        protocolReserves -= actualSent;
 
         _updateRates(); // Refresh utilization after reserves change
 

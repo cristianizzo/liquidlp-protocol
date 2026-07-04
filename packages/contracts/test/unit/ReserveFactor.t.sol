@@ -208,23 +208,23 @@ contract ReserveFactorTest is Test {
 
     function test_distributeReserves_capsAtBalance() public {
         // Borrow almost all liquidity so cash is low
-        market.transferOut(borrower, 95_000e18);
+        market.transferOut(borrower, 99_000e18);
 
-        // Accrue interest — reserves grow but cash is only 5K
-        vm.warp(block.timestamp + 365 days);
+        // Accrue a lot of interest — reserves grow but cash is only ~1K
+        vm.warp(block.timestamp + 3 * 365 days);
         market.accrueInterest();
 
         uint256 reserves = market.protocolReserves();
         uint256 balance = usdc.balanceOf(address(market));
 
-        // Reserves should exceed cash at high utilization
-        if (reserves > balance) {
-            // distributeReserves caps at balance, doesn't revert
-            market.distributeReserves();
+        // At 99% utilization + 3 years, reserves must exceed remaining cash
+        assertGt(reserves, balance, "Reserves should exceed cash at high util");
 
-            // Some reserves remain (the unfunded portion)
-            assertGt(market.protocolReserves(), 0, "Should have remaining reserves");
-        }
+        // distributeReserves caps at balance, doesn't revert
+        market.distributeReserves();
+
+        // Some reserves remain (the unfunded portion)
+        assertGt(market.protocolReserves(), 0, "Should have remaining reserves");
     }
 
     // ========== Multiple Accruals ==========
