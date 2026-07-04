@@ -103,6 +103,7 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
         accrueInterest();
         emit ReserveFactorUpdated(reserveFactorBps, _bps);
         reserveFactorBps = _bps;
+        _updateRates();
     }
 
     function setFeeCollector(address _feeCollector) external onlyPoolAdmin {
@@ -133,6 +134,8 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
         // Approve FeeCollector to pull, then call depositReserves
         OZIERC20(config.borrowAsset).forceApprove(address(feeCollector), amount);
         feeCollector.depositReserves(config.borrowAsset, amount);
+
+        _updateRates(); // Refresh utilization after reserves change
 
         emit ReservesDistributed(amount, address(feeCollector));
     }
