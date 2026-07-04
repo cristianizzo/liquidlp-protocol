@@ -196,6 +196,7 @@ abstract contract ForkTestBase is Test {
         // 15. Wire RiskManager
         lendingEngine.setRiskManager(address(riskManager));
         positionManager.setRiskManager(address(riskManager));
+        positionManager.setCircuitBreaker(address(circuitBreaker));
 
         vm.stopPrank();
     }
