@@ -246,9 +246,9 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
 
         amount = (sharesToBurn * state.totalSupply) / totalShares;
 
-        // Available = actual balance minus protocol reserves (which aren't lender funds)
-        uint256 balance = IERC20(config.borrowAsset).balanceOf(address(this));
-        uint256 availableLiquidity = balance > protocolReserves ? balance - protocolReserves : 0;
+        // Available = actual token balance (protocol reserves are accounting claims,
+        // not locked cash — lenders have priority over reserves)
+        uint256 availableLiquidity = IERC20(config.borrowAsset).balanceOf(address(this));
         require(amount <= availableLiquidity, "INSUFFICIENT_LIQUIDITY");
 
         shares[msg.sender] -= sharesToBurn;
@@ -264,8 +264,8 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
 
     function transferOut(address to, uint256 amount) external onlyLendingEngine {
         require(to != address(0), "ZERO_RECIPIENT");
-        uint256 balance = IERC20(config.borrowAsset).balanceOf(address(this));
-        uint256 available = balance > protocolReserves ? balance - protocolReserves : 0;
+        // Available = actual balance (reserves are accounting claims, not locked)
+        uint256 available = IERC20(config.borrowAsset).balanceOf(address(this));
         require(amount <= available, "INSUFFICIENT_LIQUIDITY");
 
         // Enforce borrow cap (MKT-6)
