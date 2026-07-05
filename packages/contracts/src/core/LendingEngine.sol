@@ -15,6 +15,7 @@ import {PriceFeedRegistry} from "../oracle/PriceFeedRegistry.sol";
 import {PositionManager} from "./PositionManager.sol";
 import {Market} from "../markets/Market.sol";
 import {RiskManager} from "../security/RiskManager.sol";
+import {CircuitBreaker} from "../security/CircuitBreaker.sol";
 
 /// @title LendingEngine
 /// @notice Handles borrowing against LP positions and repayment with interest
@@ -104,6 +105,12 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
                 && pos.status != IPositionManager.PositionStatus.Closed,
             "POSITION_NOT_ACTIVE"
         );
+
+        // Circuit breaker: no new borrows against paused pools
+        CircuitBreaker cb = positionManager.circuitBreaker();
+        if (address(cb) != address(0)) {
+            require(!cb.poolPaused(pos.pool), "POOL_CIRCUIT_BREAKER");
+        }
 
         require(block.number > pos.depositBlock + borrowCooldownBlocks, "BORROW_COOLDOWN");
 

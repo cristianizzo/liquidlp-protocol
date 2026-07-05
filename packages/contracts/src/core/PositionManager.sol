@@ -15,6 +15,7 @@ import {ProtocolCore} from "./ProtocolCore.sol";
 import {ACLManager} from "./ACLManager.sol";
 import {PriceFeedRegistry} from "../oracle/PriceFeedRegistry.sol";
 import {RiskManager} from "../security/RiskManager.sol";
+import {CircuitBreaker} from "../security/CircuitBreaker.sol";
 
 /// @title PositionManager
 /// @notice Manages LP position deposits, withdrawals, and position state tracking
@@ -37,6 +38,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     event LendingEngineUpdated(address indexed oldEngine, address indexed newEngine);
     event PriceFeedRegistryUpdated(address indexed oldRegistry, address indexed newRegistry);
     event RiskManagerUpdated(address indexed oldManager, address indexed newManager);
+    event CircuitBreakerUpdated(address indexed oldBreaker, address indexed newBreaker);
 
     // --- ACL Helpers ---
     function _acl() internal view returns (ACLManager) {
@@ -112,6 +114,13 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         riskManager = RiskManager(_riskManager);
     }
 
+    /// @notice Set CircuitBreaker for pool-level pause enforcement
+    function setCircuitBreaker(address _circuitBreaker) external onlyPoolAdmin {
+        require(_circuitBreaker == address(0) || _circuitBreaker.code.length > 0, "NOT_CONTRACT");
+        emit CircuitBreakerUpdated(address(circuitBreaker), _circuitBreaker);
+        circuitBreaker = CircuitBreaker(_circuitBreaker);
+    }
+
     // --- Core Logic ---
 
     /// @inheritdoc IPositionManager
@@ -146,8 +155,11 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         // Validate and lock the LP position
         ILPAdapter.LPInfo memory info = adapter.validateAndLock(lpToken, tokenId, amount, msg.sender);
 
-        // Verify pool is whitelisted
+        // Verify pool is whitelisted and not circuit-broken
         require(core.isPoolSupported(info.pool), "POOL_NOT_SUPPORTED");
+        if (address(circuitBreaker) != address(0)) {
+            require(!circuitBreaker.poolPaused(info.pool), "POOL_CIRCUIT_BREAKER");
+        }
 
         // Get oracle price to validate position has value
         ILPOracleHub.PriceResult memory price = oracleHub.getPrice(lpToken, tokenId, amount, lpType);
@@ -332,10 +344,11 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     PriceFeedRegistry public priceFeedRegistry;
     RiskManager public riskManager;
     mapping(address => uint256) public activePositionCount;
+    CircuitBreaker public circuitBreaker;
 
     // --- Storage Gap ---
-    // Reduced from 50 to 47 after adding priceFeedRegistry + riskManager + activePositionCount.
-    uint256[47] private __gap;
+    // Reduced from 50 to 46 after adding priceFeedRegistry + riskManager + activePositionCount + circuitBreaker.
+    uint256[46] private __gap;
 
     // --- Internal ---
 
