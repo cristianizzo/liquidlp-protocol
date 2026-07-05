@@ -143,9 +143,9 @@ contract CircuitBreakerIntegrationTest is Test {
         assertEq(uint8(pos.status), uint8(IPositionManager.PositionStatus.Closed));
     }
 
-    // ========== Liquidation ==========
+    // ========== Pricing During Pause ==========
 
-    function test_liquidation_worksWhenPoolPaused() public {
+    function test_getPositionValue_worksWhenPoolPaused() public {
         // Deposit and borrow
         vm.prank(alice);
         uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
