@@ -3,16 +3,17 @@ pragma solidity ^0.8.26;
 
 import {ProtocolCore} from "../core/ProtocolCore.sol";
 import {ACLManager} from "../core/ACLManager.sol";
+import {CircuitBreaker} from "../security/CircuitBreaker.sol";
 
 /// @title PriceValidator
 /// @notice Cross-validates oracle prices and triggers circuit breakers
-/// @dev Implements multiple defense layers against oracle manipulation.
-///      All thresholds are configurable by owner (Aragon DAO).
+/// @dev Implements defense layers against oracle manipulation.
+///      Triggers CircuitBreaker.pausePool() — unified pause system with PositionManager.
+///      All thresholds are configurable by RISK_ADMIN.
 contract PriceValidator {
     ProtocolCore public immutable core;
+    CircuitBreaker public immutable circuitBreaker;
 
-    // Circuit breaker state
-    mapping(address => bool) public poolPaused;
     mapping(address => uint256) public lastKnownPrice;
     mapping(address => uint256) public lastPriceTimestamp;
 
@@ -24,37 +25,30 @@ contract PriceValidator {
     uint256 public tvlDropThresholdBps = 3000; // 30% TVL drop triggers pause
 
     // --- Absolute Bounds ---
-    uint256 public constant MIN_DEVIATION_BPS = 100; // 1%
-    uint256 public constant MAX_DEVIATION_BPS_CAP = 1000; // 10%
-    uint256 public constant MIN_VOLATILITY_BPS = 300; // 3%
-    uint256 public constant MAX_VOLATILITY_BPS_CAP = 3000; // 30%
-    uint256 public constant MIN_TVL_FLOOR = 100_000e18; // $100K absolute min
-    uint256 public constant MIN_STALE_THRESHOLD = 600; // 10 minutes
-    uint256 public constant MAX_STALE_THRESHOLD = 86_400; // 24 hours
-    uint256 public constant MIN_TVL_DROP_BPS = 1000; // 10%
-    uint256 public constant MAX_TVL_DROP_BPS = 8000; // 80%
+    uint256 public constant MIN_DEVIATION_BPS = 100;
+    uint256 public constant MAX_DEVIATION_BPS_CAP = 1000;
+    uint256 public constant MIN_VOLATILITY_BPS = 300;
+    uint256 public constant MAX_VOLATILITY_BPS_CAP = 3000;
+    uint256 public constant MIN_TVL_FLOOR = 100_000e18;
+    uint256 public constant MIN_STALE_THRESHOLD = 600;
+    uint256 public constant MAX_STALE_THRESHOLD = 86_400;
+    uint256 public constant MIN_TVL_DROP_BPS = 1000;
+    uint256 public constant MAX_TVL_DROP_BPS = 8000;
 
     // Volatility tracking
     struct PriceSnapshot {
         uint256 price;
         uint256 timestamp;
     }
+
     mapping(address => PriceSnapshot[]) public priceHistory;
 
     // --- Events ---
-    event CircuitBreakerTriggered(address indexed pool, string reason);
-    event CircuitBreakerReset(address indexed pool);
     event PriceValidated(address indexed pool, uint256 price, uint256 confidence);
     event ParameterUpdated(string name, uint256 oldValue, uint256 newValue);
 
     function _acl() internal view returns (ACLManager) {
         return core.aclManager();
-    }
-
-    modifier onlyEmergencyAdmin() {
-        ACLManager acl = _acl();
-        require(acl.isEmergencyAdmin(msg.sender) || acl.isPoolAdmin(msg.sender), "NOT_EMERGENCY_ADMIN");
-        _;
     }
 
     modifier onlyRiskAdmin() {
@@ -63,8 +57,10 @@ contract PriceValidator {
         _;
     }
 
-    constructor(address _core) {
+    constructor(address _core, address _circuitBreaker) {
+        require(_core != address(0) && _circuitBreaker != address(0), "ZERO_ADDRESS");
         core = ProtocolCore(_core);
+        circuitBreaker = CircuitBreaker(_circuitBreaker);
     }
 
     // --- Admin Setters ---
@@ -101,6 +97,8 @@ contract PriceValidator {
 
     // --- Core Logic ---
 
+    /// @notice Validate price and trigger circuit breaker if needed
+    /// @dev Called by keeper or oracle integration. Writes to CircuitBreaker (unified pause system).
     function validatePrice(
         address pool,
         uint256 twapPrice,
@@ -110,22 +108,20 @@ contract PriceValidator {
         external
         returns (bool valid, uint256 adjustedHaircutBps)
     {
-        require(!poolPaused[pool], "POOL_CIRCUIT_BREAKER");
+        require(!circuitBreaker.poolPaused(pool), "POOL_CIRCUIT_BREAKER");
 
         adjustedHaircutBps = 0;
 
         // Check 1: TWAP vs Chainlink deviation
         uint256 deviation = _calculateDeviation(twapPrice, chainlinkPrice);
         if (deviation > maxPriceDeviationBps) {
-            poolPaused[pool] = true;
-            emit CircuitBreakerTriggered(pool, "ORACLE_DEVIATION");
+            circuitBreaker.pausePool(pool, "ORACLE_DEVIATION");
             return (false, 0);
         }
 
         // Check 2: Pool TVL minimum
         if (poolTvl < minPoolTvl) {
-            poolPaused[pool] = true;
-            emit CircuitBreakerTriggered(pool, "TVL_TOO_LOW");
+            circuitBreaker.pausePool(pool, "TVL_TOO_LOW");
             return (false, 0);
         }
 
@@ -135,8 +131,7 @@ contract PriceValidator {
             if (elapsed <= 1 hours && poolTvl < lastKnownPrice[pool]) {
                 uint256 tvlDropBps = ((lastKnownPrice[pool] - poolTvl) * 10_000) / lastKnownPrice[pool];
                 if (tvlDropBps >= tvlDropThresholdBps) {
-                    poolPaused[pool] = true;
-                    emit CircuitBreakerTriggered(pool, "TVL_DROP");
+                    circuitBreaker.pausePool(pool, "TVL_DROP");
                     return (false, 0);
                 }
             }
@@ -163,16 +158,6 @@ contract PriceValidator {
 
         emit PriceValidated(pool, twapPrice, 10_000 - adjustedHaircutBps);
         return (true, adjustedHaircutBps);
-    }
-
-    function resetCircuitBreaker(address pool) external onlyEmergencyAdmin {
-        poolPaused[pool] = false;
-        emit CircuitBreakerReset(pool);
-    }
-
-    function triggerCircuitBreaker(address pool, string calldata reason) external onlyEmergencyAdmin {
-        poolPaused[pool] = true;
-        emit CircuitBreakerTriggered(pool, reason);
     }
 
     // --- Internal ---

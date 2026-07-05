@@ -132,7 +132,7 @@ abstract contract ForkTestBase is Test {
         // 7. Security
         circuitBreaker = new CircuitBreaker(address(core));
         riskManager = new RiskManager(address(core));
-        priceValidator = new PriceValidator(address(core));
+        priceValidator = new PriceValidator(address(core), address(circuitBreaker));
 
         // 8. Oracles
         v3Oracle = new UniswapV3Oracle(address(core), Constants.UNI_V3_NFT_MANAGER);
@@ -165,6 +165,7 @@ abstract contract ForkTestBase is Test {
         Market marketImpl = new Market();
         marketFactory = new MarketFactory(address(core), address(marketImpl));
         marketFactory.setInterestRateModel("volatile", address(volatileModel));
+        core.setMarketFactory(address(marketFactory));
 
         // Create ETH/USDC market
         (ethUsdcMarketId,) = marketFactory.createMarket(
@@ -190,10 +191,7 @@ abstract contract ForkTestBase is Test {
         aclManager.grantRole(aclManager.POSITION_MANAGER(), address(positionManager));
         positionManager.setLendingEngine(address(lendingEngine));
 
-        // 14. Set MarketFactory on ProtocolCore
-        core.setMarketFactory(address(marketFactory));
-
-        // 15. Wire RiskManager
+        // 14. Wire RiskManager
         lendingEngine.setRiskManager(address(riskManager));
         positionManager.setRiskManager(address(riskManager));
         positionManager.setCircuitBreaker(address(circuitBreaker));

@@ -3,6 +3,7 @@ pragma solidity ^0.8.26;
 
 import "forge-std/Test.sol";
 import {ProtocolCore} from "../../src/core/ProtocolCore.sol";
+import {ACLManager} from "../../src/core/ACLManager.sol";
 import {UniswapV3Oracle, IAggregatorV3, TickMathLib, LiquidityAmountsLib} from "../../src/oracle/UniswapV3Oracle.sol";
 import {ILPOracleHub} from "../../src/interfaces/ILPOracleHub.sol";
 import {
@@ -45,7 +46,8 @@ contract UniswapV3OracleForkTest is Test {
         string memory rpcUrl = vm.envOr("ETH_RPC_URL", string("https://ethereum-rpc.publicnode.com"));
         vm.createSelectFork(rpcUrl);
 
-        core = new ProtocolCore(owner, owner);
+        ACLManager aclManager = new ACLManager(owner);
+        core = new ProtocolCore(owner, address(aclManager));
         oracle = new UniswapV3Oracle(address(core), UNI_V3_NFT_MANAGER);
         nftManager = INonfungiblePositionManager(UNI_V3_NFT_MANAGER);
 
