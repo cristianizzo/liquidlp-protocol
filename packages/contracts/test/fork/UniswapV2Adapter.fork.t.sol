@@ -33,8 +33,9 @@ contract UniswapV2AdapterForkTest is Test {
         adapter = new UniswapV2Adapter(UNI_V2_FACTORY, UNI_V2_ROUTER, address(core));
 
         // Grant protocol address the POSITION_MANAGER role so it can call adapter
+        bytes32 pmRole = aclManager.POSITION_MANAGER();
         vm.prank(owner);
-        aclManager.grantRole(aclManager.POSITION_MANAGER(), protocol);
+        aclManager.grantRole(pmRole, protocol);
     }
 
     function _lockPosition() internal returns (address holder, uint256 lockAmount) {

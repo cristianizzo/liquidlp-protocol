@@ -35,8 +35,9 @@ contract UniswapV3AdapterForkTest is Test {
         nftManager = INonfungiblePositionManager(UNI_V3_NFT_MANAGER);
 
         // Grant protocol address the POSITION_MANAGER role so it can call adapter
+        bytes32 pmRole = aclManager.POSITION_MANAGER();
         vm.prank(owner);
-        aclManager.grantRole(aclManager.POSITION_MANAGER(), protocol);
+        aclManager.grantRole(pmRole, protocol);
     }
 
     function _findPosition(
