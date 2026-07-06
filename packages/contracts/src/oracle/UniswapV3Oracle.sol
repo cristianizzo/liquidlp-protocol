@@ -325,7 +325,8 @@ contract UniswapV3Oracle is ILPOracle {
             uint128 tokensOwed1
         ) = positionManager.positions(tokenId);
 
-        require(liquidity > 0, "NO_LIQUIDITY");
+        // Zero-liquidity positions may still have uncollected fees — price those fees
+        // instead of reverting (prevents blocking liquidation of fee-only positions)
 
         // Step 2: Get pool and TWAP tick
         address pool = factory.getPool(token0, token1, fee);

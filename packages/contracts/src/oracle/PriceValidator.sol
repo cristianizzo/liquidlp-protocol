@@ -160,9 +160,12 @@ contract PriceValidator {
             }
         }
 
-        // Record price snapshot
+        // Record price snapshot (capped at 100 entries to prevent unbounded gas growth)
         lastKnownTvl[pool] = poolTvl;
         lastPriceTimestamp[pool] = block.timestamp;
+        if (priceHistory[pool].length >= 100) {
+            delete priceHistory[pool];
+        }
         priceHistory[pool].push(PriceSnapshot(twapPrice, block.timestamp));
 
         emit PriceValidated(pool, twapPrice, 10_000 - adjustedHaircutBps);
