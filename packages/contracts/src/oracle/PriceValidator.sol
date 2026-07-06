@@ -14,7 +14,7 @@ contract PriceValidator {
     ProtocolCore public immutable core;
     CircuitBreaker public immutable circuitBreaker;
 
-    mapping(address => uint256) public lastKnownPrice;
+    mapping(address => uint256) public lastKnownTvl;
     mapping(address => uint256) public lastPriceTimestamp;
 
     // --- Configurable Thresholds ---
@@ -54,6 +54,12 @@ contract PriceValidator {
     modifier onlyRiskAdmin() {
         ACLManager acl = _acl();
         require(acl.isRiskAdmin(msg.sender) || acl.isPoolAdmin(msg.sender), "NOT_RISK_ADMIN");
+        _;
+    }
+
+    modifier onlyKeeper() {
+        ACLManager acl = _acl();
+        require(acl.isKeeper(msg.sender) || acl.isPoolAdmin(msg.sender), "NOT_KEEPER");
         _;
     }
 
@@ -98,7 +104,7 @@ contract PriceValidator {
     // --- Core Logic ---
 
     /// @notice Validate price and trigger circuit breaker if needed
-    /// @dev Called by keeper or oracle integration. Writes to CircuitBreaker (unified pause system).
+    /// @dev Called by keeper only. Writes to CircuitBreaker (unified pause system).
     function validatePrice(
         address pool,
         uint256 twapPrice,
@@ -106,6 +112,7 @@ contract PriceValidator {
         uint256 poolTvl
     )
         external
+        onlyKeeper
         returns (bool valid, uint256 adjustedHaircutBps)
     {
         require(!circuitBreaker.poolPaused(pool), "POOL_CIRCUIT_BREAKER");
@@ -126,10 +133,10 @@ contract PriceValidator {
         }
 
         // Check 3: TVL drop detection
-        if (lastKnownPrice[pool] > 0 && lastPriceTimestamp[pool] > 0) {
+        if (lastKnownTvl[pool] > 0 && lastPriceTimestamp[pool] > 0) {
             uint256 elapsed = block.timestamp - lastPriceTimestamp[pool];
-            if (elapsed <= 1 hours && poolTvl < lastKnownPrice[pool]) {
-                uint256 tvlDropBps = ((lastKnownPrice[pool] - poolTvl) * 10_000) / lastKnownPrice[pool];
+            if (elapsed <= 1 hours && poolTvl < lastKnownTvl[pool]) {
+                uint256 tvlDropBps = ((lastKnownTvl[pool] - poolTvl) * 10_000) / lastKnownTvl[pool];
                 if (tvlDropBps >= tvlDropThresholdBps) {
                     circuitBreaker.pausePool(pool, "TVL_DROP");
                     return (false, 0);
@@ -152,7 +159,7 @@ contract PriceValidator {
         }
 
         // Record price snapshot
-        lastKnownPrice[pool] = twapPrice;
+        lastKnownTvl[pool] = poolTvl;
         lastPriceTimestamp[pool] = block.timestamp;
         priceHistory[pool].push(PriceSnapshot(twapPrice, block.timestamp));
 

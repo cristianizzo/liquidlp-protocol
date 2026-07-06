@@ -196,6 +196,9 @@ abstract contract ForkTestBase is Test {
         positionManager.setRiskManager(address(riskManager));
         positionManager.setCircuitBreaker(address(circuitBreaker));
 
+        // 15. Grant KEEPER to PriceValidator (so it can call CircuitBreaker.pausePool)
+        aclManager.grantRole(aclManager.KEEPER(), address(priceValidator));
+
         vm.stopPrank();
     }
 
