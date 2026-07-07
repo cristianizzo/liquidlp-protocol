@@ -70,6 +70,13 @@ contract PoolHealthMonitor {
 
     // --- Core Logic ---
 
+    /// @notice Check pool health and trigger circuit breaker if needed
+    /// @dev currentTvl is provided by the keeper bot (off-chain data).
+    ///      The keeper is a permissioned role (KEEPER in ACLManager) — same trust model
+    ///      as Aave's Chaos Labs risk bots that feed on-chain actions from off-chain monitoring.
+    ///      On-chain TVL reads (pool.getReserves) are not used here because they are
+    ///      manipulable within a transaction. The keeper reads TVL from a subgraph or
+    ///      multi-block RPC sampling, which is manipulation-resistant.
     function checkPoolHealth(address pool, uint256 currentTvl) external onlyKeeper {
         PoolSnapshot memory prev = lastSnapshot[pool];
 
