@@ -257,6 +257,12 @@ contract FeeCollectorTest is Test {
         assertEq(fc.managementFeeBps(), 50);
     }
 
+    function test_setManagementFee_revertsTooHigh() public {
+        vm.prank(owner);
+        vm.expectRevert("TOO_HIGH");
+        fc.setManagementFee(101);
+    }
+
     function test_setInsuranceFundShare_success() public {
         vm.prank(owner);
         fc.setInsuranceFundShare(2000);
