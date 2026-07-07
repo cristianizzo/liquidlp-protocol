@@ -165,6 +165,13 @@ contract UniswapV2Adapter is ILPAdapter {
         IUniswapV2Pair pair = IUniswapV2Pair(lpToken);
         require(pair.factory() == address(v2Factory), "NOT_OUR_FACTORY");
 
+        // Validate token0/token1 match the pair
+        require(
+            (token0 == pair.token0() && token1 == pair.token1())
+                || (token0 == pair.token1() && token1 == pair.token0()),
+            "TOKEN_MISMATCH"
+        );
+
         OZIERC20(token0).forceApprove(address(v2Router), amount0);
         OZIERC20(token1).forceApprove(address(v2Router), amount1);
 

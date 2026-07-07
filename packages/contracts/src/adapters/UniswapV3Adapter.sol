@@ -3,7 +3,6 @@ pragma solidity ^0.8.26;
 
 import {ILPAdapter} from "../interfaces/ILPAdapter.sol";
 import {INonfungiblePositionManager, IUniswapV3Factory} from "../interfaces/external/IUniswapV3.sol";
-import {IERC20} from "../interfaces/IERC20.sol";
 import {IERC20 as OZIERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ProtocolCore} from "../core/ProtocolCore.sol";
@@ -196,8 +195,8 @@ contract UniswapV3Adapter is ILPAdapter {
     function addLiquidity(
         address lpToken,
         uint256 tokenId,
-        address, /* token0 — read from NFT */
-        address, /* token1 — read from NFT */
+        address token0,
+        address token1,
         uint256 amount0,
         uint256 amount1,
         address refundTo
@@ -211,6 +210,7 @@ contract UniswapV3Adapter is ILPAdapter {
         require(amount0 > 0 || amount1 > 0, "ZERO_AMOUNTS");
 
         (,, address t0, address t1,,,,,,,,) = nftManager.positions(tokenId);
+        require((token0 == t0 && token1 == t1) || (token0 == t1 && token1 == t0), "TOKEN_MISMATCH");
 
         OZIERC20(t0).forceApprove(address(nftManager), amount0);
         OZIERC20(t1).forceApprove(address(nftManager), amount1);
