@@ -140,17 +140,14 @@ abstract contract E2EBase is ForkTestBase {
     }
 
     /// @notice Deposit V2 LP tokens into the protocol
-    function _depositV2(address user, uint256 lpAmount) internal returns (uint256 positionId) {
+    /// @param marketId The market to deposit into (caller must pass the correct V2 market)
+    function _depositV2(address user, uint256 lpAmount, uint256 marketId) internal returns (uint256 positionId) {
         vm.startPrank(user);
-
-        // Need a V2 market — create one if not exists
-        // For now, use the existing ethUsdcMarketId (configured for V3)
-        // In a real setup, you'd create a separate V2 market
 
         IUniswapV2Pair pair = IUniswapV2Pair(Constants.UNI_V2_WETH_USDC);
         pair.approve(address(v2Adapter), lpAmount);
 
-        positionId = positionManager.deposit(Constants.UNI_V2_WETH_USDC, 0, lpAmount, ethUsdcMarketId);
+        positionId = positionManager.deposit(Constants.UNI_V2_WETH_USDC, 0, lpAmount, marketId);
 
         vm.stopPrank();
     }

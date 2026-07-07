@@ -36,7 +36,7 @@ contract V2Liquidation is E2EBase {
         vm.stopPrank();
     }
 
-    function test_fullLiquidation_V2() public {
+    function test_liquidatable_V2() public {
         // 1. Alice creates V2 LP position and borrows aggressively
         uint256 lpAmount = _createV2Position(alice, 0.5 ether, 1000e6);
 

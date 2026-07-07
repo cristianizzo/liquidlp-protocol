@@ -7,7 +7,7 @@ import {DeployBase} from "../DeployBase.s.sol";
 /// @notice Deploy Aurelia on BSC Testnet (PancakeSwap V2 — same interface as Uniswap V2)
 /// @dev Run: forge script script/deploy/BSCTestnet.s.sol --rpc-url $BSC_TESTNET_RPC --broadcast --verify
 contract DeployBSCTestnet is DeployBase {
-    function _config() internal view override returns (ChainConfig memory) {
+    function _config() internal override returns (ChainConfig memory) {
         address deployer = vm.addr(vm.envUint("DEPLOYER_PRIVATE_KEY"));
 
         return ChainConfig({
@@ -35,8 +35,7 @@ contract DeployBSCTestnet is DeployBase {
             liquidationThreshold: 7500,
             liquidationBonus: 500,
             haircut: 700,
-            borrowCap: 100_000e18, // $100K (18-dec BUSD)
-            stablecoinDecimals: 18
+            borrowCap: 100_000e18 // $100K (18-dec BUSD)
         });
     }
 }

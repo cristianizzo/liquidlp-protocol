@@ -24,7 +24,6 @@ import {CircuitBreaker} from "../src/security/CircuitBreaker.sol";
 import {RiskManager} from "../src/security/RiskManager.sol";
 import {PoolHealthMonitor} from "../src/security/PoolHealthMonitor.sol";
 import {ILPAdapter} from "../src/interfaces/ILPAdapter.sol";
-import {PositionViewer} from "../src/periphery/PositionViewer.sol";
 
 /// @title DeployBase
 /// @notice Shared deployment logic for all chains. Subclass sets chain-specific config.
@@ -58,8 +57,6 @@ abstract contract DeployBase is Script {
         uint256 liquidationBonus; // bps
         uint256 haircut; // bps
         uint256 borrowCap; // in stablecoin decimals
-        // Stablecoin decimals (6 for USDC, 18 for DAI/BUSD)
-        uint8 stablecoinDecimals;
     }
 
     // --- Deployed Contracts ---
@@ -82,7 +79,10 @@ abstract contract DeployBase is Script {
     function run() external {
         ChainConfig memory cfg = _config();
 
-        vm.startBroadcast(vm.envUint("DEPLOYER_PRIVATE_KEY"));
+        uint256 deployerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
+        require(vm.addr(deployerKey) == cfg.deployer, "DEPLOYER_KEY_MISMATCH");
+
+        vm.startBroadcast(deployerKey);
 
         _deployCore(cfg);
         _deployProxies();
@@ -101,6 +101,8 @@ abstract contract DeployBase is Script {
     // --- Deploy Steps ---
 
     function _deployCore(ChainConfig memory cfg) internal {
+        // TODO: Post-deploy, transfer ACLManager and ProtocolCore ownership from the
+        // deployer EOA to a multisig. The deployer should not retain admin privileges.
         aclManager = new ACLManager(cfg.deployer);
         core = new ProtocolCore(cfg.deployer, address(aclManager));
 
@@ -221,6 +223,12 @@ abstract contract DeployBase is Script {
         positionManager.setRiskManager(address(riskManager));
         positionManager.setCircuitBreaker(address(circuitBreaker));
         lendingEngine.setRiskManager(address(riskManager));
+
+        // Wire swap router for liquidation collateral swaps
+        // Uses V2 router if available, otherwise requires manual config post-deploy
+        if (cfg.v2Router != address(0)) {
+            liquidationEngine.setSwapRouter(cfg.v2Router);
+        }
     }
 
     function _createMarket(ChainConfig memory cfg) internal {
@@ -232,7 +240,7 @@ abstract contract DeployBase is Script {
         ILPAdapter.LPType lpType =
             cfg.v3NftManager != address(0) ? ILPAdapter.LPType.UniswapV3 : ILPAdapter.LPType.UniswapV2;
 
-        marketFactory.createMarket(
+        (uint256 marketId,) = marketFactory.createMarket(
             lpType,
             cfg.stablecoin,
             cfg.maxLtv,
@@ -244,6 +252,10 @@ abstract contract DeployBase is Script {
             0, // minPoolAge (0 for testnet)
             "volatile"
         );
+
+        // Wire FeeCollector into the newly created market
+        address marketAddr = core.markets(marketId);
+        Market(marketAddr).setFeeCollector(address(feeCollector));
     }
 
     function _logAddresses(ChainConfig memory) internal view {

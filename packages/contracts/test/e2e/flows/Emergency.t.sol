@@ -11,8 +11,13 @@ contract Emergency is E2EBase {
     }
 
     function test_globalPause_blocksDepositsAndBorrows() public {
-        // Alice creates LP position
+        // Alice creates and deposits LP position before pause
         uint256 tokenId = _createV3Position(alice, 1 ether, 2000e6);
+        uint256 positionId = _depositV3(alice, tokenId);
+        vm.roll(block.number + 2);
+
+        // Create a second position for the deposit-blocked test
+        uint256 tokenId2 = _createV3Position(alice, 1 ether, 2000e6);
 
         // Guardian pauses protocol
         vm.prank(guardian);
@@ -21,12 +26,17 @@ contract Emergency is E2EBase {
 
         // Deposit should fail
         vm.startPrank(alice);
-        nftManager.approve(address(v3Adapter), tokenId);
+        nftManager.approve(address(v3Adapter), tokenId2);
         vm.expectRevert("PAUSED");
-        positionManager.deposit(Constants.UNI_V3_NFT_MANAGER, tokenId, 0, ethUsdcMarketId);
+        positionManager.deposit(Constants.UNI_V3_NFT_MANAGER, tokenId2, 0, ethUsdcMarketId);
         vm.stopPrank();
 
-        console.log("=== Global Pause Blocks Deposits ===");
+        // Borrow should also fail
+        vm.prank(alice);
+        vm.expectRevert("PAUSED");
+        lendingEngine.borrow(positionId, 100e6);
+
+        console.log("=== Global Pause Blocks Deposits and Borrows ===");
     }
 
     function test_globalPause_allowsWithdrawAfterUnpause() public {

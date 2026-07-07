@@ -7,7 +7,7 @@ import {DeployBase} from "../DeployBase.s.sol";
 /// @notice Deploy Aurelia on Sepolia testnet (Uniswap V3 only)
 /// @dev Run: forge script script/deploy/Sepolia.s.sol --rpc-url $SEPOLIA_RPC --broadcast --verify
 contract DeploySepolia is DeployBase {
-    function _config() internal view override returns (ChainConfig memory) {
+    function _config() internal override returns (ChainConfig memory) {
         address deployer = vm.addr(vm.envUint("DEPLOYER_PRIVATE_KEY"));
 
         return ChainConfig({
@@ -35,8 +35,7 @@ contract DeploySepolia is DeployBase {
             liquidationThreshold: 7500, // 75%
             liquidationBonus: 500, // 5%
             haircut: 700, // 7%
-            borrowCap: 100_000e6, // $100K (6-dec USDC)
-            stablecoinDecimals: 6
+            borrowCap: 100_000e6 // $100K (6-dec USDC)
         });
     }
 }

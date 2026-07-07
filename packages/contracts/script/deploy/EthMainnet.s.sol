@@ -8,7 +8,10 @@ import {DeployBase} from "../DeployBase.s.sol";
 /// @dev Run: forge script script/deploy/EthMainnet.s.sol --rpc-url $ETH_RPC --broadcast --verify
 ///      IMPORTANT: Use multisig addresses for guardian/riskAdmin in production!
 contract DeployEthMainnet is DeployBase {
-    function _config() internal view override returns (ChainConfig memory) {
+    function _config() internal override returns (ChainConfig memory) {
+        // The deployer EOA becomes the initial owner and pool admin of all contracts.
+        // After deployment, transfer ownership of ACLManager, ProtocolCore, and all admin
+        // roles to a multisig. The deployer should hold no privileged roles post-deploy.
         address deployer = vm.addr(vm.envUint("DEPLOYER_PRIVATE_KEY"));
         // TODO: Replace with actual multisig addresses before mainnet deployment
         address guardian = vm.envOr("GUARDIAN_ADDRESS", deployer);
@@ -39,8 +42,7 @@ contract DeployEthMainnet is DeployBase {
             liquidationThreshold: 7500,
             liquidationBonus: 500,
             haircut: 700,
-            borrowCap: 10_000_000e6, // $10M (6-dec USDC)
-            stablecoinDecimals: 6
+            borrowCap: 10_000_000e6 // $10M (6-dec USDC)
         });
     }
 }

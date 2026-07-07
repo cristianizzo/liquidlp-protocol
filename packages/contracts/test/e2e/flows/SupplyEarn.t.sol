@@ -79,6 +79,9 @@ contract SupplyEarn is E2EBase {
         uint256 carolShares = market.shares(carol);
         console.log("Bob shares: %s, Carol shares: %s", bobShares, carolShares);
 
+        // Snapshot pre-borrow totalSupply
+        uint256 totalSupplyBefore = market.getMarketState().totalSupply;
+
         // Alice borrows
         uint256 tokenId = _createV3Position(alice, 2 ether, 4000e6);
         uint256 positionId = _depositV3(alice, tokenId);
@@ -93,11 +96,20 @@ contract SupplyEarn is E2EBase {
         market.accrueInterest();
 
         // Both earn proportionally to their shares
-        uint256 totalSupply = market.getMarketState().totalSupply;
+        uint256 totalSupplyAfter = market.getMarketState().totalSupply;
         uint256 totalShares = market.totalShares();
 
-        uint256 bobValue = (bobShares * totalSupply) / totalShares;
-        uint256 carolValue = (carolShares * totalSupply) / totalShares;
+        // totalSupply must grow monotonically after interest accrual
+        assertGt(totalSupplyAfter, totalSupplyBefore, "totalSupply should increase after interest accrual");
+
+        uint256 bobValue = (bobShares * totalSupplyAfter) / totalShares;
+        uint256 carolValue = (carolShares * totalSupplyAfter) / totalShares;
+
+        // Both values must exceed their initial deposit minus rounding
+        uint256 bobInitialValue = (bobShares * totalSupplyBefore) / totalShares;
+        uint256 carolInitialValue = (carolShares * totalSupplyBefore) / totalShares;
+        assertGe(bobValue, bobInitialValue, "Bob value should not decrease");
+        assertGe(carolValue, carolInitialValue, "Carol value should not decrease");
 
         // Carol supplied same amount as Bob at similar time, shares should be similar
         // Their earnings should be proportional

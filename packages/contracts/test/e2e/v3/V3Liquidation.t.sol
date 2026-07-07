@@ -11,7 +11,7 @@ contract V3Liquidation is E2EBase {
         super.setUp();
     }
 
-    function test_fullLiquidation_V3() public {
+    function test_liquidatable_V3() public {
         // 1. Alice creates V3 position and borrows near max
         uint256 tokenId = _createV3Position(alice, 1 ether, 2000e6);
         uint256 positionId = _depositV3(alice, tokenId);

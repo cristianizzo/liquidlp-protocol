@@ -61,7 +61,6 @@ contract RevenueFlow is E2EBase {
         assertGt(accFees, 0, "Accumulated fees should be tracked");
 
         uint256 treasuryBefore = IERC20(Constants.USDC).balanceOf(deployer); // treasury = deployer in test
-        uint256 insuranceBefore = IERC20(Constants.USDC).balanceOf(deployer); // insurance = deployer too
 
         vm.prank(deployer);
         feeCollector.distribute(Constants.USDC);
