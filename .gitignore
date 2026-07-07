@@ -40,5 +40,4 @@ pgdata/
 
 # Docker
 docker-compose.override.yml
-docs/
 CLAUDE.md
