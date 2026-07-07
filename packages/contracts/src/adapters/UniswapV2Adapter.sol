@@ -141,6 +141,41 @@ contract UniswapV2Adapter is ILPAdapter {
     }
 
     /// @inheritdoc ILPAdapter
+    /// @dev Calls v2Router.addLiquidity. New LP tokens minted to this adapter.
+    ///      Unused tokens refunded to refundTo.
+    function addLiquidity(
+        address lpToken,
+        uint256, /* tokenId */
+        address token0,
+        address token1,
+        uint256 amount0,
+        uint256 amount1,
+        address refundTo
+    )
+        external
+        onlyProtocol
+        returns (uint256 addedLiquidity, uint256 used0, uint256 used1)
+    {
+        require(amount0 > 0 || amount1 > 0, "ZERO_AMOUNTS");
+        require(lpToken.code.length > 0, "NOT_CONTRACT");
+        IUniswapV2Pair pair = IUniswapV2Pair(lpToken);
+        require(pair.factory() == address(v2Factory), "NOT_OUR_FACTORY");
+
+        IUniswapV2Pair(token0).approve(address(v2Router), amount0);
+        IUniswapV2Pair(token1).approve(address(v2Router), amount1);
+
+        (used0, used1, addedLiquidity) = v2Router.addLiquidity(
+            token0, token1, amount0, amount1, 0, 0, address(this), block.timestamp
+        );
+
+        // Refund unused tokens to user
+        if (refundTo != address(0)) {
+            if (amount0 > used0) IUniswapV2Pair(token0).transfer(refundTo, amount0 - used0);
+            if (amount1 > used1) IUniswapV2Pair(token1).transfer(refundTo, amount1 - used1);
+        }
+    }
+
+    /// @inheritdoc ILPAdapter
     /// @dev V2 fees auto-compound into reserves. No separate collection needed.
     function collectFees(address, uint256) external pure returns (uint256, uint256) {
         return (0, 0);

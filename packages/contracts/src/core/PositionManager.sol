@@ -10,6 +10,8 @@ import {ILPOracleHub} from "../interfaces/ILPOracleHub.sol";
 import {ILendingEngine} from "../interfaces/ILendingEngine.sol";
 import {IMarket} from "../interfaces/IMarket.sol";
 import {IERC20} from "../interfaces/IERC20.sol";
+import {IERC20 as OZIERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ProtocolCore} from "./ProtocolCore.sol";
 import {ACLManager} from "./ACLManager.sol";
@@ -22,6 +24,8 @@ import {CircuitBreaker} from "../security/CircuitBreaker.sol";
 /// @dev UUPS upgradeable + reentrancy protected (external calls to adapters/oracles)
 ///      Uses ACLManager for role-based access control (Aave V3 pattern).
 contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, ReentrancyGuardTransient {
+    using SafeERC20 for OZIERC20;
+
     ProtocolCore public core;
     ILPOracleHub public oracleHub;
     ILendingEngine public lendingEngine;
@@ -34,6 +38,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     mapping(address => bool) private __deprecated_authorized;
 
     // --- Events ---
+    event CollateralAdded(uint256 indexed positionId, uint256 addedLiquidity, uint256 used0, uint256 used1);
     event PositionAmountReduced(uint256 indexed positionId, uint256 amountRemoved, uint256 newAmount);
     event LendingEngineUpdated(address indexed oldEngine, address indexed newEngine);
     event PriceFeedRegistryUpdated(address indexed oldRegistry, address indexed newRegistry);
@@ -225,6 +230,58 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
 
         // Unlock LP via adapter
         ILPAdapter(adapterAddr).unlock(pos.lpToken, pos.tokenId, pos.amount, msg.sender);
+    }
+
+    /// @inheritdoc IPositionManager
+    /// @dev Pulls token0/token1 from user, forwards to adapter which adds liquidity.
+    ///      For V2: new LP tokens are minted → pos.amount increases.
+    ///      For V3: NFT liquidity increases in same tick range → pos.amount unchanged (liquidity in NFT).
+    ///      Unused tokens (dust from price ratio mismatch) are refunded to the user.
+    function addCollateral(
+        uint256 positionId,
+        uint256 amount0,
+        uint256 amount1
+    )
+        external
+        whenNotPaused
+        nonReentrant
+        positionExists(positionId)
+    {
+        Position storage pos = _positions[positionId];
+        require(pos.owner == msg.sender, "NOT_POSITION_OWNER");
+        require(pos.status == PositionStatus.Active || pos.status == PositionStatus.Borrowed, "NOT_ACTIVE");
+        require(amount0 > 0 || amount1 > 0, "ZERO_AMOUNTS");
+
+        address adapterAddr = core.adapters(pos.lpType);
+        require(adapterAddr != address(0), "ADAPTER_NOT_FOUND");
+
+        // Pull tokens from user to adapter (balance-delta for fee-on-transfer safety)
+        uint256 adapterBal0Before = IERC20(pos.token0).balanceOf(adapterAddr);
+        uint256 adapterBal1Before = IERC20(pos.token1).balanceOf(adapterAddr);
+
+        if (amount0 > 0) {
+            OZIERC20(pos.token0).safeTransferFrom(msg.sender, adapterAddr, amount0);
+        }
+        if (amount1 > 0) {
+            OZIERC20(pos.token1).safeTransferFrom(msg.sender, adapterAddr, amount1);
+        }
+
+        uint256 received0 = IERC20(pos.token0).balanceOf(adapterAddr) - adapterBal0Before;
+        uint256 received1 = IERC20(pos.token1).balanceOf(adapterAddr) - adapterBal1Before;
+
+        // Adapter adds liquidity to the position (unused tokens refunded to user)
+        (uint256 addedLiquidity, uint256 used0, uint256 used1) =
+            ILPAdapter(adapterAddr).addLiquidity(pos.lpToken, pos.tokenId, pos.token0, pos.token1, received0, received1, msg.sender);
+
+        require(addedLiquidity > 0, "ZERO_LIQUIDITY_ADDED");
+
+        // For V2: LP tokens were minted → increase stored amount
+        if (pos.lpType == ILPAdapter.LPType.UniswapV2 || pos.lpType == ILPAdapter.LPType.PancakeSwapV2) {
+            pos.amount += addedLiquidity;
+        }
+        // For V3: liquidity is inside the NFT — oracle reads it directly, no amount update
+
+        emit CollateralAdded(positionId, addedLiquidity, used0, used1);
     }
 
     // --- State Updates (role-based access) ---

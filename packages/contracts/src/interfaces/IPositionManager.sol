@@ -53,6 +53,12 @@ interface IPositionManager {
 
     function withdraw(uint256 positionId) external;
 
+    /// @notice Add collateral to an existing position by providing underlying tokens
+    /// @param positionId The position to add collateral to
+    /// @param amount0 Amount of token0 to add
+    /// @param amount1 Amount of token1 to add
+    function addCollateral(uint256 positionId, uint256 amount0, uint256 amount1) external;
+
     function getPosition(uint256 positionId) external view returns (Position memory);
 
     function getPositionsByOwner(address owner) external view returns (uint256[] memory);

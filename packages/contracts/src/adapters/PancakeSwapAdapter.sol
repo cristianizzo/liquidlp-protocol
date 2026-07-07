@@ -66,6 +66,11 @@ contract PancakeSwapAdapter is ILPAdapter {
     }
 
     /// @inheritdoc ILPAdapter
+    function addLiquidity(address, uint256, address, address, uint256, uint256, address) external onlyProtocol returns (uint256, uint256, uint256) {
+        revert("NOT_IMPLEMENTED");
+    }
+
+    /// @inheritdoc ILPAdapter
     function lpType() external view returns (LPType) {
         return isV3 ? LPType.PancakeSwapV3 : LPType.PancakeSwapV2;
     }
