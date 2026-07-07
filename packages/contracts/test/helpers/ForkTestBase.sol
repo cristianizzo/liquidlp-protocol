@@ -14,6 +14,7 @@ import {LPOracleHub} from "../../src/oracle/LPOracleHub.sol";
 import {UniswapV3Oracle} from "../../src/oracle/UniswapV3Oracle.sol";
 import {UniswapV2Oracle} from "../../src/oracle/UniswapV2Oracle.sol";
 import {PriceValidator} from "../../src/oracle/PriceValidator.sol";
+import {PriceFeedRegistry} from "../../src/oracle/PriceFeedRegistry.sol";
 import {Market} from "../../src/markets/Market.sol";
 import {MarketFactory} from "../../src/markets/MarketFactory.sol";
 import {InterestRateModel} from "../../src/markets/InterestRateModel.sol";
@@ -52,6 +53,7 @@ abstract contract ForkTestBase is Test {
     PriceValidator public priceValidator;
     CircuitBreaker public circuitBreaker;
     RiskManager public riskManager;
+    PriceFeedRegistry public priceFeedRegistry;
     PositionViewer public positionViewer;
     MarketFactory public marketFactory;
     InterestRateModel public volatileModel;
@@ -130,6 +132,7 @@ abstract contract ForkTestBase is Test {
         // 7. Security
         circuitBreaker = new CircuitBreaker(address(core));
         riskManager = new RiskManager(address(core));
+        priceFeedRegistry = new PriceFeedRegistry(address(core));
         priceValidator = new PriceValidator(address(core), address(circuitBreaker));
 
         // 8. Oracles
@@ -145,6 +148,10 @@ abstract contract ForkTestBase is Test {
         // Register oracles in hub
         oracleHub.registerOracle(ILPAdapter.LPType.UniswapV3, address(v3Oracle));
         oracleHub.registerOracle(ILPAdapter.LPType.UniswapV2, address(v2Oracle));
+
+        // PriceFeedRegistry (for cross-decimal HF/LTV calculations)
+        priceFeedRegistry.setPriceFeed(Constants.USDC, Constants.CL_USDC_USD);
+        priceFeedRegistry.setPriceFeed(Constants.WETH, Constants.CL_ETH_USD);
 
         // 9. Adapters
         v3Adapter = new UniswapV3Adapter(Constants.UNI_V3_NFT_MANAGER, Constants.UNI_V3_FACTORY, address(core));
@@ -188,10 +195,11 @@ abstract contract ForkTestBase is Test {
         aclManager.grantRole(aclManager.POSITION_MANAGER(), address(positionManager));
         positionManager.setLendingEngine(address(lendingEngine));
 
-        // 14. Wire RiskManager
+        // 14. Wire RiskManager + PriceFeedRegistry
         lendingEngine.setRiskManager(address(riskManager));
         positionManager.setRiskManager(address(riskManager));
         positionManager.setCircuitBreaker(address(circuitBreaker));
+        positionManager.setPriceFeedRegistry(address(priceFeedRegistry));
 
         // 15. Grant KEEPER to PriceValidator (so it can call CircuitBreaker.pausePool)
         aclManager.grantRole(aclManager.KEEPER(), address(priceValidator));
