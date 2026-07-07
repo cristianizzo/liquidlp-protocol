@@ -35,11 +35,13 @@ contract FeeCollector is ReentrancyGuard {
 
     // --- Other Fee Rates ---
     uint256 public liquidationFeeBps = 1000; // 10% of liquidation penalty
+    uint256 public managementFeeBps = 10; // 0.1% annual on collateral value
 
     // --- Absolute Bounds ---
     uint256 public constant MIN_RESERVE_FACTOR = 500; // 5%
     uint256 public constant MAX_RESERVE_FACTOR = 5000; // 50%
     uint256 public constant MAX_LIQUIDATION_FEE = 2000; // 20%
+    uint256 public constant MAX_MANAGEMENT_FEE = 100; // 1%
     uint256 public constant MAX_INSURANCE_SHARE = 5000; // 50%
 
     // --- Fee Recipients ---
@@ -56,6 +58,7 @@ contract FeeCollector is ReentrancyGuard {
     event ReserveFactorUpdated(ILPAdapter.LPType indexed lpType, uint256 oldValue, uint256 newValue);
     event DefaultReserveFactorUpdated(uint256 oldValue, uint256 newValue);
     event LiquidationFeeUpdated(uint256 oldValue, uint256 newValue);
+    event ManagementFeeUpdated(uint256 oldValue, uint256 newValue);
     event InsuranceFundShareUpdated(uint256 oldValue, uint256 newValue);
     event TreasuryUpdated(address indexed oldAddr, address indexed newAddr);
     event InsuranceFundUpdated(address indexed oldAddr, address indexed newAddr);
@@ -240,6 +243,12 @@ contract FeeCollector is ReentrancyGuard {
         require(_bps <= MAX_LIQUIDATION_FEE, "TOO_HIGH");
         emit LiquidationFeeUpdated(liquidationFeeBps, _bps);
         liquidationFeeBps = _bps;
+    }
+
+    function setManagementFee(uint256 _bps) external onlyRiskAdmin {
+        require(_bps <= MAX_MANAGEMENT_FEE, "TOO_HIGH");
+        emit ManagementFeeUpdated(managementFeeBps, _bps);
+        managementFeeBps = _bps;
     }
 
     function setInsuranceFundShare(uint256 _bps) external onlyRiskAdmin {

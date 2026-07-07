@@ -52,6 +52,7 @@ contract FeeCollectorTest is Test {
         assertEq(fc.insuranceFund(), insurance);
         assertEq(fc.defaultReserveFactorBps(), 2000);
         assertEq(fc.liquidationFeeBps(), 1000);
+        assertEq(fc.managementFeeBps(), 10);
         assertEq(fc.insuranceFundShareBps(), 1000);
     }
 
@@ -248,6 +249,18 @@ contract FeeCollectorTest is Test {
         vm.prank(owner);
         vm.expectRevert("TOO_HIGH");
         fc.setLiquidationFee(2100);
+    }
+
+    function test_setManagementFee_success() public {
+        vm.prank(owner);
+        fc.setManagementFee(50);
+        assertEq(fc.managementFeeBps(), 50);
+    }
+
+    function test_setManagementFee_revertsTooHigh() public {
+        vm.prank(owner);
+        vm.expectRevert("TOO_HIGH");
+        fc.setManagementFee(101);
     }
 
     function test_setInsuranceFundShare_success() public {
