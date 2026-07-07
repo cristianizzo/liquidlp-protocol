@@ -349,6 +349,7 @@ Inspired by Aave's revenue model ($907M in total fees in 2025, ~$140M protocol-r
 |---|---|---|
 | Reserve factor | 10-25% of interest | Protocol keeps this % of borrow interest. Rest goes to lenders. Per LP type — higher risk = higher cut. |
 | Liquidation fee | 10% of liq. penalty | Protocol takes 10% of the liquidation bonus. Liquidators keep 90%. |
+| Management fee | 0.1% annual | Annual fee on deposited LP collateral value. Charged by keeper via periodic accrual. Configurable by RISK_ADMIN (max 1%). |
 
 ### Reserve Factors by LP Type
 
