@@ -71,18 +71,14 @@ contract V3Liquidation is E2EBase {
 
         uint256 hf = _getHealthFactor(positionId);
         console.log("HF after moderate drop: %s", hf / 1e16);
+        assertLt(hf, 1e18, "HF should be below 1.0 after price drop");
 
-        if (hf < 1e18) {
-            (bool canLiq, uint256 maxRepay) = liquidationEngine.isLiquidatable(positionId);
-            assertTrue(canLiq);
+        (bool canLiq, uint256 maxRepay) = liquidationEngine.isLiquidatable(positionId);
+        assertTrue(canLiq, "Should be liquidatable");
 
-            uint256 totalDebt = _getDebt(positionId);
-            if (hf >= 0.95e18) {
-                // Partial liquidation — maxRepay should be < totalDebt
-                assertLt(maxRepay, totalDebt, "Should be partial liquidation");
-            }
-            console.log("Max repay: %s USDC (of %s total)", maxRepay / 1e6, totalDebt / 1e6);
-        }
+        uint256 totalDebt = _getDebt(positionId);
+        assertLt(maxRepay, totalDebt, "Should be partial liquidation (maxRepay < totalDebt)");
+        console.log("Max repay: %s USDC (of %s total)", maxRepay / 1e6, totalDebt / 1e6);
 
         vm.clearMockedCalls();
         console.log("=== V3 Partial Liquidation Test Passed ===");

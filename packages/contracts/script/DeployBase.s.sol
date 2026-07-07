@@ -70,7 +70,10 @@ abstract contract DeployBase is Script {
     CircuitBreaker public circuitBreaker;
     RiskManager public riskManager;
     PriceFeedRegistry public priceFeedRegistry;
+    PriceValidator public priceValidator;
+    PoolHealthMonitor public poolHealthMonitor;
     MarketFactory public marketFactory;
+    MarketRegistry public marketRegistry;
 
     // --- Abstract: subclass provides config ---
     function _config() internal virtual returns (ChainConfig memory);
@@ -148,9 +151,9 @@ abstract contract DeployBase is Script {
         feeCollector = new FeeCollector(address(core), cfg.deployer, cfg.deployer);
         circuitBreaker = new CircuitBreaker(address(core));
         riskManager = new RiskManager(address(core));
-        new PoolHealthMonitor(address(core), address(circuitBreaker));
+        poolHealthMonitor = new PoolHealthMonitor(address(core), address(circuitBreaker));
         priceFeedRegistry = new PriceFeedRegistry(address(core));
-        new PriceValidator(address(core), address(circuitBreaker));
+        priceValidator = new PriceValidator(address(core), address(circuitBreaker));
     }
 
     function _deployOracles(ChainConfig memory cfg) internal {
@@ -195,7 +198,7 @@ abstract contract DeployBase is Script {
 
         Market marketImpl = new Market();
         marketFactory = new MarketFactory(address(core), address(marketImpl));
-        new MarketRegistry(address(core));
+        marketRegistry = new MarketRegistry(address(core));
 
         marketFactory.setInterestRateModel("stable", address(stableModel));
         marketFactory.setInterestRateModel("volatile", address(volatileModel));
@@ -271,6 +274,9 @@ abstract contract DeployBase is Script {
         console.log("CircuitBreaker:         ", address(circuitBreaker));
         console.log("RiskManager:            ", address(riskManager));
         console.log("PriceFeedRegistry:      ", address(priceFeedRegistry));
+        console.log("PriceValidator:         ", address(priceValidator));
+        console.log("PoolHealthMonitor:      ", address(poolHealthMonitor));
         console.log("MarketFactory:          ", address(marketFactory));
+        console.log("MarketRegistry:         ", address(marketRegistry));
     }
 }

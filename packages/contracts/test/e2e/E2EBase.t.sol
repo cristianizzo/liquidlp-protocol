@@ -34,6 +34,7 @@ abstract contract E2EBase is ForkTestBase {
         vm.startPrank(deployer);
         v3Oracle.setMaxStaleness(86_400); // 24h for fork testing
         v2Oracle.setMaxStaleness(86_400);
+        priceFeedRegistry.setMaxStaleness(86_400);
         vm.stopPrank();
 
         // Fund test accounts
@@ -153,24 +154,6 @@ abstract contract E2EBase is ForkTestBase {
     }
 
     // ========== Price Manipulation Helpers ==========
-
-    /// @notice Simulate price drop by changing Chainlink answer
-    /// @dev Uses vm.mockCall to override Chainlink's latestRoundData
-    function _dropEthPrice(uint256 newPriceUsd) internal {
-        // Mock ETH/USD Chainlink feed to return lower price
-        // Chainlink returns 8 decimals
-        int256 answer = int256(newPriceUsd / 1e10);
-        vm.mockCall(
-            Constants.CL_ETH_USD,
-            abi.encodeWithSignature("latestRoundData()"),
-            abi.encode(uint80(1), answer, block.timestamp, block.timestamp, uint80(1))
-        );
-    }
-
-    /// @notice Restore real ETH price by clearing mocks
-    function _restoreEthPrice() internal {
-        vm.clearMockedCalls();
-    }
 
     /// @notice Mock oracleHub.getPrice to return a specific USD value
     /// @dev Bypasses TWAP/Chainlink deviation checks — use for liquidation tests
