@@ -38,7 +38,6 @@ contract CurveAdapter is ILPAdapter {
         onlyProtocol
         returns (LPInfo memory info)
     {
-        require(amount > 0, "ZERO_AMOUNT");
         revert("NOT_IMPLEMENTED");
     }
 
