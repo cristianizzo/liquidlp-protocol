@@ -226,6 +226,7 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
 
     /// @inheritdoc IMarket
     function supply(uint256 amount) external nonReentrant returns (uint256 sharesToMint) {
+        require(!core.paused(), "PAUSED");
         require(amount > 0, "ZERO_AMOUNT");
         accrueInterest();
 
@@ -255,6 +256,7 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
 
     /// @inheritdoc IMarket
     function withdraw(uint256 sharesToBurn) external nonReentrant returns (uint256 amount) {
+        require(!core.paused(), "PAUSED");
         require(sharesToBurn > 0, "ZERO_SHARES");
         accrueInterest();
 

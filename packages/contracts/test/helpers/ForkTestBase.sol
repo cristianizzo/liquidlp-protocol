@@ -19,7 +19,6 @@ import {MarketFactory} from "../../src/markets/MarketFactory.sol";
 import {InterestRateModel} from "../../src/markets/InterestRateModel.sol";
 import {CircuitBreaker} from "../../src/security/CircuitBreaker.sol";
 import {RiskManager} from "../../src/security/RiskManager.sol";
-import {Router} from "../../src/periphery/Router.sol";
 import {PositionViewer} from "../../src/periphery/PositionViewer.sol";
 import {UniswapV3Adapter} from "../../src/adapters/UniswapV3Adapter.sol";
 import {UniswapV2Adapter} from "../../src/adapters/UniswapV2Adapter.sol";
@@ -53,7 +52,6 @@ abstract contract ForkTestBase is Test {
     PriceValidator public priceValidator;
     CircuitBreaker public circuitBreaker;
     RiskManager public riskManager;
-    Router public router;
     PositionViewer public positionViewer;
     MarketFactory public marketFactory;
     InterestRateModel public volatileModel;
@@ -181,8 +179,7 @@ abstract contract ForkTestBase is Test {
             "volatile"
         );
 
-        // 12. Periphery
-        router = new Router(address(positionManager), address(lendingEngine));
+        // 12. Periphery (no Router — users call contracts directly)
         positionViewer = new PositionViewer(address(core), address(positionManager), address(lendingEngine));
 
         // 13. Grant ACL roles

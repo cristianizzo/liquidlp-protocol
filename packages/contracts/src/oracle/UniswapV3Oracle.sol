@@ -325,7 +325,8 @@ contract UniswapV3Oracle is ILPOracle {
             uint128 tokensOwed1
         ) = positionManager.positions(tokenId);
 
-        require(liquidity > 0, "NO_LIQUIDITY");
+        // Zero-liquidity positions may still have uncollected fees — price those fees
+        // instead of reverting (prevents blocking liquidation of fee-only positions)
 
         // Step 2: Get pool and TWAP tick
         address pool = factory.getPool(token0, token1, fee);
@@ -459,11 +460,13 @@ contract UniswapV3Oracle is ILPOracle {
         // the raw ratio is in USDC_units/WETH_units = (6dec)/(18dec) units
         // We need to adjust for decimal difference to compare with Chainlink
         uint160 twapSqrtPrice = TickMathLib.getSqrtRatioAtTick(twapTick);
-        uint256 twapPriceSq = uint256(twapSqrtPrice) * uint256(twapSqrtPrice);
-        // Raw TWAP ratio (token1_raw_per_token0_raw) in Q192 format
-        // Normalize to 18 decimals: mulDiv(twapPriceSq, 1e18, 2^192)
-        // Note: 2^192 fits in uint256 (≈ 6.27e57, max uint256 ≈ 1.16e77)
-        uint256 twapRatioRaw = LiquidityAmountsLib.mulDiv(twapPriceSq, 1e18, uint256(1) << 192);
+        // Overflow-safe: sqrtPrice^2 can exceed uint256 at high ticks (>443636)
+        // Use mulDiv to combine squaring with 2^192 division, then scale to 18 decimals
+        uint256 twapRatioRaw = LiquidityAmountsLib.mulDiv(
+            LiquidityAmountsLib.mulDiv(uint256(twapSqrtPrice), uint256(twapSqrtPrice), uint256(1) << 96),
+            1e18,
+            uint256(1) << 96
+        );
 
         // Adjust for decimal difference:
         // twapRatioRaw is in (token1_native / token0_native) units

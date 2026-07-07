@@ -31,17 +31,17 @@ contract AerodromeAdapter is ILPAdapter {
 
     /// @inheritdoc ILPAdapter
     function validateAndLock(address, uint256, uint256, address) external onlyProtocol returns (LPInfo memory info) {
-        // TODO: Aerodrome implementation
+        revert("NOT_IMPLEMENTED");
     }
 
     /// @inheritdoc ILPAdapter
     function unlock(address, uint256, uint256, address) external onlyProtocol {
-        // TODO: Aerodrome implementation
+        revert("NOT_IMPLEMENTED");
     }
 
     /// @inheritdoc ILPAdapter
     function unwind(address, uint256, uint128) external onlyProtocol returns (uint256 amount0, uint256 amount1) {
-        // TODO: Aerodrome implementation
+        revert("NOT_IMPLEMENTED");
     }
 
     /// @inheritdoc ILPAdapter

@@ -49,7 +49,7 @@ contract PancakeSwapAdapter is ILPAdapter {
 
     /// @inheritdoc ILPAdapter
     function validateAndLock(address, uint256, uint256, address) external onlyProtocol returns (LPInfo memory info) {
-        // TODO: PancakeSwap implementation
+        revert("NOT_IMPLEMENTED");
     }
 
     /// @inheritdoc ILPAdapter

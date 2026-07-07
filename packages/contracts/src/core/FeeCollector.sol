@@ -110,7 +110,16 @@ contract FeeCollector is ReentrancyGuard {
 
     /// @notice Pull fee tokens from a source into FeeCollector and record actual received amount
     /// @dev Measures balance before/after transfer to handle fee-on-transfer tokens correctly.
-    function collectFee(address token, uint256 amount, address from, string calldata feeType) external onlyAuthorized {
+    function collectFee(
+        address token,
+        uint256 amount,
+        address from,
+        string calldata feeType
+    )
+        external
+        onlyAuthorized
+        nonReentrant
+    {
         require(!core.paused(), "PAUSED");
         require(amount > 0, "ZERO_AMOUNT");
         require(token != address(0), "ZERO_TOKEN");

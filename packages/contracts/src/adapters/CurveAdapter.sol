@@ -38,13 +38,12 @@ contract CurveAdapter is ILPAdapter {
         onlyProtocol
         returns (LPInfo memory info)
     {
-        require(amount > 0, "ZERO_AMOUNT");
-        // TODO: Curve implementation
+        revert("NOT_IMPLEMENTED");
     }
 
     /// @inheritdoc ILPAdapter
     function unlock(address lpToken, uint256, uint256 amount, address to) external onlyProtocol {
-        // TODO: Curve implementation
+        revert("NOT_IMPLEMENTED");
     }
 
     /// @inheritdoc ILPAdapter
@@ -57,7 +56,7 @@ contract CurveAdapter is ILPAdapter {
         onlyProtocol
         returns (uint256 amount0, uint256 amount1)
     {
-        // TODO: Curve implementation
+        revert("NOT_IMPLEMENTED");
     }
 
     /// @inheritdoc ILPAdapter

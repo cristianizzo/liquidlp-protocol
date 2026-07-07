@@ -240,6 +240,10 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         } else if (newDebt == 0 && pos.status == PositionStatus.Borrowed) {
             if (pos.amount > 0) {
                 pos.status = PositionStatus.Active;
+            } else {
+                // amount == 0 && debt == 0 → fully consumed, mark as closed
+                pos.status = PositionStatus.Closed;
+                if (activePositionCount[pos.owner] > 0) activePositionCount[pos.owner]--;
             }
         }
     }

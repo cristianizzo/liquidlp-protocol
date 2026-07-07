@@ -18,7 +18,6 @@ import {CircuitBreaker} from "../src/security/CircuitBreaker.sol";
 import {RiskManager} from "../src/security/RiskManager.sol";
 import {PoolHealthMonitor} from "../src/security/PoolHealthMonitor.sol";
 import {EmergencyModule} from "../src/security/EmergencyModule.sol";
-import {Router} from "../src/periphery/Router.sol";
 import {PositionViewer} from "../src/periphery/PositionViewer.sol";
 
 contract Deploy is Script {
@@ -113,8 +112,7 @@ contract Deploy is Script {
         marketFactory.setInterestRateModel("volatile", address(volatileModel));
         marketFactory.setInterestRateModel("exotic", address(exoticModel));
 
-        // Periphery
-        new Router(address(positionManager), address(lendingEngine));
+        // Periphery (no Router — users call contracts directly, frontend uses Multicall3)
         new PositionViewer(address(core), address(positionManager), address(lendingEngine));
     }
 
