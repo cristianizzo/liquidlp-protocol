@@ -255,6 +255,9 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         address adapterAddr = core.adapters(pos.lpType);
         require(adapterAddr != address(0), "ADAPTER_NOT_FOUND");
 
+        // Snapshot pre-change value for RiskManager delta tracking
+        uint256 valueBefore = getPositionValue(positionId);
+
         // Pull tokens from user to adapter (balance-delta for fee-on-transfer safety)
         uint256 adapterBal0Before = IERC20(pos.token0).balanceOf(adapterAddr);
         uint256 adapterBal1Before = IERC20(pos.token1).balanceOf(adapterAddr);
@@ -280,6 +283,18 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
             pos.amount += addedLiquidity;
         }
         // For V3: liquidity is inside the NFT — oracle reads it directly, no amount update
+
+        // RiskManager: enforce caps on the incremental value
+        if (address(riskManager) != address(0)) {
+            uint256 valueAfter = getPositionValue(positionId);
+            uint256 delta = valueAfter > valueBefore ? valueAfter - valueBefore : 0;
+            if (delta > 0) {
+                (bool valid, string memory reason) =
+                    riskManager.validateDeposit(msg.sender, delta, pos.marketId, activePositionCount[msg.sender]);
+                require(valid, reason);
+                riskManager.recordDeposit(delta, pos.marketId);
+            }
+        }
 
         emit CollateralAdded(positionId, addedLiquidity, used0, used1);
     }

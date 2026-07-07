@@ -3,6 +3,8 @@ pragma solidity ^0.8.26;
 
 import {ILPAdapter} from "../interfaces/ILPAdapter.sol";
 import {IUniswapV2Pair, IUniswapV2Factory, IUniswapV2Router} from "../interfaces/external/IUniswapV2.sol";
+import {IERC20 as OZIERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ProtocolCore} from "../core/ProtocolCore.sol";
 import {ACLManager} from "../core/ACLManager.sol";
 
@@ -14,6 +16,8 @@ import {ACLManager} from "../core/ACLManager.sol";
 ///      - LP token amount IS the liquidity
 ///      - removeLiquidity via V2 Router
 contract UniswapV2Adapter is ILPAdapter {
+    using SafeERC20 for OZIERC20;
+
     IUniswapV2Factory public immutable v2Factory;
     IUniswapV2Router public immutable v2Router;
     ProtocolCore public immutable core;
@@ -161,8 +165,8 @@ contract UniswapV2Adapter is ILPAdapter {
         IUniswapV2Pair pair = IUniswapV2Pair(lpToken);
         require(pair.factory() == address(v2Factory), "NOT_OUR_FACTORY");
 
-        IUniswapV2Pair(token0).approve(address(v2Router), amount0);
-        IUniswapV2Pair(token1).approve(address(v2Router), amount1);
+        OZIERC20(token0).forceApprove(address(v2Router), amount0);
+        OZIERC20(token1).forceApprove(address(v2Router), amount1);
 
         (used0, used1, addedLiquidity) = v2Router.addLiquidity(
             token0, token1, amount0, amount1, 0, 0, address(this), block.timestamp
@@ -170,8 +174,8 @@ contract UniswapV2Adapter is ILPAdapter {
 
         // Refund unused tokens to user
         if (refundTo != address(0)) {
-            if (amount0 > used0) IUniswapV2Pair(token0).transfer(refundTo, amount0 - used0);
-            if (amount1 > used1) IUniswapV2Pair(token1).transfer(refundTo, amount1 - used1);
+            if (amount0 > used0) OZIERC20(token0).safeTransfer(refundTo, amount0 - used0);
+            if (amount1 > used1) OZIERC20(token1).safeTransfer(refundTo, amount1 - used1);
         }
     }
 

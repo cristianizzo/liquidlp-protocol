@@ -4,6 +4,8 @@ pragma solidity ^0.8.26;
 import {ILPAdapter} from "../interfaces/ILPAdapter.sol";
 import {INonfungiblePositionManager, IUniswapV3Factory} from "../interfaces/external/IUniswapV3.sol";
 import {IERC20} from "../interfaces/IERC20.sol";
+import {IERC20 as OZIERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ProtocolCore} from "../core/ProtocolCore.sol";
 import {ACLManager} from "../core/ACLManager.sol";
 
@@ -20,6 +22,8 @@ import {ACLManager} from "../core/ACLManager.sol";
 ///      - amount0Min/amount1Min are 0 in decreaseLiquidity because slippage protection is
 ///        handled at the LiquidationEngine level via oracle-based post-swap validation.
 contract UniswapV3Adapter is ILPAdapter {
+    using SafeERC20 for OZIERC20;
+
     INonfungiblePositionManager public immutable nftManager;
     IUniswapV3Factory public immutable v3Factory;
     ProtocolCore public immutable core;
@@ -208,8 +212,8 @@ contract UniswapV3Adapter is ILPAdapter {
 
         (,, address t0, address t1,,,,,,,,) = nftManager.positions(tokenId);
 
-        IERC20(t0).approve(address(nftManager), amount0);
-        IERC20(t1).approve(address(nftManager), amount1);
+        OZIERC20(t0).forceApprove(address(nftManager), amount0);
+        OZIERC20(t1).forceApprove(address(nftManager), amount1);
 
         (uint128 liquidity, uint256 a0, uint256 a1) = nftManager.increaseLiquidity(
             INonfungiblePositionManager.IncreaseLiquidityParams({
@@ -228,8 +232,8 @@ contract UniswapV3Adapter is ILPAdapter {
 
         // Refund unused tokens to user
         if (refundTo != address(0)) {
-            if (amount0 > used0) IERC20(t0).transfer(refundTo, amount0 - used0);
-            if (amount1 > used1) IERC20(t1).transfer(refundTo, amount1 - used1);
+            if (amount0 > used0) OZIERC20(t0).safeTransfer(refundTo, amount0 - used0);
+            if (amount1 > used1) OZIERC20(t1).safeTransfer(refundTo, amount1 - used1);
         }
     }
 
