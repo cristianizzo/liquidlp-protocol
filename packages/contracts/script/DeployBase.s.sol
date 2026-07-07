@@ -232,6 +232,10 @@ abstract contract DeployBase is Script {
         if (cfg.v2Router != address(0)) {
             liquidationEngine.setSwapRouter(cfg.v2Router);
         }
+
+        // Grant KEEPER to security contracts so they can trigger CircuitBreaker.pausePool()
+        aclManager.grantRole(aclManager.KEEPER(), address(priceValidator));
+        aclManager.grantRole(aclManager.KEEPER(), address(poolHealthMonitor));
     }
 
     function _createMarket(ChainConfig memory cfg) internal {
@@ -239,10 +243,18 @@ abstract contract DeployBase is Script {
         if (cfg.v3Pool != address(0)) core.whitelistPool(cfg.v3Pool);
         if (cfg.v2Pool != address(0)) core.whitelistPool(cfg.v2Pool);
 
-        // Create market for the primary LP type
-        ILPAdapter.LPType lpType =
-            cfg.v3NftManager != address(0) ? ILPAdapter.LPType.UniswapV3 : ILPAdapter.LPType.UniswapV2;
+        // Create V3 market if V3 is configured
+        if (cfg.v3NftManager != address(0)) {
+            _createAndWireMarket(ILPAdapter.LPType.UniswapV3, cfg);
+        }
 
+        // Create V2 market if V2 is configured
+        if (cfg.v2Factory != address(0)) {
+            _createAndWireMarket(ILPAdapter.LPType.UniswapV2, cfg);
+        }
+    }
+
+    function _createAndWireMarket(ILPAdapter.LPType lpType, ChainConfig memory cfg) internal {
         (uint256 marketId,) = marketFactory.createMarket(
             lpType,
             cfg.stablecoin,
