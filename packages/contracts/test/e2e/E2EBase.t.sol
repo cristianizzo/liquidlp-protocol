@@ -4,6 +4,7 @@ pragma solidity ^0.8.26;
 import "../helpers/ForkTestBase.sol";
 import {INonfungiblePositionManager, IUniswapV3Pool} from "../../src/interfaces/external/IUniswapV3.sol";
 import {IUniswapV2Pair, IUniswapV2Router} from "../../src/interfaces/external/IUniswapV2.sol";
+import {ILPOracleHub} from "../../src/interfaces/ILPOracleHub.sol";
 
 /// @title E2EBase
 /// @notice Base for end-to-end fork tests. Deploys full protocol + creates real LP positions.
@@ -172,6 +173,34 @@ abstract contract E2EBase is ForkTestBase {
     /// @notice Restore real ETH price by clearing mocks
     function _restoreEthPrice() internal {
         vm.clearMockedCalls();
+    }
+
+    /// @notice Mock oracleHub.getPrice to return a specific USD value
+    /// @dev Bypasses TWAP/Chainlink deviation checks — use for liquidation tests
+    function _mockOraclePrice(
+        address lpToken,
+        uint256 tokenId,
+        uint256 amount,
+        ILPAdapter.LPType lpType,
+        uint256 valueUsd
+    ) internal {
+        vm.mockCall(
+            address(oracleHub),
+            abi.encodeWithSelector(
+                ILPOracleHub.getPrice.selector,
+                lpToken, tokenId, amount, lpType
+            ),
+            abi.encode(
+                ILPOracleHub.PriceResult({
+                    totalValue: valueUsd,
+                    principalValue: valueUsd,
+                    feeValue: 0,
+                    haircut: 700,
+                    confidence: 9500,
+                    timestamp: block.timestamp
+                })
+            )
+        );
     }
 
     // ========== View Helpers ==========
