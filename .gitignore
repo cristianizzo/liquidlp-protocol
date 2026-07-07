@@ -40,5 +40,9 @@ pgdata/
 
 # Docker
 docker-compose.override.yml
-docs/
+
+# Docs (local only, except whitepaper)
+docs/*
+!docs/whitepaper.md
+
 CLAUDE.md
