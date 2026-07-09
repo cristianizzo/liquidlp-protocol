@@ -4,7 +4,7 @@ pragma solidity ^0.8.26;
 import "../E2EBase.t.sol";
 
 /// @title SecurityE2E
-/// @notice Fork-based security tests — real Uniswap, real Chainlink, no mocks.
+/// @notice Fork-based security tests — real Uniswap V2/V3, real Chainlink (vm.mockCall for attack simulation).
 /// @dev Covers all Tier 2 attack vectors from docs/security/attack-vectors.md
 contract SecurityE2E is E2EBase {
     function setUp() public override {
@@ -134,7 +134,7 @@ contract SecurityE2E is E2EBase {
 
     // ========== 6. 100% Utilization ==========
 
-    function test_security_fullUtilization_borrowBlocked() public {
+    function test_security_highUtilization_liquidityDrained() public {
         // Bob supplied 100K in setUp. Alice borrows near max.
         uint256 tokenId = _createV3Position(alice, 2 ether, 4000e6);
         uint256 positionId = _depositV3(alice, tokenId);
