@@ -258,7 +258,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         // Snapshot pre-change value for RiskManager delta tracking
         uint256 valueBefore = getPositionValue(positionId);
 
-        // Pull tokens from user to adapter (balance-delta for fee-on-transfer safety)
+        // Pull tokens from user to adapter (balance-delta to measure actual received)
         uint256 adapterBal0Before = IERC20(pos.token0).balanceOf(adapterAddr);
         uint256 adapterBal1Before = IERC20(pos.token1).balanceOf(adapterAddr);
 
