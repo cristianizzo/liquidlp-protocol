@@ -281,6 +281,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         // For V2: LP tokens were minted → increase stored amount
         if (pos.lpType == ILPAdapter.LPType.UniswapV2 || pos.lpType == ILPAdapter.LPType.PancakeSwapV2) {
             pos.amount += addedLiquidity;
+            require(pos.amount <= type(uint128).max, "AMOUNT_OVERFLOW");
         }
         // For V3: liquidity is inside the NFT — oracle reads it directly, no amount update
 
