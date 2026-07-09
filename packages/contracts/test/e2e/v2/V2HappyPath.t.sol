@@ -14,16 +14,7 @@ contract V2HappyPath is E2EBase {
         // Create a V2 market (the default ethUsdcMarketId is V3)
         vm.startPrank(deployer);
         (v2MarketId,) = marketFactory.createMarket(
-            ILPAdapter.LPType.UniswapV2,
-            Constants.USDC,
-            6500,
-            7500,
-            500,
-            700,
-            10_000_000e6,
-            0,
-            0,
-            "volatile"
+            ILPAdapter.LPType.UniswapV2, Constants.USDC, 6500, 7500, 500, 700, 10_000_000e6, 0, 0, "volatile"
         );
         vm.stopPrank();
 

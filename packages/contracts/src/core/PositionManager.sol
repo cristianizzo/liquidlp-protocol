@@ -279,8 +279,8 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         uint256 received1 = IERC20(pos.token1).balanceOf(adapterAddr) - adapterBal1Before;
 
         // Adapter adds liquidity to the position (unused tokens refunded to user)
-        (uint256 addedLiquidity, uint256 used0, uint256 used1) =
-            ILPAdapter(adapterAddr).addLiquidity(pos.lpToken, pos.tokenId, pos.token0, pos.token1, received0, received1, msg.sender);
+        (uint256 addedLiquidity, uint256 used0, uint256 used1) = ILPAdapter(adapterAddr)
+            .addLiquidity(pos.lpToken, pos.tokenId, pos.token0, pos.token1, received0, received1, msg.sender);
 
         require(addedLiquidity > 0, "ZERO_LIQUIDITY_ADDED");
 

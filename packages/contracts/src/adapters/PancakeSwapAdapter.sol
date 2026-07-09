@@ -66,7 +66,19 @@ contract PancakeSwapAdapter is ILPAdapter {
     }
 
     /// @inheritdoc ILPAdapter
-    function addLiquidity(address, uint256, address, address, uint256, uint256, address) external onlyProtocol returns (uint256, uint256, uint256) {
+    function addLiquidity(
+        address,
+        uint256,
+        address,
+        address,
+        uint256,
+        uint256,
+        address
+    )
+        external
+        onlyProtocol
+        returns (uint256, uint256, uint256)
+    {
         revert("NOT_IMPLEMENTED");
     }
 

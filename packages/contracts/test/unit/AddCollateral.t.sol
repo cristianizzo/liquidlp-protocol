@@ -311,7 +311,7 @@ contract AddCollateralTest is Test {
         // MockLPOracle returns constant price regardless of amount,
         // so we verify RiskManager wiring doesn't revert.
         // Real delta tracking is covered by E2E fork tests with real oracles.
-        oracle.setPrice(5_000e18);
+        oracle.setPrice(5000e18);
 
         vm.startPrank(owner);
         pm.setRiskManager(address(riskManager));

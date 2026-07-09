@@ -100,7 +100,20 @@ contract MockLPAdapter is ILPAdapter {
         return (0, 0);
     }
 
-    function addLiquidity(address, uint256, address, address, uint256 amount0, uint256 amount1, address) external pure override returns (uint256, uint256, uint256) {
+    function addLiquidity(
+        address,
+        uint256,
+        address,
+        address,
+        uint256 amount0,
+        uint256 amount1,
+        address
+    )
+        external
+        pure
+        override
+        returns (uint256, uint256, uint256)
+    {
         return (amount0 + amount1, amount0, amount1);
     }
 

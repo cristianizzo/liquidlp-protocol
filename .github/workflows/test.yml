@@ -1,0 +1,122 @@
+name: Tests
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+env:
+  FOUNDRY_PROFILE: ci
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/contracts
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Install dependencies
+        run: |
+          forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable transmissions11/solmate --no-git
+
+      - name: Build
+        run: forge build --sizes
+
+  test-unit:
+    name: Unit Tests
+    needs: build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/contracts
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Install dependencies
+        run: |
+          forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable transmissions11/solmate --no-git
+
+      - name: Run unit tests
+        run: forge test --match-path 'test/unit/**' -vvv
+
+      - name: Run integration tests
+        run: forge test --match-path 'test/integration/**' -vvv
+
+      - name: Run invariant tests
+        run: forge test --match-path 'test/invariant/**' -vvv
+
+      - name: Run security tests
+        run: forge test --match-path 'test/security/**' -vvv
+
+  test-fork:
+    name: Fork + E2E Tests
+    needs: build
+    runs-on: ubuntu-latest
+    environment: E2E
+    defaults:
+      run:
+        working-directory: packages/contracts
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Install dependencies
+        run: |
+          forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable transmissions11/solmate --no-git
+
+      - name: Start Anvil fork
+        run: |
+          ETH_RPC_URL="https://lb.drpc.org/ogrpc?network=ethereum&dkey=${{ secrets.DRPC_KEY }}"
+          anvil --fork-url "$ETH_RPC_URL" --block-time 12 --chain-id 1 &
+
+      - name: Wait for Anvil
+        run: |
+          for i in $(seq 1 30); do
+            if cast block-number --rpc-url http://localhost:8545 2>/dev/null; then
+              echo "Anvil is ready at block $(cast block-number --rpc-url http://localhost:8545)"
+              exit 0
+            fi
+            echo "Waiting for Anvil... ($i/30)"
+            sleep 2
+          done
+          echo "Anvil failed to start"
+          exit 1
+
+      - name: Run fork tests
+        run: forge test --match-path 'test/fork/**' --fork-url http://localhost:8545 -vvv
+        timeout-minutes: 10
+
+      - name: Run E2E tests
+        run: forge test --match-path 'test/e2e/**' --fork-url http://localhost:8545 -vvv
+        timeout-minutes: 10
+
+  lint:
+    name: Lint & Format
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/contracts
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Install dependencies
+        run: |
+          forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable transmissions11/solmate --no-git
+
+      - name: Check formatting
+        run: forge fmt --check

@@ -64,7 +64,7 @@ contract V3Liquidation is E2EBase {
         //    debtUsd = borrowAmount * 1e12 (USDC 6dec → 18dec)
         //    For HF=0.97: value = 0.97 * debtUsd * 10000 / 7500
         uint256 debtUsd = uint256(borrowAmount) * 1e12;
-        uint256 targetValue = (debtUsd * 10000 * 97) / (7500 * 100);
+        uint256 targetValue = (debtUsd * 10_000 * 97) / (7500 * 100);
 
         PositionManager.Position memory pos = positionManager.getPosition(positionId);
         _mockOraclePrice(pos.lpToken, pos.tokenId, pos.amount, pos.lpType, targetValue);

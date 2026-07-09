@@ -373,7 +373,7 @@ contract AttackVectorTests is Test {
         usdc.mint(alice, 10_000e18);
         vm.startPrank(alice);
         usdc.approve(address(market), type(uint256).max);
-        le.repay(posId, 5_000e18);
+        le.repay(posId, 5000e18);
         vm.stopPrank();
 
         uint256 debt = le.getDebt(posId);
