@@ -32,6 +32,10 @@ contract MockMarket is IMarket {
         });
     }
 
+    function setLpType(ILPAdapter.LPType _lpType) external {
+        _config.lpType = _lpType;
+    }
+
     /// @notice Accrue interest (simplified for testing — just updates index based on elapsed time)
     function accrueInterest() public {
         // In tests, we manually advance time with vm.warp
