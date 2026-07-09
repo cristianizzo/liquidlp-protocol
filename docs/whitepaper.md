@@ -374,7 +374,7 @@ The user stays in the protocol the entire time — no need to visit Uniswap, min
 - **Global borrow cap:** Protocol-wide exposure limit
 - **Critical liquidation:** Full liquidation allowed when HF < 0.95 (prevents bad debt accumulation)
 - **Circuit breakers:** Per-market and per-pool pause on oracle anomalies
-- **Interest rate cap:** Absolute ceiling of ~500% APR per second — governance misconfiguration cannot cause absurd accrual
+- **Interest rate cap:** Absolute ceiling of ~500% APR — governance misconfiguration cannot cause absurd accrual
 
 ### Bad Debt Management (Aave V3.3 Pattern)
 
@@ -406,7 +406,7 @@ A full protocol pause blocks liquidations — bad debt accumulates during the pa
 | **Frozen** | Blocked | Blocked | Allowed | Allowed | Allowed |
 | **Paused** | Blocked | Blocked | Blocked | Blocked | Blocked |
 
-- **Who can freeze:** EMERGENCY_ADMIN or KEEPER (instant — no timelock)
+- **Who can freeze:** EMERGENCY_ADMIN, KEEPER, or POOL_ADMIN (instant — no timelock)
 - **Who can unfreeze:** POOL_ADMIN only (through 48h timelock — prevents premature unfreeze after exploit)
 - **Use cases:** USDC depeg, Chainlink feed stale, pool exploit detected
 

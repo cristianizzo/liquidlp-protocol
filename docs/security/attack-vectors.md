@@ -50,17 +50,16 @@ This document maps all known attack vectors against the LiquidLP protocol, refer
 
 **Current status:** IMPLEMENTED (PR #29) — CircuitBreaker.freezeMarket() blocks deposit/borrow/addCollateral, allows withdraw/repay/liquidate. Note: Market.supply() (lender deposits) is intentionally NOT blocked during freeze — more lender liquidity helps during incidents.
 
-**Plan:**
-- Add `freezeMarket(uint256 marketId)` / `unfreezeMarket(uint256 marketId)` to `CircuitBreaker.sol`
-- Frozen state: `marketFrozen[marketId] = true`
+**Implementation:**
+- `CircuitBreaker.freezeMarket()` / `unfreezeMarket()` with `marketFrozen` mapping
 - When frozen:
-  - Block: `deposit()`, `borrow()`, `addCollateral()`, `supply()`
-  - Allow: `withdraw()`, `repay()`, `liquidate()`
-- Check in `PositionManager.deposit()`, `LendingEngine.borrow()`, `Market.supply()`
-- `freezeMarket()` callable by EMERGENCY_ADMIN or KEEPER (instant)
+  - Block: `deposit()`, `borrow()`, `addCollateral()`
+  - Allow: `withdraw()`, `repay()`, `liquidate()`, `supply()` (lender deposits help during incidents)
+- Checked in `PositionManager.deposit()`, `PositionManager.addCollateral()`, `LendingEngine.borrow()`
+- `freezeMarket()` callable by EMERGENCY_ADMIN, KEEPER, or POOL_ADMIN (instant)
 - `unfreezeMarket()` callable by POOL_ADMIN only (through timelock)
 
-**Governance:** EMERGENCY_ADMIN can freeze instantly. Unfreezing requires POOL_ADMIN (48h timelock), preventing premature unfreeze after exploit.
+**Governance:** EMERGENCY_ADMIN/KEEPER can freeze instantly. Unfreezing requires POOL_ADMIN (48h timelock), preventing premature unfreeze after exploit.
 
 ---
 
@@ -102,13 +101,12 @@ This document maps all known attack vectors against the LiquidLP protocol, refer
 **Current status:** IMPLEMENTED (PR #29) — `InterestRateModel.MAX_RATE_PER_SECOND` caps at ~500% APR.
 
 **Plan:**
-- Add `uint256 public constant MAX_BORROW_RATE = 1e18` to `InterestRateModel.sol` (≈ 100% per second → effectively unlimited but prevents overflow)
-- Actually, a reasonable cap: `MAX_BORROW_RATE_PER_SECOND = 158_548_959_919` (≈ 500% APR)
-- In `getBorrowRate()`: `return min(rate, MAX_BORROW_RATE_PER_SECOND)`
-- In `Market.accrueInterest()`: cap `elapsed` at `MAX_ACCRUAL_PERIOD = 7 days` (if nobody calls accrueInterest for 7+ days, accrue max 7 days at a time)
-- These are safety bounds, not governance-configurable — they're absolute maximums that even the DAO can't exceed.
+**Implementation:**
+- `InterestRateModel.MAX_RATE_PER_SECOND = 158_548_959_919` (≈ 500% APR)
+- `getBorrowRate()` clamps return value to `MAX_RATE_PER_SECOND`
+- Constant in code, not governance-configurable — absolute safety rail.
 
-**Governance:** Constants in code, not configurable. These are safety rails, not parameters.
+**Governance:** Not configurable. Even DAO can't exceed this ceiling.
 
 ---
 

@@ -78,7 +78,7 @@ contract CircuitBreaker {
         emit PoolUnpaused(pool);
     }
 
-    /// @notice Freeze a market — blocks new risk (deposit/borrow/supply) but allows withdraw/repay/liquidate
+    /// @notice Freeze a market — blocks new risk (deposit/borrow/addCollateral) but allows withdraw/repay/liquidate/supply
     /// @dev Use for token depegs, oracle issues, or exploit response (Aave V3 frozen reserve pattern)
     function freezeMarket(uint256 marketId, string calldata reason) external onlyGuardianOrKeeper {
         marketFrozen[marketId] = true;
@@ -91,10 +91,12 @@ contract CircuitBreaker {
         emit MarketUnfrozen(marketId);
     }
 
-    /// @notice Check if operations are allowed for a market
+    /// @notice Check if risk-taking operations are allowed for a market
+    /// @dev Returns false if paused, market-paused, or frozen
     function isOperationAllowed(uint256 marketId) external view returns (bool) {
         if (core.paused()) return false;
         if (marketPaused[marketId]) return false;
+        if (marketFrozen[marketId]) return false;
         return true;
     }
 
