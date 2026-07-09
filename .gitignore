@@ -13,6 +13,9 @@ packages/contracts/out/
 packages/contracts/cache/
 packages/contracts/lib/
 
+# Backend (private repo — keeper keys, liquidation bot, API)
+packages/backend/
+
 # Environment
 .env
 .env.local
