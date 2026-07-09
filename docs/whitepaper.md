@@ -271,18 +271,40 @@ HF < 0.95 → critically underwater → 100% liquidation allowed
 1. **Accrue interest** — ensure health factor uses latest debt
 2. **Verify** — position HF < 1.0
 3. **Pull repayment** from liquidator (borrow asset, e.g., USDC)
-4. **Repay debt** via LendingEngine
+4. **Repay debt** — full repayAmount goes to LendingEngine (no deduction)
 5. **Calculate** proportional liquidity to remove (normalized to 18 decimals for cross-decimal-token safety)
 6. **Unwind LP** — adapter calls DEX to remove liquidity → receives underlying tokens (e.g., ETH + USDC)
 7. **Update position amount** — reduce stored amount to reflect removed liquidity
-8. **Take protocol fee** — 10% of liquidator profit goes to FeeCollector
-9. **Send underlying tokens** directly to liquidator (ETH + USDC)
+8. **Take protocol fee** — % of the bonus portion, deducted proportionally from both underlying tokens (Aave pattern). Fee goes to FeeCollector → treasury + insurance.
+9. **Send remaining tokens** directly to liquidator (ETH + USDC minus fee)
 10. **Return remaining LP** to borrower (if fully liquidated with surplus)
 11. **Mark liquidated** — update position status
 
-**Key design:** The protocol does NOT swap tokens during liquidation. The liquidator receives the raw underlying tokens (e.g., ETH + USDC) directly from the LP unwind. This eliminates swap slippage, MEV sandwich attacks, and SwapRouter dependency from the critical liquidation path. The liquidator decides how and when to sell — the protocol's only job is to ensure the debt is repaid and the collateral is seized.
+### No Swap in Liquidation
 
-**Why no swap?** Every LP lending protocol that swaps during liquidation passes `minAmountOut = 0` and relies on a post-swap check. This is a known weak pattern — sandwich bots extract value up to the slippage tolerance, and if the swap fails (low liquidity, router bug), the entire liquidation fails, causing bad debt. By removing the swap, liquidations cannot fail due to market conditions.
+The protocol does NOT swap tokens during liquidation. The liquidator receives the raw underlying tokens (e.g., ETH + USDC) directly from the LP unwind. This eliminates swap slippage, MEV sandwich attacks, and SwapRouter dependency from the critical liquidation path.
+
+**Why?** Every LP lending protocol that swaps during liquidation passes `minAmountOut = 0` and relies on a post-swap check (including Revert Lend, audited by Code4rena). This is a known weak pattern — sandwich bots extract value up to the slippage tolerance, and if the swap fails (low liquidity, router bug), the entire liquidation fails, causing bad debt. By removing the swap, liquidations cannot fail due to market conditions.
+
+### Protocol Fee on Liquidation (Aave Pattern)
+
+The protocol takes a fee from the **bonus portion** of the seized collateral, not from the repayment amount. This ensures:
+- Full repayAmount goes to debt repayment (no mismatch with maxRepay)
+- Full debt clearance always works
+- Fee is proportional to the liquidator's profit, not the debt size
+
+```
+Example: 5% liquidation bonus, 10% protocol fee on bonus
+
+Liquidator repays:     $16,625 USDC (100% goes to debt)
+Collateral unwound:    2.5 ETH + $10,000 USDC (= $17,456 total, includes 5% bonus)
+Bonus portion:         $831 (5% of $16,625)
+Protocol fee:          $83 (10% of bonus), deducted proportionally from ETH + USDC
+Liquidator receives:   remaining ETH + USDC (~$17,373)
+FeeCollector receives: proportional ETH + USDC (~$83)
+```
+
+The fee is deducted proportionally from both tokens so no swap is needed. FeeCollector accumulates fees in any token — `distribute()` sends them to treasury + insurance.
 
 ### FlashloanLiquidator (Optional Helper)
 

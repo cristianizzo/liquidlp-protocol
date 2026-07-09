@@ -23,10 +23,12 @@ import {PriceFeedRegistry} from "../oracle/PriceFeedRegistry.sol";
 /// @dev The protocol does NOT swap tokens during liquidation. The liquidator receives
 ///      the raw underlying tokens (e.g., ETH + USDC) from the LP unwind. This eliminates
 ///      swap slippage, MEV sandwich attacks, and SwapRouter dependency.
-///      For single-asset liquidation UX, use the FlashloanLiquidator periphery contract.
 ///
-///      Protocol fee is taken from the repayment amount (in borrow asset), not from
-///      the unwound tokens. This keeps the fee calculation simple and deterministic.
+///      Protocol fee (Aave pattern): taken as a % of the liquidation bonus from the
+///      underlying tokens before sending to the liquidator. Fee goes to FeeCollector
+///      for distribution to treasury + insurance.
+///
+///      For single-asset liquidation UX, use the FlashloanLiquidator periphery contract.
 contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable, ReentrancyGuardTransient {
     using SafeERC20 for OZIERC20;
 
@@ -145,28 +147,18 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
             collateralToSeizeNormalized = repayUsd + ((repayUsd * bonus) / 10_000);
         }
 
-        // Step 5: Pull repayment from liquidator
-        uint256 balBefore = IERC20(borrowAsset).balanceOf(address(this));
-        OZIERC20(borrowAsset).safeTransferFrom(msg.sender, address(this), repayAmount);
-        uint256 balAfter = IERC20(borrowAsset).balanceOf(address(this));
-        require(balAfter >= balBefore && balAfter - balBefore == repayAmount, "FEE_ON_TRANSFER_UNSUPPORTED");
-
-        // Step 6: Take protocol fee from repayment (before repaying debt)
-        uint256 protocolFee = 0;
-        if (address(feeCollector) != address(0)) {
-            (protocolFee,) = feeCollector.calculateLiquidationFee(repayAmount);
-            if (protocolFee > 0) {
-                OZIERC20(borrowAsset).forceApprove(address(feeCollector), protocolFee);
-                feeCollector.collectFee(borrowAsset, protocolFee, address(this), "liquidation");
-            }
+        // Step 5: Pull repayment from liquidator and repay full debt
+        // Full repayAmount goes to debt — no fee deduction from repayment.
+        {
+            uint256 balBefore = IERC20(borrowAsset).balanceOf(address(this));
+            OZIERC20(borrowAsset).safeTransferFrom(msg.sender, address(this), repayAmount);
+            uint256 balAfter = IERC20(borrowAsset).balanceOf(address(this));
+            require(balAfter >= balBefore && balAfter - balBefore == repayAmount, "FEE_ON_TRANSFER_UNSUPPORTED");
         }
+        OZIERC20(borrowAsset).forceApprove(marketAddr, repayAmount);
+        lendingEngine.repayOnBehalf(positionId, repayAmount);
 
-        // Step 7: Repay debt via LendingEngine (repayAmount minus protocol fee)
-        uint256 debtRepayment = repayAmount - protocolFee;
-        OZIERC20(borrowAsset).forceApprove(marketAddr, debtRepayment);
-        lendingEngine.repayOnBehalf(positionId, debtRepayment);
-
-        // Step 8: Calculate liquidity to remove proportional to collateral seized
+        // Step 6: Calculate liquidity to remove proportional to collateral seized
         uint256 positionValue = positionManager.getPositionValue(positionId);
         uint256 totalLiquidity = pos.amount;
         uint256 liquidityToRemove256;
@@ -179,7 +171,7 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
         require(liquidityToRemove256 <= type(uint128).max, "LIQUIDITY_OVERFLOW");
         uint128 liquidityToRemove = uint128(liquidityToRemove256);
 
-        // Step 9: Unwind LP — reduce position amount BEFORE external call (CEI pattern)
+        // Step 7: Unwind LP — reduce position amount BEFORE external call (CEI pattern)
         address adapterAddr = core.adapters(pos.lpType);
         require(adapterAddr != address(0), "ADAPTER_NOT_SET");
         ILPAdapter adapter = ILPAdapter(adapterAddr);
@@ -187,9 +179,37 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
         positionManager.reducePositionAmount(positionId, liquidityToRemove256);
         (uint256 amount0, uint256 amount1) = adapter.unwind(pos.lpToken, pos.tokenId, liquidityToRemove);
 
-        // Step 10: Send underlying tokens directly to liquidator — NO SWAP
-        // The liquidator receives the raw tokens from the LP unwind (e.g., ETH + USDC).
-        // They decide how/when to sell. This eliminates swap slippage and MEV risk.
+        // Step 8: Protocol fee — taken from underlying tokens (Aave pattern).
+        // Fee = liquidationFeeBps % of the bonus portion of the seized collateral.
+        // This is proportionally deducted from both token0 and token1.
+        // Example: 5% bonus, 10% fee on bonus = 0.5% of total collateral.
+        if (address(feeCollector) != address(0) && bonus > 0) {
+            uint256 feeBps = feeCollector.liquidationFeeBps();
+            // fee% of the bonus portion: (bonus / (10000 + bonus)) * feeBps / 10000
+            // Simplified: feeBps * bonus / (10000 * (10000 + bonus))
+            // Applied proportionally to each token amount.
+            uint256 denominator = 10_000 * (10_000 + bonus);
+            uint256 feeNumerator = feeBps * bonus;
+
+            if (amount0 > 0 && feeNumerator > 0) {
+                uint256 fee0 = Math.mulDiv(amount0, feeNumerator, denominator);
+                if (fee0 > 0) {
+                    amount0 -= fee0;
+                    OZIERC20(pos.token0).forceApprove(address(feeCollector), fee0);
+                    feeCollector.collectFee(pos.token0, fee0, address(this), "liquidation");
+                }
+            }
+            if (amount1 > 0 && feeNumerator > 0) {
+                uint256 fee1 = Math.mulDiv(amount1, feeNumerator, denominator);
+                if (fee1 > 0) {
+                    amount1 -= fee1;
+                    OZIERC20(pos.token1).forceApprove(address(feeCollector), fee1);
+                    feeCollector.collectFee(pos.token1, fee1, address(this), "liquidation");
+                }
+            }
+        }
+
+        // Step 9: Send remaining underlying tokens to liquidator — NO SWAP
         if (amount0 > 0) {
             OZIERC20(pos.token0).safeTransfer(msg.sender, amount0);
         }
@@ -197,7 +217,7 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
             OZIERC20(pos.token1).safeTransfer(msg.sender, amount1);
         }
 
-        // Step 11: Handle full debt repayment — return remaining LP to borrower
+        // Step 10: Handle full debt repayment — return remaining LP to borrower
         uint256 remainingDebt = lendingEngine.getDebt(positionId);
         if (remainingDebt == 0) {
             PositionManager.Position memory freshPos = positionManager.getPosition(positionId);
