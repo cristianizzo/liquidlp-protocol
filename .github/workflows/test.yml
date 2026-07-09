@@ -51,10 +51,14 @@ jobs:
       - name: Run invariant tests
         run: forge test --match-path 'test/invariant/**' -vvv
 
+      - name: Run security tests
+        run: forge test --match-path 'test/security/**' -vvv
+
   test-fork:
     name: Fork + E2E Tests
     needs: build
     runs-on: ubuntu-latest
+    environment: E2E
     defaults:
       run:
         working-directory: packages/contracts
@@ -68,21 +72,23 @@ jobs:
 
       - name: Start Anvil fork
         run: |
-          anvil --fork-url ${{ secrets.ETH_RPC_URL }} --block-time 12 --chain-id 1 &
-          sleep 5
-        env:
-          ETH_RPC_URL: ${{ secrets.ETH_RPC_URL }}
+          ETH_RPC_URL="https://lb.drpc.org/ogrpc?network=ethereum&dkey=${{ secrets.DRPC_KEY }}"
+          anvil --fork-url "$ETH_RPC_URL" --block-time 12 --chain-id 1 &
 
       - name: Wait for Anvil
         run: |
           for i in $(seq 1 30); do
             if cast block-number --rpc-url http://localhost:8545 2>/dev/null; then
-              echo "Anvil is ready"
+              echo "Anvil is ready at block $(cast block-number --rpc-url http://localhost:8545)"
               break
             fi
             echo "Waiting for Anvil... ($i/30)"
             sleep 2
           done
+
+      - name: Deploy contracts to fork
+        run: forge script script/Deploy.s.sol --rpc-url http://localhost:8545 --broadcast
+        timeout-minutes: 5
 
       - name: Run fork tests
         run: forge test --match-path 'test/fork/**' --fork-url http://localhost:8545 -vvv
