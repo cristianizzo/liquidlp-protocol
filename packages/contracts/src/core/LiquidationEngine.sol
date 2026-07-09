@@ -230,6 +230,15 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
             }
 
             positionManager.markLiquidated(positionId, msg.sender, repayAmount);
+        } else {
+            // Step 11: Bad debt writeoff — position underwater, no collateral left to seize
+            // Check if position has remaining collateral value (works for both V2 and V3)
+            uint256 remainingValue = positionManager.getPositionValue(positionId);
+            if (remainingValue == 0) {
+                // No collateral value left — write off remaining debt as bad debt
+                lendingEngine.writeOffDebt(positionId);
+                positionManager.markLiquidated(positionId, msg.sender, repayAmount);
+            }
         }
 
         // profit is not directly calculable here since liquidator receives two tokens.

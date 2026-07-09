@@ -14,6 +14,8 @@ contract InterestRateModel {
 
     uint256 internal constant BPS = 10_000;
     uint256 internal constant SECONDS_PER_YEAR = 365.25 days;
+    /// @dev Safety cap: ~500% APR. Prevents absurd accrual from governance misconfiguration.
+    uint256 public constant MAX_RATE_PER_SECOND = 158_548_959_919;
 
     constructor(uint256 baseRateAnnualBps, uint256 slope1AnnualBps, uint256 slope2AnnualBps, uint256 _kink) {
         require(_kink > 0 && _kink < BPS, "INVALID_KINK");
@@ -35,6 +37,7 @@ contract InterestRateModel {
             uint256 excessRange = BPS - kink;
             ratePerSecond = rateAtKink + (slope2PerSecond * excessUtilization) / excessRange;
         }
+        if (ratePerSecond > MAX_RATE_PER_SECOND) ratePerSecond = MAX_RATE_PER_SECOND;
     }
 
     /// @notice Calculate supply rate (what lenders earn)

@@ -374,6 +374,43 @@ The user stays in the protocol the entire time — no need to visit Uniswap, min
 - **Global borrow cap:** Protocol-wide exposure limit
 - **Critical liquidation:** Full liquidation allowed when HF < 0.95 (prevents bad debt accumulation)
 - **Circuit breakers:** Per-market and per-pool pause on oracle anomalies
+- **Interest rate cap:** Absolute ceiling of ~500% APR — governance misconfiguration cannot cause absurd accrual
+
+### Bad Debt Management (Aave V3.3 Pattern)
+
+When collateral crashes to $0, liquidation may not recover the full debt. Previous LP lending protocols (Impermax, Revert) had no mechanism for this — bad debt stayed on the books accruing phantom interest forever.
+
+LiquidLP handles bad debt automatically:
+
+1. **During liquidation:** If collateral is fully consumed but debt remains, the remaining debt is **burned** from `totalBorrow` and recorded as `deficit` on the market.
+2. **Deficit coverage:** `protocolReserves` (the protocol's accumulated interest share) are used to cover the deficit. `RISK_ADMIN` triggers `eliminateDeficit()` to apply reserves against accumulated bad debt.
+3. **Isolation:** Each market tracks its own deficit independently. Bad debt in one market does not affect others (same isolation as Morpho Blue).
+
+```
+Underwater position → liquidation → collateral = 0, debt remains
+                                          ↓
+                              LendingEngine.writeOffDebt()
+                                          ↓
+                     Market.recordDeficit() — burns debt, tracks deficit
+                                          ↓
+                     Market.eliminateDeficit() — covers with protocolReserves
+```
+
+### Frozen Market State (Aave V3 Pattern)
+
+A full protocol pause blocks liquidations — bad debt accumulates during the pause. For targeted incidents (token depeg, oracle issue, exploit), the protocol supports a **frozen** state:
+
+| State | Deposits | Borrows | Withdrawals | Repayments | Liquidations |
+|---|---|---|---|---|---|
+| **Normal** | Allowed | Allowed | Allowed | Allowed | Allowed |
+| **Frozen** | Blocked | Blocked | Allowed | Allowed | Allowed |
+| **Paused** | Blocked | Blocked | Blocked | Blocked | Blocked |
+
+- **Who can freeze:** EMERGENCY_ADMIN, KEEPER, or POOL_ADMIN (instant — no timelock)
+- **Who can unfreeze:** POOL_ADMIN only (through 48h timelock — prevents premature unfreeze after exploit)
+- **Use cases:** USDC depeg, Chainlink feed stale, pool exploit detected
+
+This mirrors Aave V3's "frozen reserve" mechanism, which was used during the March 2023 USDC depeg and the April 2026 Kelp exploit.
 
 ---
 
@@ -527,6 +564,9 @@ All proxied contracts include a `uint256[N] private __gap` storage gap for futur
 - Events on every state change (full transparency)
 - Absolute bounds on all configurable parameters (can't be exceeded even by DAO)
 - CEI pattern (checks-effects-interactions) throughout
+- Bad debt auto-writeoff during liquidation (deficit tracking — see Section 8)
+- Frozen market state for surgical incident response (see Section 8)
+- Interest rate hard cap (~500% APR) — prevents accrual bombs from governance misconfiguration
 - USDT-compatible ERC20 approvals (approve(0) before approve(amount))
 - Rescue function for stuck tokens in LiquidationEngine
 
