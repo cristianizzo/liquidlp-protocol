@@ -24,7 +24,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable transmissions11/solmate --no-commit
+          forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable transmissions11/solmate --no-git
 
       - name: Build
         run: forge build --sizes
@@ -44,7 +44,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable transmissions11/solmate --no-commit
+          forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable transmissions11/solmate --no-git
 
       - name: Run unit tests
         run: forge test --match-path 'test/unit/**' -vvv
@@ -74,7 +74,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable transmissions11/solmate --no-commit
+          forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable transmissions11/solmate --no-git
 
       - name: Start Anvil fork
         run: |
@@ -116,7 +116,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable transmissions11/solmate --no-commit
+          forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable transmissions11/solmate --no-git
 
       - name: Check formatting
         run: forge fmt --check
