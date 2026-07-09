@@ -28,6 +28,7 @@ contract LPOracleHub is ILPOracleHub, Initializable, UUPSUpgradeable {
     }
 
     function initialize(address _core) external initializer {
+        require(_core != address(0), "ZERO_ADDRESS");
         core = ProtocolCore(_core);
     }
 
@@ -36,6 +37,7 @@ contract LPOracleHub is ILPOracleHub, Initializable, UUPSUpgradeable {
     /// @inheritdoc ILPOracleHub
     function registerOracle(ILPAdapter.LPType lpType, address oracle) external onlyPoolAdmin {
         require(oracle != address(0), "ZERO_ADDRESS");
+        require(oracle.code.length > 0, "NOT_CONTRACT");
         oracles[lpType] = oracle;
     }
 
