@@ -182,8 +182,10 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
         // Step 8: Protocol fee — taken from underlying tokens (Aave pattern).
         // Fee = liquidationFeeBps % of the bonus portion of the seized collateral.
         // This is proportionally deducted from both token0 and token1.
-        // Example: 5% bonus, 10% fee on bonus = 0.5% of total collateral.
-        if (address(feeCollector) != address(0) && bonus > 0) {
+        // When underwater (seize >= positionValue), no real bonus exists — skip fee.
+        // This ensures underwater positions remain attractive to liquidators.
+        bool hasRealBonus = collateralToSeizeNormalized < positionValue;
+        if (address(feeCollector) != address(0) && bonus > 0 && hasRealBonus) {
             uint256 feeBps = feeCollector.liquidationFeeBps();
             // fee% of the bonus portion: (bonus / (10000 + bonus)) * feeBps / 10000
             // Simplified: feeBps * bonus / (10000 * (10000 + bonus))

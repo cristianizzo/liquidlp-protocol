@@ -6,6 +6,11 @@ pragma solidity ^0.8.26;
 /// @dev Liquidators send borrow asset (repay debt) and receive the raw underlying tokens
 ///      from the LP unwind (e.g., ETH + USDC). No swap inside the protocol.
 interface ILiquidationEngine {
+    /// @param positionId The liquidated position
+    /// @param liquidator The address that called liquidate
+    /// @param repayAmount Borrow asset amount sent by liquidator (fully applied to debt)
+    /// @param collateralSeized USD value (18 decimals) of collateral removed from position
+    /// @param liquidatorProfit Always 0 — profit is implicit in the underlying tokens received
     event LiquidationExecuted(
         uint256 indexed positionId,
         address indexed liquidator,
