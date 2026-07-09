@@ -277,6 +277,8 @@ abstract contract DeployBase is Script {
     }
 
     function _deployTimelock(ChainConfig memory cfg) internal {
+        require(cfg.multisig != address(0), "ZERO_MULTISIG");
+
         address[] memory proposers = new address[](1);
         proposers[0] = cfg.multisig;
         address[] memory executors = new address[](1);

@@ -19,6 +19,9 @@ import {RiskManager} from "../src/security/RiskManager.sol";
 import {PoolHealthMonitor} from "../src/security/PoolHealthMonitor.sol";
 import {PositionViewer} from "../src/periphery/PositionViewer.sol";
 
+/// @dev DEPRECATED — use chain-specific scripts in script/deploy/ instead.
+///      Those scripts deploy TimelockController and transfer admin roles.
+///      This script is kept for local development only (no timelock, no role transfer).
 contract Deploy is Script {
     // Deployed contract addresses stored as state to avoid stack-too-deep
     ACLManager public aclManager;
