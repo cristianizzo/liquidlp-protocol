@@ -227,11 +227,8 @@ abstract contract DeployBase is Script {
         positionManager.setCircuitBreaker(address(circuitBreaker));
         lendingEngine.setRiskManager(address(riskManager));
 
-        // Wire swap router for liquidation collateral swaps
-        // Uses V2 router if available, otherwise requires manual config post-deploy
-        if (cfg.v2Router != address(0)) {
-            liquidationEngine.setSwapRouter(cfg.v2Router);
-        }
+        // No swap router needed — liquidation sends underlying tokens directly to liquidator.
+        // FlashloanLiquidator (periphery) handles swaps outside the core protocol.
 
         // Grant KEEPER to security contracts so they can trigger CircuitBreaker.pausePool()
         aclManager.grantRole(aclManager.KEEPER(), address(priceValidator));

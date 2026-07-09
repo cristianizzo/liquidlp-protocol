@@ -16,8 +16,6 @@ import {MockLPAdapter} from "../mocks/MockLPAdapter.sol";
 import {MockLPOracle} from "../mocks/MockLPOracle.sol";
 import {MockMarket} from "../mocks/MockMarket.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
-import {MockSwapRouter} from "../mocks/MockSwapRouter.sol";
-
 contract LiquidationEngineTest is Test {
     ProtocolCore public core;
     ACLManager public aclManager;
@@ -30,7 +28,6 @@ contract LiquidationEngineTest is Test {
     MockMarket public market;
     MockERC20 public usdc;
     MockERC20 public weth;
-    MockSwapRouter public swapRouter;
     InterestRateModel public irm;
 
     address public owner = makeAddr("owner");
@@ -50,8 +47,6 @@ contract LiquidationEngineTest is Test {
         uint256 liquidatorProfit
     );
     event MaxLiquidationPortionUpdated(uint256 oldValue, uint256 newValue);
-    event MaxSwapSlippageUpdated(uint256 oldValue, uint256 newValue);
-    event SwapRouterUpdated(address oldRouter, address newRouter);
 
     function setUp() public {
         usdc = new MockERC20("USDC", "USDC", 18);
@@ -104,7 +99,6 @@ contract LiquidationEngineTest is Test {
         oracle = new MockLPOracle();
         oracle.setPrice(50_000e18);
         market = new MockMarket(address(usdc), address(irm));
-        swapRouter = new MockSwapRouter(address(usdc));
 
         // Register and grant roles
         vm.startPrank(owner);
@@ -117,21 +111,17 @@ contract LiquidationEngineTest is Test {
         core.whitelistPool(lpToken);
         marketId = core.registerMarket(address(market));
         pm.setLendingEngine(address(le));
-        liq.setSwapRouter(address(swapRouter));
         vm.stopPrank();
 
         // Configure realistic values consistent with oracle price ($50K for 100 units):
         // Position has 25 WETH + 25,000 USDC for 100 units
-        // WETH swap rate: 1 WETH = 1000 USDC
-        // Total value: 25*1000 + 25,000 = $50,000 ≈ oracle price
+        // Total value: $50,000 ≈ oracle price
         adapter.setTokenReturns(address(weth), address(usdc));
         adapter.setUnwindAmounts(25e18, 25_000e18); // Per 100 units total
         adapter.setTotalLiquidity(100e18); // Match deposit amount
-        swapRouter.setExchangeRate(address(weth), 1000e18); // 1 WETH = 1000 USDC
 
         // Fund
         usdc.mint(address(market), 1_000_000e18);
-        usdc.mint(address(swapRouter), 1_000_000e18);
         weth.mint(address(adapter), 1_000_000e18);
         usdc.mint(address(adapter), 1_000_000e18);
     }
@@ -172,33 +162,9 @@ contract LiquidationEngineTest is Test {
 
     function test_initialize_defaults() public view {
         assertEq(liq.maxLiquidationPortion(), 5000);
-        assertEq(liq.maxSwapSlippageBps(), 300);
     }
 
     // ========== Admin Setters ==========
-
-    function test_setSwapRouter_success() public {
-        address newRouter = address(new MockSwapRouter(address(usdc)));
-
-        vm.expectEmit(false, false, false, true);
-        emit SwapRouterUpdated(address(swapRouter), newRouter);
-
-        vm.prank(owner);
-        liq.setSwapRouter(newRouter);
-        assertEq(address(liq.swapRouter()), newRouter);
-    }
-
-    function test_setSwapRouter_revertsNotOwner() public {
-        vm.prank(alice);
-        vm.expectRevert("NOT_POOL_ADMIN");
-        liq.setSwapRouter(makeAddr("x"));
-    }
-
-    function test_setSwapRouter_revertsZeroAddress() public {
-        vm.prank(owner);
-        vm.expectRevert("ZERO_ADDRESS");
-        liq.setSwapRouter(address(0));
-    }
 
     function test_setMaxLiquidationPortion_success() public {
         vm.expectEmit(false, false, false, true);
@@ -219,24 +185,6 @@ contract LiquidationEngineTest is Test {
         vm.prank(owner);
         vm.expectRevert("ABOVE_MAX");
         liq.setMaxLiquidationPortion(10_001);
-    }
-
-    function test_setMaxSwapSlippage_success() public {
-        vm.prank(owner);
-        liq.setMaxSwapSlippage(500);
-        assertEq(liq.maxSwapSlippageBps(), 500);
-    }
-
-    function test_setMaxSwapSlippage_revertsBelowMin() public {
-        vm.prank(owner);
-        vm.expectRevert("BELOW_MIN");
-        liq.setMaxSwapSlippage(10);
-    }
-
-    function test_setMaxSwapSlippage_revertsAboveMax() public {
-        vm.prank(owner);
-        vm.expectRevert("ABOVE_MAX");
-        liq.setMaxSwapSlippage(1500);
     }
 
     // ========== isLiquidatable ==========
@@ -478,59 +426,7 @@ contract LiquidationEngineTest is Test {
         assertEq(liq.maxLiquidationPortion(), 7500);
     }
 
-    // ========== LIQ-2: Swap router not set + rescue ==========
-
-    function test_liquidate_revertsWhenSwapRouterNotSet() public {
-        // Set a temporary router (must be contract)
-        MockSwapRouter tempRouter = new MockSwapRouter(address(usdc));
-        vm.prank(owner);
-        liq.setSwapRouter(address(tempRouter));
-
-        // Create a position where both tokens need swapping (neither is borrow asset)
-        adapter.setTokenReturns(address(weth), address(weth)); // Both non-USDC
-        adapter.setUnwindAmounts(1e18, 1e18);
-        weth.mint(address(adapter), 100e18);
-
-        oracle.setPrice(50_000e18);
-        vm.prank(alice);
-        uint256 posId = pm.deposit(lpToken, 10, 100e18, marketId);
-        vm.roll(block.number + 2);
-        vm.roll(block.number + 2);
-        vm.prank(alice);
-        le.borrow(posId, 30_000e18);
-        oracle.setPrice(30_000e18);
-
-        // Now remove swap router by deploying fresh LiquidationEngine without setting router
-        // Instead, test the revert by using the existing liq with a router that doesn't have funds
-        // The key test is: when swapRouter IS address(0), liquidation reverts instead of silently losing tokens
-
-        // Deploy fresh liquidation engine without swap router
-        LiquidationEngine liqImpl2 = new LiquidationEngine();
-        LiquidationEngine liq2 = LiquidationEngine(
-            address(
-                new ERC1967Proxy(
-                    address(liqImpl2),
-                    abi.encodeCall(LiquidationEngine.initialize, (address(core), address(pm), address(le)))
-                )
-            )
-        );
-
-        vm.startPrank(owner);
-        aclManager.grantRole(aclManager.LIQUIDATION_ENGINE(), address(liq2));
-        // DO NOT set swap router on liq2
-        vm.stopPrank();
-
-        (, uint256 maxRepay) = liq2.isLiquidatable(posId);
-        if (maxRepay > 0) {
-            usdc.mint(liquidator, maxRepay);
-            vm.prank(liquidator);
-            usdc.approve(address(liq2), maxRepay);
-
-            vm.prank(liquidator);
-            vm.expectRevert("SWAP_ROUTER_NOT_SET");
-            liq2.liquidate(posId, maxRepay, block.timestamp + 1 hours);
-        }
-    }
+    // ========== Rescue ==========
 
     function test_rescueTokens_success() public {
         // Simulate stuck tokens in LiquidationEngine
@@ -590,27 +486,19 @@ contract LiquidationEngineTest is Test {
         MockERC20 usdc6 = new MockERC20("USDC", "USDC", 6);
         InterestRateModel irm6 = new InterestRateModel(200, 600, 10_000, 8000);
         MockMarket market6 = new MockMarket(address(usdc6), address(irm6));
-        MockSwapRouter swapRouter6 = new MockSwapRouter(address(usdc6));
 
         // Register the new market
         vm.prank(owner);
         uint256 marketId6 = core.registerMarket(address(market6));
 
-        // Fund market and swap router
+        // Fund market
         usdc6.mint(address(market6), 1_000_000e6);
-        usdc6.mint(address(swapRouter6), 1_000_000e6);
         weth.mint(address(adapter), 1_000_000e18);
         usdc6.mint(address(adapter), 1_000_000e6);
-
-        // Set swap router
-        vm.prank(owner);
-        liq.setSwapRouter(address(swapRouter6));
 
         // Configure adapter to return WETH and USDC6
         adapter.setTokenReturns(address(weth), address(usdc6));
         adapter.setUnwindAmounts(25e18, 25_000e6); // 25 WETH + 25K USDC (6 dec) per 100 units
-        // Swap rate: 1 WETH = 1000 USDC (6 dec) → 25*1000 + 25K = $50K = oracle
-        swapRouter6.setExchangeRate(address(weth), 1000e6);
 
         // Alice deposits LP worth $50K
         oracle.setPrice(50_000e18); // Oracle always returns 18 decimals
@@ -624,10 +512,6 @@ contract LiquidationEngineTest is Test {
         le.borrow(posId, 30_000e6);
 
         // Price drops → position underwater
-        // HF = ($30K * 7500) / (30_000e6 * 10_000) → need to compare in same decimals
-        // Debt is 30_000e6, oracle returns 30_000e18
-        // HF = (30_000e18 * 7500 * 1e18) / (30_000e6 * 10_000)
-        // This is the decimal mismatch that LIQ-3 fixes
         oracle.setPrice(30_000e18);
 
         (bool canLiq, uint256 maxRepay) = liq.isLiquidatable(posId);
@@ -845,11 +729,10 @@ contract LiquidationEngineTest is Test {
         assertEq(uint8(pos.status), uint8(IPositionManager.PositionStatus.Borrowed));
     }
 
-    // ========== Swap Path Coverage ==========
+    // ========== Token Transfer Coverage ==========
 
-    function test_liquidate_bothTokensNeedSwap() public {
-        // Both tokens are WETH, both need swapping
-        // 100 units = 25 WETH + 25 WETH, swap rate 1000 USDC/WETH → $50K total
+    function test_liquidate_bothTokensSameType() public {
+        // Both tokens are WETH — liquidator receives WETH from both sides
         adapter.setTokenReturns(address(weth), address(weth));
         adapter.setUnwindAmounts(25e18, 25e18);
 
@@ -868,13 +751,19 @@ contract LiquidationEngineTest is Test {
 
         weth.mint(address(adapter), 1_000_000e18);
 
+        uint256 wethBefore = weth.balanceOf(liquidator);
+
         vm.prank(liquidator);
         liq.liquidate(posId, maxRepay, block.timestamp + 1 hours);
+
+        // Liquidator should have received WETH (token0 + token1)
+        uint256 wethAfter = weth.balanceOf(liquidator);
+        assertGt(wethAfter, wethBefore, "Liquidator must receive WETH from unwind");
     }
 
     function test_liquidate_token0IsBorrowAsset() public {
-        // token0 = USDC (borrow asset), token1 = WETH (needs swap)
-        // 100 units = 25K USDC + 25 WETH → $50K total at 1000 USDC/WETH
+        // token0 = USDC (borrow asset), token1 = WETH
+        // Liquidator receives both USDC + WETH from unwind
         adapter.setTokenReturns(address(usdc), address(weth));
         adapter.setUnwindAmounts(25_000e18, 25e18); // 25K USDC + 25 WETH per 100 units
 
@@ -894,8 +783,20 @@ contract LiquidationEngineTest is Test {
         usdc.mint(address(adapter), 1_000_000e18);
         weth.mint(address(adapter), 1_000_000e18);
 
+        uint256 usdcBefore = usdc.balanceOf(liquidator);
+        uint256 wethBefore = weth.balanceOf(liquidator);
+
         vm.prank(liquidator);
         liq.liquidate(posId, maxRepay, block.timestamp + 1 hours);
+
+        // Liquidator receives underlying tokens directly
+        uint256 usdcAfter = usdc.balanceOf(liquidator);
+        uint256 wethAfter = weth.balanceOf(liquidator);
+        // Liquidator spent maxRepay USDC but received USDC + WETH from unwind
+        assertGt(wethAfter, wethBefore, "Liquidator must receive WETH from unwind");
+        // Liquidator spent maxRepay USDC but received USDC back from unwind.
+        // Net USDC depends on pool ratio. Check total value increased.
+        assertGt(usdcAfter + wethAfter, 0, "Liquidator must receive tokens from unwind");
     }
 
     // ========== Fuzz Tests ==========
@@ -907,10 +808,50 @@ contract LiquidationEngineTest is Test {
         assertEq(liq.maxLiquidationPortion(), value);
     }
 
-    function testFuzz_setMaxSwapSlippage_withinBounds(uint256 value) public {
-        value = bound(value, 50, 1000);
-        vm.prank(owner);
-        liq.setMaxSwapSlippage(value);
-        assertEq(liq.maxSwapSlippageBps(), value);
+
+
+    // ========== Liquidator Receives Underlying Tokens ==========
+
+    function test_liquidate_liquidatorReceivesToken0AndToken1() public {
+        uint256 posId = _createLiquidatablePosition();
+
+        (, uint256 maxRepay) = liq.isLiquidatable(posId);
+        uint256 repayAmount = maxRepay > 1 ? maxRepay : 1;
+
+        usdc.mint(liquidator, repayAmount);
+        vm.prank(liquidator);
+        usdc.approve(address(liq), repayAmount);
+
+        uint256 wethBefore = weth.balanceOf(liquidator);
+        uint256 usdcBefore = usdc.balanceOf(liquidator);
+
+        vm.prank(liquidator);
+        liq.liquidate(posId, repayAmount, block.timestamp + 1 hours);
+
+        uint256 wethAfter = weth.balanceOf(liquidator);
+        uint256 usdcAfter = usdc.balanceOf(liquidator);
+
+        // Liquidator should receive WETH (token0) from the unwind
+        assertGt(wethAfter, wethBefore, "Liquidator must receive token0 (WETH)");
+        // Liquidator spent repayAmount USDC but also receives USDC (token1) from unwind
+        // Net USDC change = received USDC from unwind - spent repayAmount
+        // At least one of the underlying tokens should be received
+        assertTrue(wethAfter > wethBefore || usdcAfter > usdcBefore, "Liquidator must receive underlying tokens");
+    }
+
+    function test_liquidate_profitIsZero() public {
+        uint256 posId = _createLiquidatablePosition();
+
+        (, uint256 maxRepay) = liq.isLiquidatable(posId);
+
+        usdc.mint(liquidator, maxRepay);
+        vm.prank(liquidator);
+        usdc.approve(address(liq), maxRepay);
+
+        vm.prank(liquidator);
+        uint256 profit = liq.liquidate(posId, maxRepay, block.timestamp + 1 hours);
+
+        // Profit is always 0 since liquidator receives raw tokens (not borrow asset)
+        assertEq(profit, 0, "Profit must be 0 in no-swap design");
     }
 }

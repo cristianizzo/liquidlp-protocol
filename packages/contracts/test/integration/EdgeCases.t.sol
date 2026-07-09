@@ -18,7 +18,6 @@ import {IMarket} from "../../src/interfaces/IMarket.sol";
 import {MockLPAdapter} from "../mocks/MockLPAdapter.sol";
 import {MockLPOracle} from "../mocks/MockLPOracle.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
-import {MockSwapRouter} from "../mocks/MockSwapRouter.sol";
 
 /// @title EdgeCasesTest
 /// @notice Tests for edge cases: different decimals, dust amounts, extreme values,

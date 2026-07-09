@@ -16,18 +16,16 @@ import {MockLPAdapter} from "../mocks/MockLPAdapter.sol";
 import {MockLPOracle} from "../mocks/MockLPOracle.sol";
 import {MockMarket} from "../mocks/MockMarket.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
-import {MockSwapRouter} from "../mocks/MockSwapRouter.sol";
 import {MockPriceFeedRegistry} from "../mocks/MockPriceFeedRegistry.sol";
 
 /// @title LiquidationDecimalTest
 /// @notice Full liquidation flow tests with REAL decimal configurations
-/// @dev Tests the complete borrow → price drop → liquidate → swap → profit flow
+/// @dev Tests the complete borrow → price drop → liquidate → send underlying tokens flow
 ///      using 6-decimal USDC and 8-decimal WBTC to exercise all decimal conversion paths:
 ///      - PositionManager.getHealthFactor (debt → USD via PriceFeedRegistry)
 ///      - LendingEngine._getMaxBorrow (USD → borrow asset decimals)
 ///      - LiquidationEngine._getRepayValueUsd (borrow amount → USD)
-///      - LiquidationEngine slippage check (receivedUsd vs collateralToSeize)
-///      - Profit/payout math (native borrow asset decimals)
+///      - Underlying token transfer to liquidator
 contract LiquidationDecimalTest is Test {
     ProtocolCore public core;
     ACLManager public aclManager;
@@ -108,28 +106,23 @@ contract LiquidationDecimalTest is Test {
         // Setup: 6-decimal USDC market with PriceFeedRegistry
         MockERC20 usdc6 = new MockERC20("USDC", "USDC", 6);
         MockMarket market6 = new MockMarket(address(usdc6), address(irm));
-        MockSwapRouter router6 = new MockSwapRouter(address(usdc6));
         MockPriceFeedRegistry registry = new MockPriceFeedRegistry();
         registry.setPrice(address(usdc6), 1e18); // $1.00
 
         vm.startPrank(owner);
         uint256 marketId = core.registerMarket(address(market6));
-        liq.setSwapRouter(address(router6));
         pm.setPriceFeedRegistry(address(registry));
         vm.stopPrank();
 
-        // Fund: market + swap router + adapter
+        // Fund: market + adapter
         usdc6.mint(address(market6), 10_000_000e6);
-        usdc6.mint(address(router6), 10_000_000e6);
         usdc6.mint(address(adapter), 10_000_000e6);
         weth.mint(address(adapter), 10_000_000e18);
 
         // Adapter: 100 units → 25 WETH + 25K USDC6
-        // Swap rate: 1 WETH = 1000 USDC6 → 25*1000 + 25K = $50K
         adapter.setTokenReturns(address(weth), address(usdc6));
         adapter.setUnwindAmounts(25e18, 25_000e6);
         adapter.setTotalLiquidity(100e18);
-        router6.setExchangeRate(address(weth), 1000e6); // 1 WETH = 1000 USDC (6 dec)
 
         // Alice deposits, oracle = $50K
         oracle.setPrice(50_000e18);
@@ -138,9 +131,6 @@ contract LiquidationDecimalTest is Test {
         vm.roll(block.number + 2);
 
         // Borrow 30K USDC (6 dec)
-        // _getMaxBorrow: 50_000e18 * 6500 / 10000 = 32_500e18 USD
-        // via registry: 32_500e18 * 1e6 / 1e18 = 32_500e6 USDC
-        // 30_000e6 <= 32_500e6 ✓
         vm.prank(alice);
         le.borrow(posId, 30_000e6);
 
@@ -148,8 +138,6 @@ contract LiquidationDecimalTest is Test {
         assertEq(debt, 30_000e6, "Debt should be 30K in 6-dec");
 
         // Price drops to $39K → HF = (39K * 7500) / (30K * 10000) = 0.975
-        // getHealthFactor: debtUsd = registry.getUsdValue(USDC, 30_000e6, 6) = 30_000e18
-        // HF = (39_000e18 * 7500 * 1e18) / (30_000e18 * 10_000) = 0.975e18
         oracle.setPrice(39_000e18);
 
         uint256 hf = pm.getHealthFactor(posId);
@@ -168,7 +156,7 @@ contract LiquidationDecimalTest is Test {
         vm.prank(liquidator);
         usdc6.approve(address(liq), maxRepay);
 
-        uint256 liqBalBefore = usdc6.balanceOf(liquidator);
+        uint256 wethBefore = weth.balanceOf(liquidator);
 
         vm.prank(liquidator);
         uint256 profit = liq.liquidate(posId, maxRepay, block.timestamp + 1 hours);
@@ -180,35 +168,31 @@ contract LiquidationDecimalTest is Test {
         uint256 amountAfter = pm.getPosition(posId).amount;
         assertLt(amountAfter, 100e18, "Position amount must decrease");
 
-        // Profit is in 6-dec USDC
-        assertGt(profit, 0, "Liquidator should profit");
+        // Profit is always 0 (liquidator receives raw underlying tokens)
+        assertEq(profit, 0, "Profit must be 0 in no-swap design");
 
-        // Liquidator received back repayAmount + profit (minus protocol fee)
-        uint256 liqBalAfter = usdc6.balanceOf(liquidator);
-        assertGt(liqBalAfter, liqBalBefore - maxRepay, "Liquidator net balance should increase");
+        // Liquidator received underlying tokens (WETH + USDC6) from unwind
+        uint256 wethAfter = weth.balanceOf(liquidator);
+        assertGt(wethAfter, wethBefore, "Liquidator must receive WETH from unwind");
     }
 
     function test_fullFlow_6decUSDC_withoutRegistry_fallback() public {
         // Same flow but WITHOUT PriceFeedRegistry — tests fallback normalization
         MockERC20 usdc6 = new MockERC20("USDC", "USDC", 6);
         MockMarket market6 = new MockMarket(address(usdc6), address(irm));
-        MockSwapRouter router6 = new MockSwapRouter(address(usdc6));
 
         vm.startPrank(owner);
         uint256 marketId = core.registerMarket(address(market6));
-        liq.setSwapRouter(address(router6));
         // NO setPriceFeedRegistry — testing fallback path
         vm.stopPrank();
 
         usdc6.mint(address(market6), 10_000_000e6);
-        usdc6.mint(address(router6), 10_000_000e6);
         usdc6.mint(address(adapter), 10_000_000e6);
         weth.mint(address(adapter), 10_000_000e18);
 
         adapter.setTokenReturns(address(weth), address(usdc6));
         adapter.setUnwindAmounts(25e18, 25_000e6);
         adapter.setTotalLiquidity(100e18);
-        router6.setExchangeRate(address(weth), 1000e6);
 
         oracle.setPrice(50_000e18);
         vm.prank(alice);
@@ -246,29 +230,22 @@ contract LiquidationDecimalTest is Test {
         // WBTC at $60K as borrow asset — exercises non-$1 price conversion
         MockERC20 wbtc = new MockERC20("WBTC", "WBTC", 8);
         MockMarket marketBtc = new MockMarket(address(wbtc), address(irm));
-        MockSwapRouter routerBtc = new MockSwapRouter(address(wbtc));
         MockPriceFeedRegistry registry = new MockPriceFeedRegistry();
         registry.setPrice(address(wbtc), 60_000e18); // $60K per BTC
 
         vm.startPrank(owner);
         uint256 marketId = core.registerMarket(address(marketBtc));
-        liq.setSwapRouter(address(routerBtc));
         pm.setPriceFeedRegistry(address(registry));
         vm.stopPrank();
 
         wbtc.mint(address(marketBtc), 100e8); // 100 BTC
-        wbtc.mint(address(routerBtc), 100e8);
         wbtc.mint(address(adapter), 100e8);
         weth.mint(address(adapter), 10_000e18);
 
         // 100 units → 25 WETH + 0.5 WBTC
-        // At $2K/ETH and $60K/BTC: 25*2K + 0.5*60K = $50K + $30K = $80K
-        // But oracle says $100K (LP has additional value from fees/IL)
         adapter.setTokenReturns(address(weth), address(wbtc));
         adapter.setUnwindAmounts(25e18, 5e7); // 25 WETH + 0.5 WBTC
         adapter.setTotalLiquidity(100e18);
-        // 1 WETH → 0.0333 WBTC (at $2K ETH / $60K BTC)
-        routerBtc.setExchangeRate(address(weth), 333e4); // 0.0333 WBTC in 8-dec
 
         oracle.setPrice(100_000e18); // $100K collateral
         vm.prank(alice);
@@ -276,21 +253,15 @@ contract LiquidationDecimalTest is Test {
         vm.roll(block.number + 2);
 
         // Borrow 0.5 WBTC ($30K)
-        // _getMaxBorrow: 100_000e18 * 6500 / 10000 = 65_000e18 USD
-        // via registry: mulDiv(65_000e18, 1e8, 60_000e18) = 1.083e8 = 1.083 WBTC
-        // 5e7 (0.5 BTC) <= 1.083e8 ✓
         vm.prank(alice);
         le.borrow(posId, 5e7); // 0.5 WBTC
 
         uint256 debt = le.getDebt(posId);
         assertEq(debt, 5e7, "Debt should be 0.5 WBTC");
 
-        // Price drops to $50K → HF = (50K * 7500) / (30K * 10000) = 1.25 (still healthy!)
-        // Need bigger drop. At $38K: HF = (38K * 7500) / (30K * 10K) = 0.95
+        // Price drops to $38K → HF = (38K * 7500) / (30K * 10K) = 0.95
         oracle.setPrice(38_000e18);
 
-        // HF: debtUsd = registry.getUsdValue(WBTC, 5e7, 8) = mulDiv(5e7, 60_000e18, 1e8) = 30_000e18
-        // HF = (38_000e18 * 7500 * 1e18) / (30_000e18 * 10_000) = 0.95e18
         uint256 hf = pm.getHealthFactor(posId);
         assertLt(hf, 1e18, "Should be liquidatable");
 
@@ -304,35 +275,35 @@ contract LiquidationDecimalTest is Test {
         vm.prank(liquidator);
         wbtc.approve(address(liq), maxRepay);
 
+        uint256 wethBefore = weth.balanceOf(liquidator);
+
         vm.prank(liquidator);
         liq.liquidate(posId, maxRepay, block.timestamp + 1 hours);
 
         assertLt(pm.getPosition(posId).amount, 100e18, "Position amount must decrease");
+        // Liquidator receives underlying tokens (WETH + WBTC)
+        assertGt(weth.balanceOf(liquidator), wethBefore, "Liquidator must receive WETH from unwind");
     }
 
     // ========== Underwater 6-dec Liquidation (Bad Debt Prevention) ==========
 
     function test_fullFlow_6decUSDC_underwater_liquidatable() public {
         // Critically underwater position (HF < 0.95) with 6-dec USDC
-        // Tests that the slippage baseline fix works with real decimals
         MockERC20 usdc6 = new MockERC20("USDC", "USDC", 6);
         MockMarket market6 = new MockMarket(address(usdc6), address(irm));
-        MockSwapRouter router6 = new MockSwapRouter(address(usdc6));
         MockPriceFeedRegistry registry = new MockPriceFeedRegistry();
         registry.setPrice(address(usdc6), 1e18);
 
         vm.startPrank(owner);
         uint256 marketId = core.registerMarket(address(market6));
-        liq.setSwapRouter(address(router6));
         pm.setPriceFeedRegistry(address(registry));
         vm.stopPrank();
 
         usdc6.mint(address(market6), 10_000_000e6);
-        usdc6.mint(address(router6), 10_000_000e6);
         usdc6.mint(address(adapter), 10_000_000e6);
         weth.mint(address(adapter), 10_000_000e18);
 
-        // Both tokens are WETH so 100% goes through swap
+        // Both tokens are WETH
         adapter.setTokenReturns(address(weth), address(weth));
         adapter.setUnwindAmounts(25e18, 25e18); // 50 WETH total
         adapter.setTotalLiquidity(100e18);
@@ -347,8 +318,6 @@ contract LiquidationDecimalTest is Test {
 
         // Drop to $30K → HF = 0.75 (critically underwater)
         oracle.setPrice(30_000e18);
-        // Fair swap rate at $30K: 30_000/50 = 600 USDC/WETH
-        router6.setExchangeRate(address(weth), 600e6); // 600 USDC6 per WETH
 
         uint256 hf = pm.getHealthFactor(posId);
         assertLt(hf, 0.95e18, "Must be critically underwater");
@@ -366,54 +335,6 @@ contract LiquidationDecimalTest is Test {
         liq.liquidate(posId, maxRepay, block.timestamp + 1 hours);
 
         assertEq(le.getDebt(posId), 0, "Debt should be fully repaid");
-    }
-
-    // ========== Slippage Check with 6-dec ==========
-
-    function test_slippageCheck_6dec_reverts() public {
-        // 6-dec USDC with too much slippage → should revert
-        MockERC20 usdc6 = new MockERC20("USDC", "USDC", 6);
-        MockMarket market6 = new MockMarket(address(usdc6), address(irm));
-        MockSwapRouter router6 = new MockSwapRouter(address(usdc6));
-        MockPriceFeedRegistry registry = new MockPriceFeedRegistry();
-        registry.setPrice(address(usdc6), 1e18);
-
-        vm.startPrank(owner);
-        uint256 marketId = core.registerMarket(address(market6));
-        liq.setSwapRouter(address(router6));
-        pm.setPriceFeedRegistry(address(registry));
-        vm.stopPrank();
-
-        usdc6.mint(address(market6), 10_000_000e6);
-        usdc6.mint(address(router6), 10_000_000e6);
-        usdc6.mint(address(adapter), 10_000_000e6);
-        weth.mint(address(adapter), 10_000_000e18);
-
-        adapter.setTokenReturns(address(weth), address(usdc6));
-        adapter.setUnwindAmounts(25e18, 25_000e6);
-        adapter.setTotalLiquidity(100e18);
-        // 50% slippage on swap: fair rate 780 → 390 (massive price impact)
-        router6.setExchangeRate(address(weth), 390e6);
-
-        oracle.setPrice(50_000e18);
-        vm.prank(alice);
-        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
-        vm.roll(block.number + 2);
-
-        vm.prank(alice);
-        le.borrow(posId, 30_000e6);
-
-        oracle.setPrice(39_000e18); // HF ≈ 0.975
-
-        (, uint256 maxRepay) = liq.isLiquidatable(posId);
-
-        usdc6.mint(liquidator, maxRepay);
-        vm.prank(liquidator);
-        usdc6.approve(address(liq), maxRepay);
-
-        vm.prank(liquidator);
-        vm.expectRevert("SWAP_SLIPPAGE_EXCEEDED");
-        liq.liquidate(posId, maxRepay, block.timestamp + 1 hours);
     }
 
     // ========== MaxBorrow with PriceFeedRegistry ==========
