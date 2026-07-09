@@ -285,14 +285,13 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         }
         // For V3: liquidity is inside the NFT — oracle reads it directly, no amount update
 
-        // RiskManager: enforce caps on the incremental value
+        // RiskManager: enforce position value cap and track supply delta
+        // Note: skip maxPositionsPerUser check (not creating a new position)
         if (address(riskManager) != address(0)) {
             uint256 valueAfter = getPositionValue(positionId);
+            require(valueAfter <= riskManager.maxPositionValue(), "POSITION_TOO_LARGE");
             uint256 delta = valueAfter > valueBefore ? valueAfter - valueBefore : 0;
             if (delta > 0) {
-                (bool valid, string memory reason) =
-                    riskManager.validateDeposit(msg.sender, delta, pos.marketId, activePositionCount[msg.sender]);
-                require(valid, reason);
                 riskManager.recordDeposit(delta, pos.marketId);
             }
         }
