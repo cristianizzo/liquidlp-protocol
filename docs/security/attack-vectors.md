@@ -25,12 +25,12 @@ This document maps all known attack vectors against the LiquidLP protocol, refer
 - **Morpho Blue:** Bad debt socialized — `totalAssets` decreases, all lender shares redeem for proportionally less. Loss isolated to specific market.
 - **Compound V3:** `totalReserves` absorb bad debt. Governance injects funds if needed.
 
-**Current status:** NOT IMPLEMENTED
+**Current status:** IMPLEMENTED (PR #29)
 
-**Plan:**
-- Add `uint256 public deficit` to `Market.sol`
+**Implementation:**
+- `uint256 public deficit` in `Market.sol`
 - In `LiquidationEngine.liquidate()`: after full liquidation, if position has zero collateral + remaining debt → burn debt, increment `market.deficit`
-- Add `eliminateDeficit()` to `Market.sol` — uses `protocolReserves` to cover deficit. Callable by POOL_ADMIN (via timelock) or RISK_ADMIN.
+- `eliminateDeficit()` in `Market.sol` — uses `protocolReserves` to cover deficit. Callable by RISK_ADMIN (instant, risk-reducing).
 - If `protocolReserves < deficit`: partial coverage, remainder stays tracked
 - DAO can vote to inject funds or socialize remaining deficit across lenders (future)
 
@@ -48,7 +48,7 @@ This document maps all known attack vectors against the LiquidLP protocol, refer
 - **Aave V3:** Frozen reserve = no new supply/borrow, but withdraw/repay/liquidate still work. Separate from full pause. Guardian can freeze individual reserves instantly.
 - **Compound V3:** `isSupplyPaused` / `isBorrowPaused` / `isWithdrawPaused` — granular per-action pause flags.
 
-**Current status:** NOT IMPLEMENTED — CircuitBreaker only does full pause (blocks deposits + borrows). No frozen state.
+**Current status:** IMPLEMENTED (PR #29) — CircuitBreaker.freezeMarket() blocks deposit/borrow/addCollateral, allows withdraw/repay/liquidate. Note: Market.supply() (lender deposits) is intentionally NOT blocked during freeze — more lender liquidity helps during incidents.
 
 **Plan:**
 - Add `freezeMarket(uint256 marketId)` / `unfreezeMarket(uint256 marketId)` to `CircuitBreaker.sol`
@@ -99,7 +99,7 @@ This document maps all known attack vectors against the LiquidLP protocol, refer
 - **Compound V3:** Explicit cap on per-second rate. `baseBorrowRate + slopeRate` bounded.
 - **Aave V3:** slope2 set by governance, typically 60-300%. No explicit max but IRM parameters are governance-controlled.
 
-**Current status:** NOT IMPLEMENTED — `InterestRateModel.getBorrowRate()` has no cap.
+**Current status:** IMPLEMENTED (PR #29) — `InterestRateModel.MAX_RATE_PER_SECOND` caps at ~500% APR.
 
 **Plan:**
 - Add `uint256 public constant MAX_BORROW_RATE = 1e18` to `InterestRateModel.sol` (≈ 100% per second → effectively unlimited but prevents overflow)

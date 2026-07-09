@@ -232,10 +232,10 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
             positionManager.markLiquidated(positionId, msg.sender, repayAmount);
         } else {
             // Step 11: Bad debt writeoff — position underwater, no collateral left to seize
-            // If collateral is fully consumed but debt remains, write it off as deficit
-            PositionManager.Position memory freshPos = positionManager.getPosition(positionId);
-            if (freshPos.amount == 0 && (freshPos.lpType != ILPAdapter.LPType.UniswapV3 || freshPos.tokenId == 0)) {
-                // No collateral left — write off remaining debt as bad debt
+            // Check if position has remaining collateral value (works for both V2 and V3)
+            uint256 remainingValue = positionManager.getPositionValue(positionId);
+            if (remainingValue == 0) {
+                // No collateral value left — write off remaining debt as bad debt
                 lendingEngine.writeOffDebt(positionId);
                 positionManager.markLiquidated(positionId, msg.sender, repayAmount);
             }

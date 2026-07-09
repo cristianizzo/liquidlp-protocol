@@ -359,12 +359,13 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
     /// @dev Burns uncollectable debt from totalBorrow and tracks as deficit
     function recordDeficit(uint256 amount) external onlyLendingEngine {
         require(amount > 0, "ZERO_AMOUNT");
-        // Reduce totalBorrow (debt is gone, no one will repay it)
-        if (amount > state.totalBorrow) amount = state.totalBorrow;
-        state.totalBorrow -= amount;
-        deficit += amount;
+        // Clamp to totalBorrow (can't burn more debt than exists)
+        uint256 burn = amount > state.totalBorrow ? state.totalBorrow : amount;
+        require(burn > 0, "NO_BORROW_TO_BURN");
+        state.totalBorrow -= burn;
+        deficit += burn;
         _updateRates();
-        emit DeficitRecorded(amount, deficit);
+        emit DeficitRecorded(burn, deficit);
     }
 
     /// @notice Cover deficit using protocol reserves (callable by RiskAdmin)
