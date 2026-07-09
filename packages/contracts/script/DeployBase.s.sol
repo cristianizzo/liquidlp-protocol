@@ -282,7 +282,7 @@ abstract contract DeployBase is Script {
         address[] memory executors = new address[](1);
         executors[0] = cfg.multisig;
 
-        // admin = deployer temporarily (so we can revoke deployer roles in same tx)
+        // admin = deployer temporarily (so deployer can renounce its own timelock admin after setup)
         timelock = new TimelockController(cfg.timelockDelay, proposers, executors, cfg.deployer);
 
         // Grant timelock admin authority
@@ -293,11 +293,12 @@ abstract contract DeployBase is Script {
         aclManager.revokeRole(aclManager.POOL_ADMIN(), cfg.deployer);
         aclManager.revokeRole(aclManager.DEFAULT_ADMIN_ROLE(), cfg.deployer);
 
-        // Transfer ProtocolCore ownership to timelock (two-step: acceptOwnership
-        // must be called by the timelock as its first scheduled operation post-deploy)
+        // Transfer ProtocolCore ownership to timelock (two-step transfer).
+        // acceptOwnership must be called by the timelock as its first scheduled operation.
+        // Until then, deployer retains onlyOwner (only used for setACLManager — nuclear op).
         core.transferOwnership(address(timelock));
 
-        // Renounce deployer's TIMELOCK_ADMIN_ROLE on the timelock itself
+        // Renounce deployer's admin role on the TimelockController itself
         timelock.renounceRole(timelock.DEFAULT_ADMIN_ROLE(), cfg.deployer);
     }
 

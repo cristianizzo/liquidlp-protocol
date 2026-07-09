@@ -43,8 +43,8 @@ contract DeployEthMainnet is DeployBase {
             liquidationBonus: 500,
             haircut: 700,
             borrowCap: 10_000_000e6, // $10M (6-dec USDC)
-            // Governance — multisig from env, 48h timelock
-            multisig: vm.envOr("MULTISIG_ADDRESS", deployer),
+            // Governance — multisig required for mainnet (no fallback to deployer)
+            multisig: vm.envAddress("MULTISIG_ADDRESS"),
             timelockDelay: 48 hours
         });
     }
