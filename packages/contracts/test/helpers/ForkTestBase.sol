@@ -26,6 +26,7 @@ import {UniswapV2Adapter} from "../../src/adapters/UniswapV2Adapter.sol";
 import {ILPAdapter} from "../../src/interfaces/ILPAdapter.sol";
 import {IMarket} from "../../src/interfaces/IMarket.sol";
 import {IERC20} from "../../src/interfaces/IERC20.sol";
+import {TimelockController} from "@openzeppelin/contracts/governance/TimelockController.sol";
 import {Constants} from "./Constants.sol";
 
 /// @title ForkTestBase
@@ -54,6 +55,7 @@ abstract contract ForkTestBase is Test {
     CircuitBreaker public circuitBreaker;
     RiskManager public riskManager;
     PriceFeedRegistry public priceFeedRegistry;
+    TimelockController public timelock;
     PositionViewer public positionViewer;
     MarketFactory public marketFactory;
     InterestRateModel public volatileModel;
@@ -134,6 +136,18 @@ abstract contract ForkTestBase is Test {
         riskManager = new RiskManager(address(core));
         priceFeedRegistry = new PriceFeedRegistry(address(core));
         priceValidator = new PriceValidator(address(core), address(circuitBreaker));
+
+        // 7b. TimelockController (deployer keeps POOL_ADMIN for test convenience)
+        {
+            address[] memory proposers = new address[](1);
+            proposers[0] = deployer;
+            address[] memory executors = new address[](1);
+            executors[0] = deployer;
+            timelock = new TimelockController(48 hours, proposers, executors, address(0));
+            aclManager.grantRole(aclManager.POOL_ADMIN(), address(timelock));
+            aclManager.grantRole(aclManager.DEFAULT_ADMIN_ROLE(), address(timelock));
+            // NOTE: deployer keeps POOL_ADMIN so existing tests work without scheduling
+        }
 
         // 8. Oracles
         v3Oracle = new UniswapV3Oracle(address(core), Constants.UNI_V3_NFT_MANAGER);

@@ -263,4 +263,74 @@ contract TimelockTest is Test {
     function test_timelockDelay() public view {
         assertEq(timelock.getMinDelay(), MIN_DELAY);
     }
+
+    // ========== Batch Operations ==========
+
+    function test_batchOperation_registerAdapterAndWhitelistPool() public {
+        address adapter = address(new StubContract());
+        address pool = makeAddr("pool");
+
+        address[] memory targets = new address[](2);
+        targets[0] = address(core);
+        targets[1] = address(core);
+
+        uint256[] memory values = new uint256[](2);
+
+        bytes[] memory payloads = new bytes[](2);
+        payloads[0] = abi.encodeCall(ProtocolCore.registerAdapter, (ILPAdapter.LPType.UniswapV3, adapter));
+        payloads[1] = abi.encodeCall(ProtocolCore.whitelistPool, (pool));
+
+        vm.prank(deployer);
+        timelock.scheduleBatch(targets, values, payloads, bytes32(0), bytes32("batch1"), MIN_DELAY);
+
+        // Cannot execute before delay
+        vm.prank(deployer);
+        vm.expectRevert();
+        timelock.executeBatch(targets, values, payloads, bytes32(0), bytes32("batch1"));
+
+        vm.warp(block.timestamp + MIN_DELAY);
+        vm.prank(deployer);
+        timelock.executeBatch(targets, values, payloads, bytes32(0), bytes32("batch1"));
+
+        assertEq(core.adapters(ILPAdapter.LPType.UniswapV3), adapter);
+        assertTrue(core.isPoolSupported(pool));
+    }
+
+    // ========== Direct Calls Blocked After Transfer ==========
+
+    function test_directRegisterAdapter_reverts_afterTransfer() public {
+        address adapter = address(new StubContract());
+        _revokeDeployerRolesThroughTimelock();
+
+        vm.prank(deployer);
+        vm.expectRevert("NOT_POOL_ADMIN");
+        core.registerAdapter(ILPAdapter.LPType.UniswapV2, adapter);
+    }
+
+    function test_directWhitelistPool_reverts_afterTransfer() public {
+        _revokeDeployerRolesThroughTimelock();
+
+        vm.prank(deployer);
+        vm.expectRevert("NOT_POOL_ADMIN");
+        core.whitelistPool(makeAddr("pool2"));
+    }
+
+    // ========== Ownership Transfer ==========
+
+    function test_ownershipTransfer_throughTimelock() public {
+        // Transfer ProtocolCore ownership to timelock
+        vm.prank(deployer);
+        core.transferOwnership(address(timelock));
+
+        // Schedule acceptOwnership through timelock
+        bytes memory acceptData = abi.encodeCall(ProtocolCore.acceptOwnership, ());
+        vm.prank(deployer);
+        timelock.schedule(address(core), 0, acceptData, bytes32(0), bytes32("accept"), MIN_DELAY);
+
+        vm.warp(block.timestamp + MIN_DELAY);
+        vm.prank(deployer);
+        timelock.execute(address(core), 0, acceptData, bytes32(0), bytes32("accept"));
+
+        assertEq(core.owner(), address(timelock));
+    }
 }

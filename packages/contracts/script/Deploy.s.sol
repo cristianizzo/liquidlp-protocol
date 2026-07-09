@@ -17,7 +17,6 @@ import {MarketRegistry} from "../src/markets/MarketRegistry.sol";
 import {CircuitBreaker} from "../src/security/CircuitBreaker.sol";
 import {RiskManager} from "../src/security/RiskManager.sol";
 import {PoolHealthMonitor} from "../src/security/PoolHealthMonitor.sol";
-import {EmergencyModule} from "../src/security/EmergencyModule.sol";
 import {PositionViewer} from "../src/periphery/PositionViewer.sol";
 
 contract Deploy is Script {
@@ -96,7 +95,6 @@ contract Deploy is Script {
         CircuitBreaker cb = new CircuitBreaker(address(core));
         new RiskManager(address(core));
         new PoolHealthMonitor(address(core), address(cb));
-        new EmergencyModule(address(core));
 
         // Interest Rate Models
         InterestRateModel stableModel = new InterestRateModel(100, 400, 7500, 8500);

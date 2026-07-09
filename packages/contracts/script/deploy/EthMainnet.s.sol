@@ -42,7 +42,10 @@ contract DeployEthMainnet is DeployBase {
             liquidationThreshold: 7500,
             liquidationBonus: 500,
             haircut: 700,
-            borrowCap: 10_000_000e6 // $10M (6-dec USDC)
+            borrowCap: 10_000_000e6, // $10M (6-dec USDC)
+            // Governance — multisig from env, 48h timelock
+            multisig: vm.envOr("MULTISIG_ADDRESS", deployer),
+            timelockDelay: 48 hours
         });
     }
 }

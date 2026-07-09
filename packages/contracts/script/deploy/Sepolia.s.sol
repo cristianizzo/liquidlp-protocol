@@ -35,7 +35,10 @@ contract DeploySepolia is DeployBase {
             liquidationThreshold: 7500, // 75%
             liquidationBonus: 500, // 5%
             haircut: 700, // 7%
-            borrowCap: 100_000e6 // $100K (6-dec USDC)
+            borrowCap: 100_000e6, // $100K (6-dec USDC)
+            // Governance — deployer as multisig on testnet, short delay
+            multisig: deployer,
+            timelockDelay: 60 // 1 minute for testnet
         });
     }
 }
