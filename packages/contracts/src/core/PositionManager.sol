@@ -249,7 +249,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     {
         Position storage pos = _positions[positionId];
         require(pos.owner == msg.sender, "NOT_POSITION_OWNER");
-        require(pos.status == PositionStatus.Active || pos.status == PositionStatus.Borrowed, "NOT_ACTIVE");
+        require(pos.status == PositionStatus.Active || pos.status == PositionStatus.Borrowed, "POSITION_NOT_BORROWABLE");
         require(amount0 > 0 || amount1 > 0, "ZERO_AMOUNTS");
 
         address adapterAddr = core.adapters(pos.lpType);

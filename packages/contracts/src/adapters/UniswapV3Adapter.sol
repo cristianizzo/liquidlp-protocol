@@ -210,7 +210,7 @@ contract UniswapV3Adapter is ILPAdapter {
         require(amount0 > 0 || amount1 > 0, "ZERO_AMOUNTS");
 
         (,, address t0, address t1,,,,,,,,) = nftManager.positions(tokenId);
-        require((token0 == t0 && token1 == t1) || (token0 == t1 && token1 == t0), "TOKEN_MISMATCH");
+        require(token0 == t0 && token1 == t1, "TOKEN_MISMATCH");
 
         OZIERC20(t0).forceApprove(address(nftManager), amount0);
         OZIERC20(t1).forceApprove(address(nftManager), amount1);
