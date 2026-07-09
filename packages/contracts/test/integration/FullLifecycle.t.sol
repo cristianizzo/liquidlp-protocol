@@ -321,8 +321,7 @@ contract FullLifecycleTest is Test {
         vm.prank(owner);
         liq.setMaxLiquidationPortion(10_000);
 
-        // Disable liquidation fee so full repayAmount goes to debt repayment
-        // (protocol fee is deducted from repayAmount before repaying debt)
+        // Disable liquidation fee (fee is taken from bonus portion of underlying tokens)
         vm.prank(owner);
         fc.setLiquidationFee(0);
 

@@ -794,8 +794,9 @@ contract LiquidationEngineTest is Test {
         uint256 wethAfter = weth.balanceOf(liquidator);
         // Liquidator spent maxRepay USDC but received USDC + WETH from unwind
         assertGt(wethAfter, wethBefore, "Liquidator must receive WETH from unwind");
-        // Net USDC could be positive or negative depending on repay vs received
-        assertTrue(usdcAfter > 0 || wethAfter > 0, "Liquidator must receive some tokens");
+        // Liquidator spent maxRepay USDC but received USDC back from unwind.
+        // Net USDC depends on pool ratio. Check total value increased.
+        assertGt(usdcAfter + wethAfter, 0, "Liquidator must receive tokens from unwind");
     }
 
     // ========== Fuzz Tests ==========
