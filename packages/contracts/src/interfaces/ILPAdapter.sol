@@ -68,6 +68,29 @@ interface ILPAdapter {
     /// @return fees1 Fees collected in token1
     function collectFees(address lpToken, uint256 tokenId) external returns (uint256 fees0, uint256 fees1);
 
+    /// @notice Add liquidity to an existing LP position
+    /// @param lpToken Address of LP token or NFT manager
+    /// @param tokenId NFT token ID (0 for ERC-20)
+    /// @param token0 First token address
+    /// @param token1 Second token address
+    /// @param amount0 Amount of token0 to add
+    /// @param amount1 Amount of token1 to add
+    /// @param refundTo Address to send unused tokens (dust from price ratio mismatch)
+    /// @return addedLiquidity Amount of liquidity added (LP tokens for V2, liquidity units for V3)
+    /// @return used0 Actual amount of token0 used
+    /// @return used1 Actual amount of token1 used
+    function addLiquidity(
+        address lpToken,
+        uint256 tokenId,
+        address token0,
+        address token1,
+        uint256 amount0,
+        uint256 amount1,
+        address refundTo
+    )
+        external
+        returns (uint256 addedLiquidity, uint256 used0, uint256 used1);
+
     /// @notice Get the LP type this adapter handles
     function lpType() external view returns (LPType);
 
