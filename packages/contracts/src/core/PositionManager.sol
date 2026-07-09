@@ -164,6 +164,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         require(core.isPoolSupported(info.pool), "POOL_NOT_SUPPORTED");
         if (address(circuitBreaker) != address(0)) {
             require(!circuitBreaker.poolPaused(info.pool), "POOL_CIRCUIT_BREAKER");
+            require(!circuitBreaker.marketFrozen(marketId), "MARKET_FROZEN");
         }
 
         // Get oracle price to validate position has value
@@ -251,6 +252,11 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         require(pos.owner == msg.sender, "NOT_POSITION_OWNER");
         require(pos.status == PositionStatus.Active || pos.status == PositionStatus.Borrowed, "POSITION_NOT_BORROWABLE");
         require(amount0 > 0 || amount1 > 0, "ZERO_AMOUNTS");
+
+        // Frozen markets block new collateral (risk-taking)
+        if (address(circuitBreaker) != address(0)) {
+            require(!circuitBreaker.marketFrozen(pos.marketId), "MARKET_FROZEN");
+        }
 
         address adapterAddr = core.adapters(pos.lpType);
         require(adapterAddr != address(0), "ADAPTER_NOT_FOUND");

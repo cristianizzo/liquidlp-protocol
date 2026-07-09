@@ -346,8 +346,40 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
     uint256 public protocolReserves;
     /// @notice FeeCollector address for reserve distribution
     FeeCollector public feeCollector;
+    /// @notice Bad debt accumulated from underwater liquidations (borrow asset decimals)
+    uint256 public deficit;
+
+    // --- Events ---
+    event DeficitRecorded(uint256 amount, uint256 totalDeficit);
+    event DeficitEliminated(uint256 covered, uint256 remaining);
+
+    // --- Bad Debt Management ---
+
+    /// @notice Record bad debt from underwater liquidation (called by LendingEngine)
+    /// @dev Burns uncollectable debt from totalBorrow and tracks as deficit
+    function recordDeficit(uint256 amount) external onlyLendingEngine {
+        require(amount > 0, "ZERO_AMOUNT");
+        // Reduce totalBorrow (debt is gone, no one will repay it)
+        if (amount > state.totalBorrow) amount = state.totalBorrow;
+        state.totalBorrow -= amount;
+        deficit += amount;
+        _updateRates();
+        emit DeficitRecorded(amount, deficit);
+    }
+
+    /// @notice Cover deficit using protocol reserves (callable by RiskAdmin)
+    /// @dev Partial coverage OK — covers min(deficit, protocolReserves)
+    function eliminateDeficit() external onlyRiskAdmin {
+        require(deficit > 0, "NO_DEFICIT");
+        uint256 coverage = deficit > protocolReserves ? protocolReserves : deficit;
+        protocolReserves -= coverage;
+        deficit -= coverage;
+        // Note: totalSupply is NOT reduced — reserves were protocol's, not lenders'
+        _updateRates();
+        emit DeficitEliminated(coverage, deficit);
+    }
 
     // --- Storage Gap ---
-    // Reduced from 50 to 47 after adding 3 new state vars.
-    uint256[47] private __gap;
+    // Reduced from 50 to 46 after adding 4 new state vars.
+    uint256[46] private __gap;
 }

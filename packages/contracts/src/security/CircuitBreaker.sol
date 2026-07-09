@@ -18,9 +18,14 @@ contract CircuitBreaker {
     // Per-pool pause state
     mapping(address => bool) public poolPaused;
 
+    // Frozen state (Aave V3 pattern): blocks deposits/borrows/supply, allows withdraw/repay/liquidate
+    mapping(uint256 => bool) public marketFrozen;
+
     // --- Events ---
     event MarketPaused(uint256 indexed marketId, string reason);
     event MarketUnpaused(uint256 indexed marketId);
+    event MarketFrozen(uint256 indexed marketId, string reason);
+    event MarketUnfrozen(uint256 indexed marketId);
     event PoolPaused(address indexed pool, string reason);
     event PoolUnpaused(address indexed pool);
 
@@ -71,6 +76,19 @@ contract CircuitBreaker {
     function unpausePool(address pool) external onlyPoolAdmin {
         poolPaused[pool] = false;
         emit PoolUnpaused(pool);
+    }
+
+    /// @notice Freeze a market — blocks new risk (deposit/borrow/supply) but allows withdraw/repay/liquidate
+    /// @dev Use for token depegs, oracle issues, or exploit response (Aave V3 frozen reserve pattern)
+    function freezeMarket(uint256 marketId, string calldata reason) external onlyGuardianOrKeeper {
+        marketFrozen[marketId] = true;
+        emit MarketFrozen(marketId, reason);
+    }
+
+    /// @notice Unfreeze a market (PoolAdmin only — requires timelock)
+    function unfreezeMarket(uint256 marketId) external onlyPoolAdmin {
+        marketFrozen[marketId] = false;
+        emit MarketUnfrozen(marketId);
     }
 
     /// @notice Check if operations are allowed for a market

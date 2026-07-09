@@ -110,6 +110,7 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
         CircuitBreaker cb = positionManager.circuitBreaker();
         if (address(cb) != address(0)) {
             require(!cb.poolPaused(pos.pool), "POOL_CIRCUIT_BREAKER");
+            require(!cb.marketFrozen(pos.marketId), "MARKET_FROZEN");
         }
 
         require(block.number > pos.depositBlock + borrowCooldownBlocks, "BORROW_COOLDOWN");
@@ -262,6 +263,26 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
         address marketAddr = core.markets(marketId);
         require(marketAddr != address(0), "MARKET_NOT_FOUND");
         return marketAddr;
+    }
+
+    /// @notice Write off bad debt from an underwater position (called by LiquidationEngine)
+    /// @dev Zeros out the position's debt and records deficit on the market
+    function writeOffDebt(uint256 positionId) external whenNotPaused nonReentrant {
+        require(_acl().isLiquidationEngine(msg.sender), "NOT_LIQUIDATION_ENGINE");
+
+        PositionManager.Position memory pos = positionManager.getPosition(positionId);
+        address marketAddr = _getMarketAddr(pos.marketId);
+        Market market = Market(marketAddr);
+
+        uint256 currentDebt = _getCurrentDebt(positionId, market);
+        require(currentDebt > 0, "NO_DEBT");
+
+        // Zero out the position's debt tracking
+        debtInfo[positionId] = DebtInfo({principal: 0, borrowIndex: market.borrowIndex()});
+        positionManager.updateDebt(positionId, 0);
+
+        // Record deficit on the market (burns from totalBorrow, tracks as deficit)
+        market.recordDeficit(currentDebt);
     }
 
     // --- Storage Gap ---
