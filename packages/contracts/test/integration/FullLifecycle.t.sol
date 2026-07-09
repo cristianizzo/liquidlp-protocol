@@ -18,7 +18,6 @@ import {IMarket} from "../../src/interfaces/IMarket.sol";
 import {MockLPAdapter} from "../mocks/MockLPAdapter.sol";
 import {MockLPOracle} from "../mocks/MockLPOracle.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
-import {MockSwapRouter} from "../mocks/MockSwapRouter.sol";
 
 /// @title FullLifecycleTest
 /// @notice End-to-end integration tests exercising complete protocol flows
@@ -41,7 +40,6 @@ contract FullLifecycleTest is Test {
     MockLPOracle public oracle;
     MockERC20 public usdc;
     MockERC20 public weth;
-    MockSwapRouter public swapRouter;
 
     // --- Actors ---
     address public owner = makeAddr("owner");
@@ -136,7 +134,6 @@ contract FullLifecycleTest is Test {
         adapter.setTotalLiquidity(100e18);
         oracle = new MockLPOracle();
         oracle.setPrice(50_000e18); // $50K collateral value
-        swapRouter = new MockSwapRouter(address(usdc));
 
         // --- Register everything and grant roles ---
         vm.startPrank(owner);
@@ -150,17 +147,12 @@ contract FullLifecycleTest is Test {
         core.whitelistPool(lpToken);
         marketId = core.registerMarket(address(market));
         pm.setLendingEngine(address(le));
-        liq.setSwapRouter(address(swapRouter));
         liq.setFeeCollector(address(fc));
         vm.stopPrank();
-
-        // Set WETH swap rate: 1 WETH = 1000 USDC (so 25 WETH + 25K USDC ≈ $50K)
-        swapRouter.setExchangeRate(address(weth), 1000e18);
 
         // --- Fund ---
         weth.mint(address(adapter), 1_000_000e18);
         usdc.mint(address(adapter), 1_000_000e18);
-        usdc.mint(address(swapRouter), 1_000_000e18);
     }
 
     // --- Helpers ---
@@ -291,7 +283,7 @@ contract FullLifecycleTest is Test {
         vm.prank(liquidator);
         usdc.approve(address(liq), 15_000e18);
 
-        uint256 liqBalanceBefore = usdc.balanceOf(liquidator);
+        uint256 wethBefore = weth.balanceOf(liquidator);
 
         vm.prank(liquidator);
         liq.liquidate(posId, 15_000e18, block.timestamp + 1 hours);
@@ -303,6 +295,9 @@ contract FullLifecycleTest is Test {
         // Position amount should be reduced (LP partially unwound)
         IPositionManager.Position memory pos = pm.getPosition(posId);
         assertLt(pos.amount, 100e18, "LP amount must decrease after liquidation");
+
+        // Liquidator receives underlying tokens (WETH + USDC) from unwind
+        assertGt(weth.balanceOf(liquidator), wethBefore, "Liquidator must receive WETH from unwind");
     }
 
     // ========================================================
@@ -326,6 +321,11 @@ contract FullLifecycleTest is Test {
         vm.prank(owner);
         liq.setMaxLiquidationPortion(10_000);
 
+        // Disable liquidation fee so full repayAmount goes to debt repayment
+        // (protocol fee is deducted from repayAmount before repaying debt)
+        vm.prank(owner);
+        fc.setLiquidationFee(0);
+
         uint256 totalDebt = le.getDebt(posId);
         usdc.mint(liquidator, totalDebt);
         vm.prank(liquidator);
@@ -336,7 +336,7 @@ contract FullLifecycleTest is Test {
         vm.prank(liquidator);
         liq.liquidate(posId, totalDebt, block.timestamp + 1 hours);
 
-        // Debt fully repaid
+        // Debt fully repaid (no fee deducted from repayment)
         assertEq(le.getDebt(posId), 0);
 
         // Position marked liquidated

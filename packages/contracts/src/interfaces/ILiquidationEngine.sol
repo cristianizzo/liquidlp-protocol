@@ -3,6 +3,8 @@ pragma solidity ^0.8.26;
 
 /// @title ILiquidationEngine
 /// @notice Handles atomic liquidation of unhealthy positions
+/// @dev Liquidators send borrow asset (repay debt) and receive the raw underlying tokens
+///      from the LP unwind (e.g., ETH + USDC). No swap inside the protocol.
 interface ILiquidationEngine {
     event LiquidationExecuted(
         uint256 indexed positionId,
@@ -13,10 +15,11 @@ interface ILiquidationEngine {
     );
 
     /// @notice Liquidate an unhealthy position
-    /// @dev Atomically: seize LP → unwind → swap to borrow asset → repay debt → send profit
+    /// @dev Atomically: pull repayment → repay debt → unwind LP → send underlying tokens to liquidator
     /// @param positionId The position to liquidate
     /// @param repayAmount Amount of debt to repay
-    /// @return profit The liquidator's profit in borrow asset
+    /// @param deadline Transaction deadline
+    /// @return profit Always 0 — profit is implicit in the underlying tokens received
     function liquidate(uint256 positionId, uint256 repayAmount, uint256 deadline) external returns (uint256 profit);
 
     /// @notice Check if a position is liquidatable

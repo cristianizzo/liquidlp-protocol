@@ -270,18 +270,34 @@ HF < 0.95 → critically underwater → 100% liquidation allowed
 
 1. **Accrue interest** — ensure health factor uses latest debt
 2. **Verify** — position HF < 1.0
-3. **Pull repayment** from liquidator (USDC)
+3. **Pull repayment** from liquidator (borrow asset, e.g., USDC)
 4. **Repay debt** via LendingEngine
 5. **Calculate** proportional liquidity to remove (normalized to 18 decimals for cross-decimal-token safety)
-6. **Unwind LP** — adapter calls DEX to remove liquidity
+6. **Unwind LP** — adapter calls DEX to remove liquidity → receives underlying tokens (e.g., ETH + USDC)
 7. **Update position amount** — reduce stored amount to reflect removed liquidity
-8. **Swap** non-borrow-asset tokens to borrow asset via configurable SwapRouter
-9. **Take protocol fee** — 10% of liquidator profit goes to FeeCollector
-10. **Send proceeds** to liquidator
-11. **Return remaining LP** to borrower (if fully liquidated with surplus)
-12. **Mark liquidated** — update position status
+8. **Take protocol fee** — 10% of liquidator profit goes to FeeCollector
+9. **Send underlying tokens** directly to liquidator (ETH + USDC)
+10. **Return remaining LP** to borrower (if fully liquidated with surplus)
+11. **Mark liquidated** — update position status
 
-**Key design:** Liquidators only send and receive USDC. All LP unwinding, token swapping, and fee collection happens atomically inside the contract. Existing liquidation bots work with minimal integration.
+**Key design:** The protocol does NOT swap tokens during liquidation. The liquidator receives the raw underlying tokens (e.g., ETH + USDC) directly from the LP unwind. This eliminates swap slippage, MEV sandwich attacks, and SwapRouter dependency from the critical liquidation path. The liquidator decides how and when to sell — the protocol's only job is to ensure the debt is repaid and the collateral is seized.
+
+**Why no swap?** Every LP lending protocol that swaps during liquidation passes `minAmountOut = 0` and relies on a post-swap check. This is a known weak pattern — sandwich bots extract value up to the slippage tolerance, and if the swap fails (low liquidity, router bug), the entire liquidation fails, causing bad debt. By removing the swap, liquidations cannot fail due to market conditions.
+
+### FlashloanLiquidator (Optional Helper)
+
+For liquidation bots that want single-asset simplicity, the protocol provides an optional `FlashloanLiquidator` periphery contract (inspired by Revert Lend's audited design):
+
+```
+1. Bot calls FlashloanLiquidator.liquidate()
+2. Flash loan borrow asset (USDC) from Uniswap
+3. Call LiquidationEngine.liquidate() → repay debt → receive ETH + USDC
+4. Swap ETH → USDC via DEX (bot's choice of route/slippage)
+5. Repay flash loan
+6. Keep profit
+```
+
+The swap happens in the helper contract, not in the core protocol. If the helper has a bug or gets sandwiched, the protocol is unaffected — the debt was already repaid in step 3. The helper is a stateless periphery contract that can be redeployed anytime without affecting the core.
 
 ### Avoiding Liquidation
 
