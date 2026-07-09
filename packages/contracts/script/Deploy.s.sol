@@ -17,9 +17,11 @@ import {MarketRegistry} from "../src/markets/MarketRegistry.sol";
 import {CircuitBreaker} from "../src/security/CircuitBreaker.sol";
 import {RiskManager} from "../src/security/RiskManager.sol";
 import {PoolHealthMonitor} from "../src/security/PoolHealthMonitor.sol";
-import {EmergencyModule} from "../src/security/EmergencyModule.sol";
 import {PositionViewer} from "../src/periphery/PositionViewer.sol";
 
+/// @dev DEPRECATED — use chain-specific scripts in script/deploy/ instead.
+///      Those scripts deploy TimelockController and transfer admin roles.
+///      This script is kept for local development only (no timelock, no role transfer).
 contract Deploy is Script {
     // Deployed contract addresses stored as state to avoid stack-too-deep
     ACLManager public aclManager;
@@ -96,7 +98,6 @@ contract Deploy is Script {
         CircuitBreaker cb = new CircuitBreaker(address(core));
         new RiskManager(address(core));
         new PoolHealthMonitor(address(core), address(cb));
-        new EmergencyModule(address(core));
 
         // Interest Rate Models
         InterestRateModel stableModel = new InterestRateModel(100, 400, 7500, 8500);
