@@ -1,0 +1,110 @@
+name: Tests
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+env:
+  FOUNDRY_PROFILE: ci
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/contracts
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Build
+        run: forge build --sizes
+
+  test-unit:
+    name: Unit Tests
+    needs: build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/contracts
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Run unit tests
+        run: forge test --match-path 'test/unit/**' -vvv
+
+      - name: Run integration tests
+        run: forge test --match-path 'test/integration/**' -vvv
+
+      - name: Run invariant tests
+        run: forge test --match-path 'test/invariant/**' -vvv
+
+  test-fork:
+    name: Fork + E2E Tests
+    needs: build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/contracts
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Start Anvil fork
+        run: |
+          anvil --fork-url ${{ secrets.ETH_RPC_URL }} --block-time 12 --chain-id 1 &
+          sleep 5
+        env:
+          ETH_RPC_URL: ${{ secrets.ETH_RPC_URL }}
+
+      - name: Wait for Anvil
+        run: |
+          for i in $(seq 1 30); do
+            if cast block-number --rpc-url http://localhost:8545 2>/dev/null; then
+              echo "Anvil is ready"
+              break
+            fi
+            echo "Waiting for Anvil... ($i/30)"
+            sleep 2
+          done
+
+      - name: Run fork tests
+        run: forge test --match-path 'test/fork/**' --fork-url http://localhost:8545 -vvv
+        timeout-minutes: 10
+
+      - name: Run E2E tests
+        run: forge test --match-path 'test/e2e/**' --fork-url http://localhost:8545 -vvv
+        timeout-minutes: 10
+
+  lint:
+    name: Lint & Format
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/contracts
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Check formatting
+        run: forge fmt --check
