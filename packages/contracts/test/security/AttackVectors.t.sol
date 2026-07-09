@@ -178,14 +178,17 @@ contract AttackVectorTests is Test {
         assertTrue(canLiq, "Must be liquidatable");
         assertGt(maxRepay, 0);
 
-        // Fund liquidator
+        // Fund liquidator and execute liquidation
         usdc.mint(liquidator, maxRepay);
-        vm.prank(liquidator);
+        vm.startPrank(liquidator);
         usdc.approve(address(liq), maxRepay);
+        liq.liquidate(posId, maxRepay, block.timestamp);
+        vm.stopPrank();
 
-        // Liquidation proceeds — collateral value is 0, so this tests the writeoff path
-        // Note: adapter still returns tokens (mock), but oracle says value is 0
-        // The actual bad debt writeoff triggers when position value = 0 after liquidation
+        // After liquidation at $0 collateral value, bad debt writeoff should trigger
+        // Position should be marked liquidated
+        PositionManager.Position memory pos = pm.getPosition(posId);
+        assertEq(uint256(pos.status), 3, "Position should be Liquidated (status=3)");
     }
 
     // ========== 4. Borrow Cooldown Prevents Flash Loan ==========
@@ -207,26 +210,25 @@ contract AttackVectorTests is Test {
 
     // ========== 5. Double-Deposit Same NFT ==========
 
-    function test_attack_doubleDeposit_secondFails() public {
+    function test_attack_doubleDeposit_separatePositions() public {
         // First deposit succeeds
         vm.prank(alice);
-        pm.deposit(lpToken, 42, 0, marketId);
+        uint256 posId1 = pm.deposit(lpToken, 42, 100e18, marketId);
 
-        // Second deposit of same tokenId — adapter already transferred the NFT
-        // MockAdapter doesn't enforce this, but real V3Adapter does (ownerOf check)
-        // Here we verify the protocol creates separate positions
+        // Second deposit of same tokenId — mock adapter allows it (no NFT custody check)
+        // Real V3 adapter would revert with TRANSFER_FAILED (NFT already transferred)
+        // With mock, we verify positions are tracked separately
         vm.prank(alice);
-        uint256 posId2 = pm.deposit(lpToken, 42, 0, marketId);
+        uint256 posId2 = pm.deposit(lpToken, 42, 100e18, marketId);
 
-        // Even if mock allows it, positions are separate
-        PositionManager.Position memory pos = pm.getPosition(posId2);
-        assertEq(pos.tokenId, 42);
-        // Real V3 adapter would revert with TRANSFER_FAILED on second deposit
+        assertFalse(posId1 == posId2, "Must create separate position IDs");
+        // NOTE: Real V3Adapter enforces NFT custody — second deposit would revert.
+        // This test confirms the mock behavior; fork E2E tests verify real adapter.
     }
 
     // ========== 6. 100% Utilization — Withdrawal Blocked ==========
 
-    function test_attack_fullUtilization_withdrawalBlocked() public {
+    function test_attack_fullUtilization_marketDrained() public {
         // Set oracle price very high so LTV allows large borrows
         oracle.setPrice(5_000_000e18); // $5M collateral
 
@@ -235,10 +237,18 @@ contract AttackVectorTests is Test {
         vm.prank(alice);
         le.borrow(posId, 900_000e18); // 90% of market liquidity
 
-        // Market balance is now ~100K
+        // Market balance is now ~100K — most liquidity lent out
         uint256 marketBalance = usdc.balanceOf(address(market));
         assertLt(marketBalance, 200_000e18, "Market should have reduced liquidity");
         assertGt(le.getDebt(posId), 0, "Alice should have debt");
+
+        // Attempting to borrow more than remaining balance would fail
+        oracle.setPrice(5_000_000e18);
+        uint256 posId2 = _deposit(bob);
+        vm.roll(block.number + 3);
+        vm.prank(bob);
+        vm.expectRevert(); // MockMarket reverts on insufficient balance
+        le.borrow(posId2, marketBalance + 1);
     }
 
     // ========== 7. Self-Liquidation (Allowed by Design) ==========
