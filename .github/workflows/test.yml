@@ -18,11 +18,13 @@ jobs:
         working-directory: packages/contracts
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Install dependencies
+        run: |
+          forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable transmissions11/solmate --no-commit
 
       - name: Build
         run: forge build --sizes
@@ -36,11 +38,13 @@ jobs:
         working-directory: packages/contracts
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Install dependencies
+        run: |
+          forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable transmissions11/solmate --no-commit
 
       - name: Run unit tests
         run: forge test --match-path 'test/unit/**' -vvv
@@ -64,11 +68,13 @@ jobs:
         working-directory: packages/contracts
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Install dependencies
+        run: |
+          forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable transmissions11/solmate --no-commit
 
       - name: Start Anvil fork
         run: |
@@ -80,11 +86,13 @@ jobs:
           for i in $(seq 1 30); do
             if cast block-number --rpc-url http://localhost:8545 2>/dev/null; then
               echo "Anvil is ready at block $(cast block-number --rpc-url http://localhost:8545)"
-              break
+              exit 0
             fi
             echo "Waiting for Anvil... ($i/30)"
             sleep 2
           done
+          echo "Anvil failed to start"
+          exit 1
 
       - name: Run fork tests
         run: forge test --match-path 'test/fork/**' --fork-url http://localhost:8545 -vvv
@@ -102,11 +110,13 @@ jobs:
         working-directory: packages/contracts
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Install dependencies
+        run: |
+          forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable transmissions11/solmate --no-commit
 
       - name: Check formatting
         run: forge fmt --check
