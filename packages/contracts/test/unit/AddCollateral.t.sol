@@ -304,9 +304,14 @@ contract AddCollateralTest is Test {
     }
 
     function test_addCollateral_tracksSupplyDelta() public {
-        uint256 positionId = _depositV3(alice);
+        // Use V2 position so pos.amount changes → oracle returns different value
+        uint256 positionId = _depositV2(alice);
 
-        oracle.setPrice(5_000e18); // $5K
+        // Oracle price is per-unit, so value scales with amount
+        // MockLPOracle returns constant price regardless of amount,
+        // so we verify RiskManager wiring doesn't revert.
+        // Real delta tracking is covered by E2E fork tests with real oracles.
+        oracle.setPrice(5_000e18);
 
         vm.startPrank(owner);
         pm.setRiskManager(address(riskManager));
@@ -318,6 +323,8 @@ contract AddCollateralTest is Test {
         pm.addCollateral(positionId, 1 ether, 2000e6);
         vm.stopPrank();
 
-        // No revert = supply delta recorded successfully
+        // Verify pos.amount increased (V2 semantics)
+        PositionManager.Position memory pos = pm.getPosition(positionId);
+        assertGt(pos.amount, 100e18, "V2 amount should have increased from addCollateral");
     }
 }
