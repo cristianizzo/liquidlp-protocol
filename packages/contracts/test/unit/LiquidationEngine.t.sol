@@ -16,6 +16,7 @@ import {MockLPAdapter} from "../mocks/MockLPAdapter.sol";
 import {MockLPOracle} from "../mocks/MockLPOracle.sol";
 import {MockMarket} from "../mocks/MockMarket.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
+
 contract LiquidationEngineTest is Test {
     ProtocolCore public core;
     ACLManager public aclManager;
@@ -807,8 +808,6 @@ contract LiquidationEngineTest is Test {
         liq.setMaxLiquidationPortion(value);
         assertEq(liq.maxLiquidationPortion(), value);
     }
-
-
 
     // ========== Liquidator Receives Underlying Tokens ==========
 

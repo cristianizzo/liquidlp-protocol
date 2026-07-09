@@ -14,16 +14,7 @@ contract V2Liquidation is E2EBase {
         // Create a V2 market
         vm.startPrank(deployer);
         (v2MarketId,) = marketFactory.createMarket(
-            ILPAdapter.LPType.UniswapV2,
-            Constants.USDC,
-            6500,
-            7500,
-            500,
-            700,
-            10_000_000e6,
-            0,
-            0,
-            "volatile"
+            ILPAdapter.LPType.UniswapV2, Constants.USDC, 6500, 7500, 500, 700, 10_000_000e6, 0, 0, "volatile"
         );
         vm.stopPrank();
 
@@ -93,7 +84,7 @@ contract V2Liquidation is E2EBase {
 
         // Target HF ~ 0.97 for partial liquidation
         uint256 debtUsd = uint256(borrowAmount) * 1e12;
-        uint256 targetValue = (debtUsd * 10000 * 97) / (7500 * 100);
+        uint256 targetValue = (debtUsd * 10_000 * 97) / (7500 * 100);
 
         PositionManager.Position memory pos = positionManager.getPosition(positionId);
         _mockOraclePrice(pos.lpToken, pos.tokenId, pos.amount, pos.lpType, targetValue);

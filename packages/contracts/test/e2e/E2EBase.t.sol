@@ -163,13 +163,12 @@ abstract contract E2EBase is ForkTestBase {
         uint256 amount,
         ILPAdapter.LPType lpType,
         uint256 valueUsd
-    ) internal {
+    )
+        internal
+    {
         vm.mockCall(
             address(oracleHub),
-            abi.encodeWithSelector(
-                ILPOracleHub.getPrice.selector,
-                lpToken, tokenId, amount, lpType
-            ),
+            abi.encodeWithSelector(ILPOracleHub.getPrice.selector, lpToken, tokenId, amount, lpType),
             abi.encode(
                 ILPOracleHub.PriceResult({
                     totalValue: valueUsd,

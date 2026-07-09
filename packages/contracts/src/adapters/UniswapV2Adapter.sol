@@ -171,9 +171,8 @@ contract UniswapV2Adapter is ILPAdapter {
         OZIERC20(token0).forceApprove(address(v2Router), amount0);
         OZIERC20(token1).forceApprove(address(v2Router), amount1);
 
-        (used0, used1, addedLiquidity) = v2Router.addLiquidity(
-            token0, token1, amount0, amount1, 0, 0, address(this), block.timestamp
-        );
+        (used0, used1, addedLiquidity) =
+            v2Router.addLiquidity(token0, token1, amount0, amount1, 0, 0, address(this), block.timestamp);
 
         // Refund unused tokens to user
         if (refundTo != address(0)) {
