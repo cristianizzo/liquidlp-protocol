@@ -86,10 +86,6 @@ jobs:
             sleep 2
           done
 
-      - name: Deploy contracts to fork
-        run: forge script script/Deploy.s.sol --rpc-url http://localhost:8545 --broadcast
-        timeout-minutes: 5
-
       - name: Run fork tests
         run: forge test --match-path 'test/fork/**' --fork-url http://localhost:8545 -vvv
         timeout-minutes: 10
