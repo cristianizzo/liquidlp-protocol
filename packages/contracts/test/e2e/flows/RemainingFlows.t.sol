@@ -183,6 +183,10 @@ contract RemainingFlows is E2EBase {
         pos = positionManager.getPosition(positionId);
         assertEq(uint256(pos.status), uint256(IPositionManager.PositionStatus.Liquidated), "Should be Liquidated");
 
+        // Assert bad debt path actually executed
+        // Either debt is written off (remainingDebt=0, deficit>0) or fully repaid
+        assertTrue(remainingDebt == 0 || deficitAfter > deficitBefore, "Bad debt should be written off or fully repaid");
+
         console.log(
             "Remaining debt: %s, Deficit before: %s, after: %s",
             remainingDebt / 1e6,
@@ -247,11 +251,12 @@ contract RemainingFlows is E2EBase {
         uint256 deficitAfterLiq = market.deficit();
         console.log("Deficit after liquidation: %s", deficitAfterLiq);
 
-        // If deficit exists, eliminate it using reserves
+        // Deficit may or may not exist depending on liquidation outcome
+        // If deficit exists, verify eliminateDeficit works
         if (deficitAfterLiq > 0) {
             uint256 reservesBeforeEliminate = market.protocolReserves();
 
-            vm.prank(deployer); // deployer has RISK_ADMIN via POOL_ADMIN
+            vm.prank(deployer);
             market.eliminateDeficit();
 
             uint256 deficitAfterEliminate = market.deficit();
@@ -261,7 +266,9 @@ contract RemainingFlows is E2EBase {
             assertLt(reservesAfterEliminate, reservesBeforeEliminate, "Reserves should decrease");
 
             console.log("Deficit eliminated: %s -> %s", deficitAfterLiq, deficitAfterEliminate);
-            console.log("Reserves used: %s -> %s", reservesBeforeEliminate, reservesAfterEliminate);
+        } else {
+            // Liquidation fully covered debt — no bad debt
+            console.log("No deficit - liquidation fully covered debt");
         }
 
         console.log("=== eliminateDeficit Passed ===");
@@ -271,7 +278,7 @@ contract RemainingFlows is E2EBase {
     // 5. V3 full liquidation execution — real NFT unwind
     // ========================================================================
 
-    function test_V3_fullLiquidation_execution() public {
+    function test_V3_liquidatableAfterCrash() public {
         // V3 positions have amount=0 — liquidation uses different code path
         // Need to verify V3 NFT unwind works end-to-end
         uint256 tokenId = _createV3Position(alice, 1 ether, 2000e6);
@@ -339,7 +346,7 @@ contract RemainingFlows is E2EBase {
 
         // Cannot borrow on liquidated position
         vm.prank(alice);
-        vm.expectRevert();
+        vm.expectRevert("POSITION_NOT_ACTIVE");
         lendingEngine.borrow(positionId, 100e6);
 
         console.log("=== Liquidated Position Blocked ===");
@@ -362,7 +369,7 @@ contract RemainingFlows is E2EBase {
         vm.stopPrank();
 
         uint256 carolShares = market.shares(carol);
-        uint256 carolUsdcBefore = IERC20(Constants.USDC).balanceOf(carol);
+        // Carol supplied 10K — her USDC balance is now ~0 after supply
 
         // Alice borrows to generate interest
         uint256 lpAmount = _createV2Position(alice, 0.5 ether, 1000e6);
@@ -388,16 +395,15 @@ contract RemainingFlows is E2EBase {
         lendingEngine.repay(positionId, type(uint256).max);
         vm.stopPrank();
 
-        // Carol withdraws all shares
+        // Carol withdraws all shares — should get back >= 10K (interest earned)
         vm.prank(carol);
         uint256 withdrawn = market.withdraw(carolShares);
 
-        uint256 carolUsdcAfter = IERC20(Constants.USDC).balanceOf(carol);
-        uint256 profit = carolUsdcAfter - carolUsdcBefore;
-
-        // Carol should have earned interest (withdrawn > 10K)
+        // Withdrawn amount represents Carol's share of pool + interest
         assertGt(withdrawn, 0, "Should withdraw something");
-        console.log("Carol deposited: 10000 USDC, withdrew: %s USDC, profit: %s USDC", withdrawn / 1e6, profit / 1e6);
+        // With interest earned, withdrawn should be >= original deposit (10K USDC minus dead shares rounding)
+        assertGe(withdrawn, 9999e6, "Should get back at least ~10K USDC");
+        console.log("Carol deposited: 10000 USDC, withdrew: %s USDC", withdrawn / 1e6);
         console.log("=== Lender Earns Profit Passed ===");
     }
 
@@ -405,8 +411,8 @@ contract RemainingFlows is E2EBase {
     // 8. Borrow cap enforcement
     // ========================================================================
 
-    function test_borrowCap_enforced() public {
-        // V2 market has 10M borrow cap. With 50K supply, max borrow is limited by supply.
+    function test_maxLTV_enforced() public {
+        // Max LTV prevents borrowing beyond collateral value limit.
         uint256 lpAmount = _createV2Position(alice, 0.5 ether, 1000e6);
         vm.startPrank(alice);
         IUniswapV2Pair(Constants.UNI_V2_WETH_USDC).approve(address(v2Adapter), lpAmount);
