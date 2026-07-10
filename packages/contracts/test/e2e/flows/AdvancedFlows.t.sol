@@ -76,10 +76,7 @@ contract AdvancedFlows is E2EBase {
         // Verify liquidator received underlying tokens
         uint256 liqWethAfter = IERC20(Constants.WETH).balanceOf(liquidator);
         uint256 liqUsdcAfter = IERC20(Constants.USDC).balanceOf(liquidator);
-        assertTrue(
-            liqWethAfter > liqWethBefore || liqUsdcAfter > liqUsdcBefore,
-            "Liquidator must receive tokens"
-        );
+        assertTrue(liqWethAfter > liqWethBefore || liqUsdcAfter > liqUsdcBefore, "Liquidator must receive tokens");
 
         // Verify debt decreased
         uint256 debtAfter = _getDebt(positionId);
@@ -112,7 +109,7 @@ contract AdvancedFlows is E2EBase {
         // Mock price for partial liquidation (HF ~ 0.97)
         PositionManager.Position memory pos = positionManager.getPosition(positionId);
         uint256 debtUsd = uint256(borrowAmount) * 1e12;
-        uint256 targetValue = (debtUsd * 10000 * 97) / (7500 * 100);
+        uint256 targetValue = (debtUsd * 10_000 * 97) / (7500 * 100);
         _mockOraclePrice(pos.lpToken, pos.tokenId, pos.amount, pos.lpType, targetValue);
 
         (bool canLiq, uint256 maxRepay) = liquidationEngine.isLiquidatable(positionId);
@@ -385,8 +382,12 @@ contract AdvancedFlows is E2EBase {
         assertGt(treasuryAfter, treasuryBefore, "Treasury should receive fees");
         assertEq(feeCollector.accumulatedFees(Constants.USDC), 0, "Fees cleared after distribute");
 
-        console.log("Reserves: %s, FeeCollector: %s, Treasury gained: %s",
-            reserves, fcAfter - fcBefore, treasuryAfter - treasuryBefore);
+        console.log(
+            "Reserves: %s, FeeCollector: %s, Treasury gained: %s",
+            reserves,
+            fcAfter - fcBefore,
+            treasuryAfter - treasuryBefore
+        );
         console.log("=== Protocol Fees Full Flow Passed ===");
     }
 
@@ -568,12 +569,10 @@ contract AdvancedFlows is E2EBase {
 
         (, uint256 maxRepay) = liquidationEngine.isLiquidatable(positionId);
 
-        // Track liquidator's total value before
+        // Fund liquidator first, then snapshot balances
+        _fundUsdc(liquidator, maxRepay);
         uint256 liqUsdcBefore = IERC20(Constants.USDC).balanceOf(liquidator);
         uint256 liqWethBefore = IERC20(Constants.WETH).balanceOf(liquidator);
-
-        _fundUsdc(liquidator, maxRepay);
-        uint256 liqUsdcFunded = IERC20(Constants.USDC).balanceOf(liquidator);
 
         vm.startPrank(liquidator);
         IERC20(Constants.USDC).approve(address(liquidationEngine), maxRepay);
@@ -583,13 +582,18 @@ contract AdvancedFlows is E2EBase {
         uint256 liqWethAfter = IERC20(Constants.WETH).balanceOf(liquidator);
         uint256 liqUsdcAfter = IERC20(Constants.USDC).balanceOf(liquidator);
 
-        // Liquidator should have received WETH + USDC from unwind
-        // Net: paid maxRepay USDC, received (WETH + USDC from LP unwind)
+        // Liquidator paid maxRepay USDC, received WETH + USDC from LP unwind
         uint256 wethGained = liqWethAfter - liqWethBefore;
-        uint256 usdcNet = liqUsdcAfter - liqUsdcBefore; // includes repay cost
+        // USDC: liquidator spent maxRepay but received USDC from unwind
+        // Net may be negative (paid more than received in USDC), profit is in WETH
+        uint256 usdcSpent = liqUsdcBefore > liqUsdcAfter ? liqUsdcBefore - liqUsdcAfter : 0;
+        uint256 usdcReceived = liqUsdcAfter > liqUsdcBefore ? liqUsdcAfter - liqUsdcBefore : 0;
+
+        // Liquidator must have received WETH (from LP unwind)
+        assertGt(wethGained, 0, "Liquidator must receive WETH from unwind");
 
         console.log("Liquidator WETH gained: %s wei", wethGained);
-        console.log("Liquidator USDC net: %s", usdcNet);
+        console.log("Liquidator USDC spent: %s, received: %s", usdcSpent / 1e6, usdcReceived / 1e6);
         console.log("Repay amount: %s USDC", maxRepay / 1e6);
         console.log("=== Liquidation Bonus Passed ===");
     }
@@ -637,8 +641,7 @@ contract AdvancedFlows is E2EBase {
         assertGt(protocolShareBps, 1800, "Protocol share should be ~20% (min 18%)");
         assertLt(protocolShareBps, 2200, "Protocol share should be ~20% (max 22%)");
 
-        console.log("Total interest: %s, Lender: %s (%.0f%%), Protocol: %s (%.0f%%)",
-            totalInterest, lenderEarnings, protocolEarnings);
+        console.log("Total interest: %s, Lender: %s, Protocol: %s", totalInterest, lenderEarnings, protocolEarnings);
         console.log("Protocol share: %s bps", protocolShareBps);
         console.log("=== Reserve Factor Interest Split Passed ===");
     }
