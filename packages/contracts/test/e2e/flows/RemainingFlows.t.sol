@@ -5,7 +5,7 @@ import "../E2EBase.t.sol";
 import {IPositionManager} from "../../../src/interfaces/IPositionManager.sol";
 
 /// @title RemainingFlows
-/// @notice E2E tests for addCollateral, bad debt writeoff, eliminateDeficit, V3 liquidation execution,
+/// @notice E2E tests for addCollateral, bad debt writeoff, eliminateDeficit, V3 liquidation checks,
 ///         and remaining coverage gaps.
 /// @dev All tests run against real Uniswap on forked mainnet via Anvil.
 contract RemainingFlows is E2EBase {
@@ -275,7 +275,7 @@ contract RemainingFlows is E2EBase {
     }
 
     // ========================================================================
-    // 5. V3 full liquidation execution — real NFT unwind
+    // 5. V3 liquidation check — isLiquidatable path (V3 amount=0)
     // ========================================================================
 
     function test_V3_liquidatableAfterCrash() public {
@@ -402,7 +402,7 @@ contract RemainingFlows is E2EBase {
         // Withdrawn amount represents Carol's share of pool + interest
         assertGt(withdrawn, 0, "Should withdraw something");
         // With interest earned, withdrawn should be >= original deposit (10K USDC minus dead shares rounding)
-        assertGe(withdrawn, 9999e6, "Should get back at least ~10K USDC");
+        assertGt(withdrawn, 10_000e6, "Should withdraw more than deposited");
         console.log("Carol deposited: 10000 USDC, withdrew: %s USDC", withdrawn / 1e6);
         console.log("=== Lender Earns Profit Passed ===");
     }
