@@ -82,6 +82,11 @@ contract CurveAdapter is ILPAdapter {
     }
 
     /// @inheritdoc ILPAdapter
+    function getLiquidity(address, uint256, uint256) external pure returns (uint128) {
+        revert("NOT_IMPLEMENTED");
+    }
+
+    /// @inheritdoc ILPAdapter
     function lpType() external pure returns (LPType) {
         return LPType.Curve;
     }

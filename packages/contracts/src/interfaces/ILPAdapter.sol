@@ -91,6 +91,13 @@ interface ILPAdapter {
         external
         returns (uint256 addedLiquidity, uint256 used0, uint256 used1);
 
+    /// @notice Get the effective liquidity of a position
+    /// @param lpToken Address of LP token or NFT manager
+    /// @param tokenId NFT token ID (0 for ERC-20)
+    /// @param amount Stored position amount (used by V2, ignored by V3 which reads from NFT)
+    /// @return liquidity The effective liquidity as uint128
+    function getLiquidity(address lpToken, uint256 tokenId, uint256 amount) external view returns (uint128);
+
     /// @notice Get the LP type this adapter handles
     function lpType() external view returns (LPType);
 

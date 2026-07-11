@@ -117,6 +117,10 @@ contract MockLPAdapter is ILPAdapter {
         return (amount0 + amount1, amount0, amount1);
     }
 
+    function getLiquidity(address, uint256, uint256 amount) external pure override returns (uint128) {
+        return amount > type(uint128).max ? type(uint128).max : uint128(amount);
+    }
+
     function lpType() external view override returns (LPType) {
         return _lpType;
     }

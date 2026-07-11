@@ -159,8 +159,13 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
         lendingEngine.repayOnBehalf(positionId, repayAmount);
 
         // Step 6: Calculate liquidity to remove proportional to collateral seized
+        // Use adapter.getLiquidity() to read actual liquidity (V3 reads from NFT, V2 uses pos.amount)
+        address adapterAddr = core.adapters(pos.lpType);
+        require(adapterAddr != address(0), "ADAPTER_NOT_SET");
+        ILPAdapter adapter = ILPAdapter(adapterAddr);
+
         uint256 positionValue = positionManager.getPositionValue(positionId);
-        uint256 totalLiquidity = pos.amount;
+        uint256 totalLiquidity = uint256(adapter.getLiquidity(pos.lpToken, pos.tokenId, pos.amount));
         uint256 liquidityToRemove256;
         if (positionValue == 0 || collateralToSeizeNormalized >= positionValue) {
             liquidityToRemove256 = totalLiquidity;
@@ -172,11 +177,11 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
         uint128 liquidityToRemove = uint128(liquidityToRemove256);
 
         // Step 7: Unwind LP — reduce position amount BEFORE external call (CEI pattern)
-        address adapterAddr = core.adapters(pos.lpType);
-        require(adapterAddr != address(0), "ADAPTER_NOT_SET");
-        ILPAdapter adapter = ILPAdapter(adapterAddr);
-
-        positionManager.reducePositionAmount(positionId, liquidityToRemove256);
+        // For V2: pos.amount tracks liquidity, reduce it. For V3: liquidity is in NFT, skip.
+        if (pos.amount > 0) {
+            uint256 amountToReduce = liquidityToRemove256 > pos.amount ? pos.amount : liquidityToRemove256;
+            positionManager.reducePositionAmount(positionId, amountToReduce);
+        }
         (uint256 amount0, uint256 amount1) = adapter.unwind(pos.lpToken, pos.tokenId, liquidityToRemove);
 
         // Step 8: Protocol fee — taken from underlying tokens (Aave pattern).
@@ -224,9 +229,13 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
         if (remainingDebt == 0) {
             PositionManager.Position memory freshPos = positionManager.getPosition(positionId);
 
-            if (freshPos.amount > 0) {
+            // Check for remaining liquidity (V3: read from NFT, V2: use pos.amount)
+            uint128 remainingLiquidity = adapter.getLiquidity(freshPos.lpToken, freshPos.tokenId, freshPos.amount);
+            if (remainingLiquidity > 0) {
                 adapter.unlock(freshPos.lpToken, freshPos.tokenId, freshPos.amount, freshPos.owner);
-                positionManager.reducePositionAmount(positionId, freshPos.amount);
+                if (freshPos.amount > 0) {
+                    positionManager.reducePositionAmount(positionId, freshPos.amount);
+                }
             }
 
             positionManager.markLiquidated(positionId, msg.sender, repayAmount);

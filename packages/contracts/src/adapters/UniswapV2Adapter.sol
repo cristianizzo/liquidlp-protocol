@@ -188,6 +188,13 @@ contract UniswapV2Adapter is ILPAdapter {
     }
 
     /// @inheritdoc ILPAdapter
+    /// @dev V2 LP tokens — pos.amount IS the liquidity
+    function getLiquidity(address, uint256, uint256 amount) external pure returns (uint128) {
+        require(amount <= type(uint128).max, "AMOUNT_OVERFLOW");
+        return uint128(amount);
+    }
+
+    /// @inheritdoc ILPAdapter
     function lpType() external pure returns (LPType) {
         return LPType.UniswapV2;
     }
