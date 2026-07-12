@@ -121,6 +121,9 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
     ///      At high utilization, reserves may exceed cash (tokens lent out).
     ///      In that case, only available cash is distributed. Remaining reserves
     ///      stay tracked and can be distributed after repayments bring cash back.
+    /// @dev Reserve distribution reduces totalPoolAssets, causing a utilization increase
+    ///      and higher borrow rates until new reserves accrue. This is inherent to
+    ///      utilization-based rate models (same in Aave/Compound).
     function distributeReserves() external nonReentrant {
         accrueInterest(); // Ensure reserves are up-to-date
         uint256 amount = protocolReserves;
