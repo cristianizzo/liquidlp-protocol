@@ -238,6 +238,14 @@ contract UniswapV3Adapter is ILPAdapter {
     }
 
     /// @inheritdoc ILPAdapter
+    /// @dev Reads live liquidity directly from V3 NFT — the source of truth for V3 positions
+    function getLiquidity(address lpToken, uint256 tokenId, uint256) external view override returns (uint128) {
+        require(lpToken == address(nftManager), "NOT_UNISWAP_V3");
+        (,,,,,,, uint128 liquidity,,,,) = nftManager.positions(tokenId);
+        return liquidity;
+    }
+
+    /// @inheritdoc ILPAdapter
     function lpType() external pure returns (LPType) {
         return LPType.UniswapV3;
     }

@@ -182,7 +182,7 @@ contract AttackVectorTests is Test {
         usdc.mint(liquidator, maxRepay);
         vm.startPrank(liquidator);
         usdc.approve(address(liq), maxRepay);
-        liq.liquidate(posId, maxRepay, block.timestamp);
+        liq.liquidate(posId, maxRepay, block.timestamp, 0, 0);
         vm.stopPrank();
 
         // After liquidation at $0 collateral value, bad debt writeoff should trigger
@@ -266,7 +266,7 @@ contract AttackVectorTests is Test {
         usdc.mint(alice, maxRepay);
         vm.startPrank(alice);
         usdc.approve(address(liq), maxRepay);
-        liq.liquidate(posId, maxRepay, block.timestamp);
+        liq.liquidate(posId, maxRepay, block.timestamp, 0, 0);
         vm.stopPrank();
 
         // Alice paid maxRepay USDC and received underlying tokens
@@ -289,7 +289,7 @@ contract AttackVectorTests is Test {
         // Liquidator tries to liquidate but has no USDC (simulates transfer failure)
         vm.prank(liquidator);
         vm.expectRevert(); // transferFrom fails
-        liq.liquidate(posId, 10_000e18, block.timestamp);
+        liq.liquidate(posId, 10_000e18, block.timestamp, 0, 0);
 
         // Position state unchanged — no stuck state
         uint256 debt = le.getDebt(posId);
@@ -395,7 +395,7 @@ contract AttackVectorTests is Test {
         usdc.mint(liquidator, maxRepay);
         vm.startPrank(liquidator);
         usdc.approve(address(liq), maxRepay);
-        liq.liquidate(posId, maxRepay, block.timestamp);
+        liq.liquidate(posId, maxRepay, block.timestamp, 0, 0);
         vm.stopPrank();
 
         uint256 debtAfter = le.getDebt(posId);

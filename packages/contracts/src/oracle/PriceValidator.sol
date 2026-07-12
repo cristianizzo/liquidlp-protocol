@@ -42,6 +42,7 @@ contract PriceValidator {
     }
 
     mapping(address => PriceSnapshot[]) public priceHistory;
+    mapping(address => uint256) public priceHistoryIndex; // ring buffer write index
 
     // --- Events ---
     event PriceValidated(address indexed pool, uint256 price, uint256 confidence);
@@ -160,13 +161,16 @@ contract PriceValidator {
             }
         }
 
-        // Record price snapshot (capped at 100 entries to prevent unbounded gas growth)
+        // Record price snapshot (ring buffer — overwrites oldest entry at 100 cap)
         lastKnownTvl[pool] = poolTvl;
         lastPriceTimestamp[pool] = block.timestamp;
-        if (priceHistory[pool].length >= 100) {
-            delete priceHistory[pool];
+        if (priceHistory[pool].length < 100) {
+            priceHistory[pool].push(PriceSnapshot(twapPrice, block.timestamp));
+        } else {
+            uint256 idx = priceHistoryIndex[pool] % 100;
+            priceHistory[pool][idx] = PriceSnapshot(twapPrice, block.timestamp);
+            priceHistoryIndex[pool] = idx + 1;
         }
-        priceHistory[pool].push(PriceSnapshot(twapPrice, block.timestamp));
 
         emit PriceValidated(pool, twapPrice, 10_000 - adjustedHaircutBps);
         return (true, adjustedHaircutBps);
@@ -184,12 +188,21 @@ contract PriceValidator {
         PriceSnapshot[] storage history = priceHistory[pool];
         if (history.length == 0) return 0;
 
+        // Find entry closest to 5 minutes ago (ring buffer — entries not chronologically ordered)
+        if (block.timestamp < 300) return 0;
         uint256 targetTimestamp = block.timestamp - 300;
-        for (uint256 i = history.length; i > 0; i--) {
-            if (history[i - 1].timestamp <= targetTimestamp) {
-                return _calculateDeviation(currentPrice, history[i - 1].price);
+        uint256 bestPrice = 0;
+        uint256 bestDelta = type(uint256).max;
+        for (uint256 i = 0; i < history.length; i++) {
+            if (history[i].timestamp <= targetTimestamp) {
+                uint256 delta = targetTimestamp - history[i].timestamp;
+                if (delta < bestDelta) {
+                    bestDelta = delta;
+                    bestPrice = history[i].price;
+                }
             }
         }
-        return 0;
+        if (bestPrice == 0) return 0;
+        return _calculateDeviation(currentPrice, bestPrice);
     }
 }

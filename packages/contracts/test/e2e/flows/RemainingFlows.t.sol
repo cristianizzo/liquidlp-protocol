@@ -172,7 +172,7 @@ contract RemainingFlows is E2EBase {
         _fundUsdc(liquidator, maxRepay);
         vm.startPrank(liquidator);
         IERC20(Constants.USDC).approve(address(liquidationEngine), maxRepay);
-        liquidationEngine.liquidate(positionId, maxRepay, block.timestamp);
+        liquidationEngine.liquidate(positionId, maxRepay, block.timestamp, 0, 0);
         vm.stopPrank();
 
         // Check if bad debt was written off
@@ -245,7 +245,7 @@ contract RemainingFlows is E2EBase {
         _fundUsdc(liquidator, maxRepay2);
         vm.startPrank(liquidator);
         IERC20(Constants.USDC).approve(address(liquidationEngine), maxRepay2);
-        liquidationEngine.liquidate(posId2, maxRepay2, block.timestamp);
+        liquidationEngine.liquidate(posId2, maxRepay2, block.timestamp, 0, 0);
         vm.stopPrank();
 
         uint256 deficitAfterLiq = market.deficit();
@@ -332,7 +332,7 @@ contract RemainingFlows is E2EBase {
         _fundUsdc(liquidator, maxRepay);
         vm.startPrank(liquidator);
         IERC20(Constants.USDC).approve(address(liquidationEngine), maxRepay);
-        liquidationEngine.liquidate(positionId, maxRepay, block.timestamp);
+        liquidationEngine.liquidate(positionId, maxRepay, block.timestamp, 0, 0);
         vm.stopPrank();
 
         // Verify position is Liquidated

@@ -84,7 +84,7 @@ contract LiquidationDecimalTest is Test {
             )
         );
 
-        adapter = new MockLPAdapter(ILPAdapter.LPType.UniswapV3);
+        adapter = new MockLPAdapter(ILPAdapter.LPType.UniswapV2);
         adapter.setSupportedToken(lpToken, true);
         oracle = new MockLPOracle();
 
@@ -93,8 +93,8 @@ contract LiquidationDecimalTest is Test {
         aclManager.grantRole(aclManager.LENDING_ENGINE(), address(le));
         aclManager.grantRole(aclManager.LIQUIDATION_ENGINE(), address(liq));
         aclManager.grantRole(aclManager.POSITION_MANAGER(), address(pm));
-        core.registerAdapter(ILPAdapter.LPType.UniswapV3, address(adapter));
-        oracleHub.registerOracle(ILPAdapter.LPType.UniswapV3, address(oracle));
+        core.registerAdapter(ILPAdapter.LPType.UniswapV2, address(adapter));
+        oracleHub.registerOracle(ILPAdapter.LPType.UniswapV2, address(oracle));
         core.whitelistPool(lpToken);
         pm.setLendingEngine(address(le));
         vm.stopPrank();
@@ -106,6 +106,7 @@ contract LiquidationDecimalTest is Test {
         // Setup: 6-decimal USDC market with PriceFeedRegistry
         MockERC20 usdc6 = new MockERC20("USDC", "USDC", 6);
         MockMarket market6 = new MockMarket(address(usdc6), address(irm));
+        market6.setLpType(ILPAdapter.LPType.UniswapV2);
         MockPriceFeedRegistry registry = new MockPriceFeedRegistry();
         registry.setPrice(address(usdc6), 1e18); // $1.00
 
@@ -127,7 +128,7 @@ contract LiquidationDecimalTest is Test {
         // Alice deposits, oracle = $50K
         oracle.setPrice(50_000e18);
         vm.prank(alice);
-        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+        uint256 posId = pm.deposit(lpToken, 0, 100e18, marketId);
         vm.roll(block.number + 2);
 
         // Borrow 30K USDC (6 dec)
@@ -159,7 +160,7 @@ contract LiquidationDecimalTest is Test {
         uint256 wethBefore = weth.balanceOf(liquidator);
 
         vm.prank(liquidator);
-        uint256 profit = liq.liquidate(posId, maxRepay, block.timestamp + 1 hours);
+        uint256 profit = liq.liquidate(posId, maxRepay, block.timestamp + 1 hours, 0, 0);
 
         // Verify outcomes
         uint256 debtAfter = le.getDebt(posId);
@@ -180,6 +181,7 @@ contract LiquidationDecimalTest is Test {
         // Same flow but WITHOUT PriceFeedRegistry — tests fallback normalization
         MockERC20 usdc6 = new MockERC20("USDC", "USDC", 6);
         MockMarket market6 = new MockMarket(address(usdc6), address(irm));
+        market6.setLpType(ILPAdapter.LPType.UniswapV2);
 
         vm.startPrank(owner);
         uint256 marketId = core.registerMarket(address(market6));
@@ -196,7 +198,7 @@ contract LiquidationDecimalTest is Test {
 
         oracle.setPrice(50_000e18);
         vm.prank(alice);
-        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+        uint256 posId = pm.deposit(lpToken, 0, 100e18, marketId);
         vm.roll(block.number + 2);
 
         // Borrow — fallback _getMaxBorrow normalizes to 6-dec
@@ -218,7 +220,7 @@ contract LiquidationDecimalTest is Test {
         usdc6.approve(address(liq), maxRepay);
 
         vm.prank(liquidator);
-        liq.liquidate(posId, maxRepay, block.timestamp + 1 hours);
+        liq.liquidate(posId, maxRepay, block.timestamp + 1 hours, 0, 0);
 
         assertLt(pm.getPosition(posId).amount, 100e18, "Position amount must decrease");
         assertLt(le.getDebt(posId), 30_000e6, "Debt must decrease");
@@ -230,6 +232,7 @@ contract LiquidationDecimalTest is Test {
         // WBTC at $60K as borrow asset — exercises non-$1 price conversion
         MockERC20 wbtc = new MockERC20("WBTC", "WBTC", 8);
         MockMarket marketBtc = new MockMarket(address(wbtc), address(irm));
+        marketBtc.setLpType(ILPAdapter.LPType.UniswapV2);
         MockPriceFeedRegistry registry = new MockPriceFeedRegistry();
         registry.setPrice(address(wbtc), 60_000e18); // $60K per BTC
 
@@ -249,7 +252,7 @@ contract LiquidationDecimalTest is Test {
 
         oracle.setPrice(100_000e18); // $100K collateral
         vm.prank(alice);
-        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+        uint256 posId = pm.deposit(lpToken, 0, 100e18, marketId);
         vm.roll(block.number + 2);
 
         // Borrow 0.5 WBTC ($30K)
@@ -278,7 +281,7 @@ contract LiquidationDecimalTest is Test {
         uint256 wethBefore = weth.balanceOf(liquidator);
 
         vm.prank(liquidator);
-        liq.liquidate(posId, maxRepay, block.timestamp + 1 hours);
+        liq.liquidate(posId, maxRepay, block.timestamp + 1 hours, 0, 0);
 
         assertLt(pm.getPosition(posId).amount, 100e18, "Position amount must decrease");
         // Liquidator receives underlying tokens (WETH + WBTC)
@@ -291,6 +294,7 @@ contract LiquidationDecimalTest is Test {
         // Critically underwater position (HF < 0.95) with 6-dec USDC
         MockERC20 usdc6 = new MockERC20("USDC", "USDC", 6);
         MockMarket market6 = new MockMarket(address(usdc6), address(irm));
+        market6.setLpType(ILPAdapter.LPType.UniswapV2);
         MockPriceFeedRegistry registry = new MockPriceFeedRegistry();
         registry.setPrice(address(usdc6), 1e18);
 
@@ -310,7 +314,7 @@ contract LiquidationDecimalTest is Test {
 
         oracle.setPrice(50_000e18);
         vm.prank(alice);
-        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+        uint256 posId = pm.deposit(lpToken, 0, 100e18, marketId);
         vm.roll(block.number + 2);
 
         vm.prank(alice);
@@ -332,7 +336,7 @@ contract LiquidationDecimalTest is Test {
 
         // This MUST succeed — underwater positions must be liquidatable
         vm.prank(liquidator);
-        liq.liquidate(posId, maxRepay, block.timestamp + 1 hours);
+        liq.liquidate(posId, maxRepay, block.timestamp + 1 hours, 0, 0);
 
         assertEq(le.getDebt(posId), 0, "Debt should be fully repaid");
     }
@@ -342,6 +346,7 @@ contract LiquidationDecimalTest is Test {
     function test_maxBorrow_6dec_respectsLTV() public {
         MockERC20 usdc6 = new MockERC20("USDC", "USDC", 6);
         MockMarket market6 = new MockMarket(address(usdc6), address(irm));
+        market6.setLpType(ILPAdapter.LPType.UniswapV2);
         MockPriceFeedRegistry registry = new MockPriceFeedRegistry();
         registry.setPrice(address(usdc6), 1e18);
 
@@ -358,7 +363,7 @@ contract LiquidationDecimalTest is Test {
 
         oracle.setPrice(50_000e18);
         vm.prank(alice);
-        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+        uint256 posId = pm.deposit(lpToken, 0, 100e18, marketId);
         vm.roll(block.number + 2);
 
         // maxBorrow = 50_000 * 0.65 = 32_500 USDC
@@ -378,6 +383,7 @@ contract LiquidationDecimalTest is Test {
     function test_maxBorrow_8decWBTC_respectsLTV() public {
         MockERC20 wbtc = new MockERC20("WBTC", "WBTC", 8);
         MockMarket marketBtc = new MockMarket(address(wbtc), address(irm));
+        marketBtc.setLpType(ILPAdapter.LPType.UniswapV2);
         MockPriceFeedRegistry registry = new MockPriceFeedRegistry();
         registry.setPrice(address(wbtc), 60_000e18);
 
@@ -394,7 +400,7 @@ contract LiquidationDecimalTest is Test {
 
         oracle.setPrice(100_000e18);
         vm.prank(alice);
-        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+        uint256 posId = pm.deposit(lpToken, 0, 100e18, marketId);
         vm.roll(block.number + 2);
 
         // maxBorrow = 100_000 * 0.65 / 60_000 = 1.0833 WBTC = 108_333_333 (8 dec)

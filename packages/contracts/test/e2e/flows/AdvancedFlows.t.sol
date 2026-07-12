@@ -70,7 +70,7 @@ contract AdvancedFlows is E2EBase {
         _fundUsdc(liquidator, maxRepay);
         vm.startPrank(liquidator);
         IERC20(Constants.USDC).approve(address(liquidationEngine), maxRepay);
-        liquidationEngine.liquidate(positionId, maxRepay, block.timestamp);
+        liquidationEngine.liquidate(positionId, maxRepay, block.timestamp, 0, 0);
         vm.stopPrank();
 
         // Verify liquidator received underlying tokens
@@ -120,7 +120,7 @@ contract AdvancedFlows is E2EBase {
         _fundUsdc(liquidator, partialRepay);
         vm.startPrank(liquidator);
         IERC20(Constants.USDC).approve(address(liquidationEngine), partialRepay);
-        liquidationEngine.liquidate(positionId, partialRepay, block.timestamp);
+        liquidationEngine.liquidate(positionId, partialRepay, block.timestamp, 0, 0);
         vm.stopPrank();
 
         // Position should still be active (not fully liquidated)
@@ -164,7 +164,7 @@ contract AdvancedFlows is E2EBase {
         _fundUsdc(liquidator, repay1);
         vm.startPrank(liquidator);
         IERC20(Constants.USDC).approve(address(liquidationEngine), repay1);
-        liquidationEngine.liquidate(positionId, repay1, block.timestamp);
+        liquidationEngine.liquidate(positionId, repay1, block.timestamp, 0, 0);
         vm.stopPrank();
 
         uint256 debtAfter1 = _getDebt(positionId);
@@ -180,7 +180,7 @@ contract AdvancedFlows is E2EBase {
             _fundUsdc(liquidator, repay2);
             vm.startPrank(liquidator);
             IERC20(Constants.USDC).approve(address(liquidationEngine), repay2);
-            liquidationEngine.liquidate(positionId, repay2, block.timestamp);
+            liquidationEngine.liquidate(positionId, repay2, block.timestamp, 0, 0);
             vm.stopPrank();
 
             uint256 debtAfter2 = _getDebt(positionId);
@@ -501,7 +501,7 @@ contract AdvancedFlows is E2EBase {
         _fundUsdc(liquidator, maxRepay);
         vm.startPrank(liquidator);
         IERC20(Constants.USDC).approve(address(liquidationEngine), maxRepay);
-        liquidationEngine.liquidate(positionId, maxRepay, block.timestamp);
+        liquidationEngine.liquidate(positionId, maxRepay, block.timestamp, 0, 0);
         vm.stopPrank();
 
         assertLt(_getDebt(positionId), (maxBorrow * 90) / 100, "Debt should decrease");
@@ -576,7 +576,7 @@ contract AdvancedFlows is E2EBase {
 
         vm.startPrank(liquidator);
         IERC20(Constants.USDC).approve(address(liquidationEngine), maxRepay);
-        liquidationEngine.liquidate(positionId, maxRepay, block.timestamp);
+        liquidationEngine.liquidate(positionId, maxRepay, block.timestamp, 0, 0);
         vm.stopPrank();
 
         uint256 liqWethAfter = IERC20(Constants.WETH).balanceOf(liquidator);

@@ -274,6 +274,9 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
         address marketAddr = _getMarketAddr(pos.marketId);
         Market market = Market(marketAddr);
 
+        // Accrue interest to ensure borrowIndex is current before reading debt
+        market.accrueInterest();
+
         uint256 currentDebt = _getCurrentDebt(positionId, market);
         require(currentDebt > 0, "NO_DEBT");
 

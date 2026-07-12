@@ -113,7 +113,9 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
     function liquidate(
         uint256 positionId,
         uint256 repayAmount,
-        uint256 deadline
+        uint256 deadline,
+        uint256 minAmount0,
+        uint256 minAmount1
     )
         external
         whenNotPaused
@@ -159,25 +161,56 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
         lendingEngine.repayOnBehalf(positionId, repayAmount);
 
         // Step 6: Calculate liquidity to remove proportional to collateral seized
-        uint256 positionValue = positionManager.getPositionValue(positionId);
-        uint256 totalLiquidity = pos.amount;
-        uint256 liquidityToRemove256;
-        if (positionValue == 0 || collateralToSeizeNormalized >= positionValue) {
-            liquidityToRemove256 = totalLiquidity;
-        } else {
-            liquidityToRemove256 = (totalLiquidity * collateralToSeizeNormalized) / positionValue;
-        }
-        require(liquidityToRemove256 > 0, "ZERO_LIQUIDITY");
-        require(liquidityToRemove256 <= type(uint128).max, "LIQUIDITY_OVERFLOW");
-        uint128 liquidityToRemove = uint128(liquidityToRemove256);
-
-        // Step 7: Unwind LP — reduce position amount BEFORE external call (CEI pattern)
+        // Use adapter.getLiquidity() to read actual liquidity (V3 reads from NFT, V2 uses pos.amount)
         address adapterAddr = core.adapters(pos.lpType);
         require(adapterAddr != address(0), "ADAPTER_NOT_SET");
         ILPAdapter adapter = ILPAdapter(adapterAddr);
 
-        positionManager.reducePositionAmount(positionId, liquidityToRemove256);
-        (uint256 amount0, uint256 amount1) = adapter.unwind(pos.lpToken, pos.tokenId, liquidityToRemove);
+        uint256 positionValue = positionManager.getPositionValue(positionId);
+        uint256 totalLiquidity = uint256(adapter.getLiquidity(pos.lpToken, pos.tokenId, pos.amount));
+
+        uint256 amount0;
+        uint256 amount1;
+
+        if (totalLiquidity == 0 && pos.tokenId > 0) {
+            // V3 fee-only position: no liquidity to unwind, seize uncollected fees instead
+            require(positionValue > 0, "ZERO_LIQUIDITY");
+            (uint256 collected0, uint256 collected1) = adapter.collectFees(pos.lpToken, pos.tokenId);
+            amount0 = collected0;
+            amount1 = collected1;
+            // Scale to proportional seizure (don't take all fees for partial repay)
+            if (collateralToSeizeNormalized < positionValue) {
+                amount0 = Math.mulDiv(collected0, collateralToSeizeNormalized, positionValue);
+                amount1 = Math.mulDiv(collected1, collateralToSeizeNormalized, positionValue);
+                // Return excess fees to borrower
+                uint256 excess0 = collected0 - amount0;
+                uint256 excess1 = collected1 - amount1;
+                if (excess0 > 0) OZIERC20(pos.token0).safeTransfer(pos.owner, excess0);
+                if (excess1 > 0) OZIERC20(pos.token1).safeTransfer(pos.owner, excess1);
+            }
+        } else {
+            // Normal path: proportional liquidity removal
+            uint256 liquidityToRemove256;
+            if (positionValue == 0 || collateralToSeizeNormalized >= positionValue) {
+                liquidityToRemove256 = totalLiquidity;
+            } else {
+                liquidityToRemove256 = Math.mulDiv(totalLiquidity, collateralToSeizeNormalized, positionValue);
+            }
+            require(liquidityToRemove256 > 0, "ZERO_LIQUIDITY");
+            require(liquidityToRemove256 <= type(uint128).max, "LIQUIDITY_OVERFLOW");
+            uint128 liquidityToRemove = uint128(liquidityToRemove256);
+
+            // Step 7: Reduce position amount BEFORE external call (CEI)
+            // ERC-20 LP types track liquidity via pos.amount — reduce it.
+            // NFT LP types (V3) track liquidity in the NFT — skip.
+            bool isErc20LP = pos.lpType == ILPAdapter.LPType.UniswapV2 || pos.lpType == ILPAdapter.LPType.PancakeSwapV2
+                || pos.lpType == ILPAdapter.LPType.Curve;
+            if (isErc20LP && pos.amount > 0) {
+                uint256 amountToReduce = liquidityToRemove256 > pos.amount ? pos.amount : liquidityToRemove256;
+                positionManager.reducePositionAmount(positionId, amountToReduce);
+            }
+            (amount0, amount1) = adapter.unwind(pos.lpToken, pos.tokenId, liquidityToRemove);
+        }
 
         // Step 8: Protocol fee — taken from underlying tokens (Aave pattern).
         // Fee = liquidationFeeBps % of the bonus portion of the seized collateral.
@@ -219,14 +252,26 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
             OZIERC20(pos.token1).safeTransfer(msg.sender, amount1);
         }
 
+        // Slippage protection — checked AFTER fees so liquidator gets accurate net amounts
+        require(amount0 >= minAmount0, "SLIPPAGE_AMOUNT0");
+        require(amount1 >= minAmount1, "SLIPPAGE_AMOUNT1");
+
         // Step 10: Handle full debt repayment — return remaining LP to borrower
         uint256 remainingDebt = lendingEngine.getDebt(positionId);
         if (remainingDebt == 0) {
             PositionManager.Position memory freshPos = positionManager.getPosition(positionId);
 
-            if (freshPos.amount > 0) {
+            // Return remaining LP to borrower (V2: LP tokens, V3: NFT even if empty)
+            uint128 remainingLiquidity = adapter.getLiquidity(freshPos.lpToken, freshPos.tokenId, freshPos.amount);
+            bool isNFT = freshPos.lpType == ILPAdapter.LPType.UniswapV3
+                || freshPos.lpType == ILPAdapter.LPType.PancakeSwapV3 || freshPos.lpType == ILPAdapter.LPType.Aerodrome;
+            if (remainingLiquidity > 0 || isNFT) {
+                // NFT positions: always return NFT (even empty — borrower owns it)
+                // ERC-20 positions: return remaining LP tokens
                 adapter.unlock(freshPos.lpToken, freshPos.tokenId, freshPos.amount, freshPos.owner);
-                positionManager.reducePositionAmount(positionId, freshPos.amount);
+                if (!isNFT && freshPos.amount > 0) {
+                    positionManager.reducePositionAmount(positionId, freshPos.amount);
+                }
             }
 
             positionManager.markLiquidated(positionId, msg.sender, repayAmount);
@@ -252,6 +297,10 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
     uint256 public constant CRITICAL_HF_THRESHOLD = 0.95e18; // 0.95
 
     /// @inheritdoc ILiquidationEngine
+    /// @dev WARNING: This is a view function and does NOT call accrueInterest().
+    ///      Health factor may be stale. For accurate results, call
+    ///      lendingEngine.accrueInterest(marketId) first, or rely on liquidate()
+    ///      which accrues automatically before checking.
     function isLiquidatable(uint256 positionId) public view returns (bool liquidatable, uint256 maxRepay) {
         uint256 healthFactor = positionManager.getHealthFactor(positionId);
 
@@ -294,13 +343,16 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
     // --- Internal ---
 
     /// @notice Convert borrow asset amount to 18-dec USD value
-    /// @dev Uses PriceFeedRegistry if available, falls back to decimal normalization (assumes $1 peg)
+    /// @dev Uses PriceFeedRegistry when available. Fallback normalizes decimals (assumes $1 peg).
+    ///      WARNING: Fallback is only safe for USD-pegged stablecoins (USDC, DAI, USDT).
+    ///      Non-stablecoin borrow assets MUST have PriceFeedRegistry configured.
     function _getRepayValueUsd(address borrowAsset, uint256 amount, uint8 decimals) internal view returns (uint256) {
         require(decimals <= 36, "INVALID_DECIMALS");
         PriceFeedRegistry registry = positionManager.priceFeedRegistry();
         if (address(registry) != address(0)) {
             return registry.getUsdValue(borrowAsset, amount, decimals);
         }
+        // Fallback: decimal normalization (assumes $1 peg — safe for stablecoins only)
         if (decimals < 18) {
             return Math.mulDiv(amount, 10 ** (18 - decimals), 1);
         } else if (decimals > 18) {

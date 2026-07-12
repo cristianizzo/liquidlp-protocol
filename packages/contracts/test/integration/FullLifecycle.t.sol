@@ -108,7 +108,7 @@ contract FullLifecycleTest is Test {
 
         // --- Market (UUPS proxy via real Market, not mock) ---
         IMarket.MarketConfig memory mConfig = IMarket.MarketConfig({
-            lpType: ILPAdapter.LPType.UniswapV3,
+            lpType: ILPAdapter.LPType.UniswapV2,
             borrowAsset: address(usdc),
             maxLtv: 6500,
             liquidationThreshold: 7500,
@@ -127,7 +127,7 @@ contract FullLifecycleTest is Test {
         );
 
         // --- Mocks ---
-        adapter = new MockLPAdapter(ILPAdapter.LPType.UniswapV3);
+        adapter = new MockLPAdapter(ILPAdapter.LPType.UniswapV2);
         adapter.setSupportedToken(lpToken, true);
         adapter.setTokenReturns(address(weth), address(usdc));
         adapter.setUnwindAmounts(25e18, 25_000e18); // 100 units = 25 WETH + 25K USDC
@@ -142,8 +142,8 @@ contract FullLifecycleTest is Test {
         aclManager.grantRole(aclManager.LIQUIDATION_ENGINE(), address(liq));
         aclManager.grantRole(aclManager.POSITION_MANAGER(), address(pm));
         aclManager.grantRole(aclManager.KEEPER(), address(liq));
-        core.registerAdapter(ILPAdapter.LPType.UniswapV3, address(adapter));
-        oracleHub.registerOracle(ILPAdapter.LPType.UniswapV3, address(oracle));
+        core.registerAdapter(ILPAdapter.LPType.UniswapV2, address(adapter));
+        oracleHub.registerOracle(ILPAdapter.LPType.UniswapV2, address(oracle));
         core.whitelistPool(lpToken);
         marketId = core.registerMarket(address(market));
         pm.setLendingEngine(address(le));
@@ -180,7 +180,7 @@ contract FullLifecycleTest is Test {
         _supplyToMarket(lender1, 100_000e18);
 
         // Alice deposits LP worth $50K
-        uint256 posId = _depositLP(alice, 1, 100e18);
+        uint256 posId = _depositLP(alice, 0, 100e18);
 
         // Verify position is Active
         IPositionManager.Position memory pos = pm.getPosition(posId);
@@ -217,7 +217,7 @@ contract FullLifecycleTest is Test {
 
     function test_interestAccrual_debtGrowsOverTime() public {
         _supplyToMarket(lender1, 100_000e18);
-        uint256 posId = _depositLP(alice, 1, 100e18);
+        uint256 posId = _depositLP(alice, 0, 100e18);
 
         vm.prank(alice);
         le.borrow(posId, 25_000e18);
@@ -244,7 +244,7 @@ contract FullLifecycleTest is Test {
 
     function test_interestAccrual_lenderSharesGrowInValue() public {
         _supplyToMarket(lender1, 100_000e18);
-        uint256 posId = _depositLP(alice, 1, 100e18);
+        uint256 posId = _depositLP(alice, 0, 100e18);
 
         vm.prank(alice);
         le.borrow(posId, 30_000e18);
@@ -264,7 +264,7 @@ contract FullLifecycleTest is Test {
 
     function test_liquidation_priceDrop() public {
         _supplyToMarket(lender1, 100_000e18);
-        uint256 posId = _depositLP(alice, 1, 100e18);
+        uint256 posId = _depositLP(alice, 0, 100e18);
 
         // Alice borrows $30K
         vm.prank(alice);
@@ -286,7 +286,7 @@ contract FullLifecycleTest is Test {
         uint256 wethBefore = weth.balanceOf(liquidator);
 
         vm.prank(liquidator);
-        liq.liquidate(posId, 15_000e18, block.timestamp + 1 hours);
+        liq.liquidate(posId, 15_000e18, block.timestamp + 1 hours, 0, 0);
 
         // Debt should be reduced
         uint256 debtAfter = le.getDebt(posId);
@@ -309,7 +309,7 @@ contract FullLifecycleTest is Test {
 
         // Deposit $50K LP, borrow only $10K (small debt relative to collateral)
         oracle.setPrice(50_000e18);
-        uint256 posId = _depositLP(alice, 1, 100e18);
+        uint256 posId = _depositLP(alice, 0, 100e18);
 
         vm.prank(alice);
         le.borrow(posId, 10_000e18);
@@ -333,7 +333,7 @@ contract FullLifecycleTest is Test {
         uint256 unlocksBefore = adapter.unlockCallCount();
 
         vm.prank(liquidator);
-        liq.liquidate(posId, totalDebt, block.timestamp + 1 hours);
+        liq.liquidate(posId, totalDebt, block.timestamp + 1 hours, 0, 0);
 
         // Debt fully repaid (no fee deducted from repayment)
         assertEq(le.getDebt(posId), 0);
@@ -356,7 +356,7 @@ contract FullLifecycleTest is Test {
         _supplyToMarket(lender1, 200_000e18);
 
         // Alice deposits and borrows
-        uint256 posId1 = _depositLP(alice, 1, 100e18);
+        uint256 posId1 = _depositLP(alice, 0, 100e18);
         vm.prank(alice);
         le.borrow(posId1, 20_000e18);
 
@@ -397,7 +397,7 @@ contract FullLifecycleTest is Test {
         _supplyToMarket(lender2, 40_000e18);
 
         // Borrower takes $30K (within 65% LTV of $50K)
-        uint256 posId = _depositLP(alice, 1, 100e18);
+        uint256 posId = _depositLP(alice, 0, 100e18);
         vm.prank(alice);
         le.borrow(posId, 30_000e18);
 
@@ -425,7 +425,7 @@ contract FullLifecycleTest is Test {
 
         // Market has 10M cap. Borrow close to cap.
         oracle.setPrice(5_000_000e18); // $5M collateral
-        uint256 posId = _depositLP(alice, 1, 100e18);
+        uint256 posId = _depositLP(alice, 0, 100e18);
 
         // Max LTV 65% of $5M = $3.25M — within 10M cap
         vm.prank(alice);
@@ -454,7 +454,7 @@ contract FullLifecycleTest is Test {
 
         // Deposit LP without advancing blocks
         vm.prank(alice);
-        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+        uint256 posId = pm.deposit(lpToken, 0, 100e18, marketId);
 
         // Try to borrow in same block — should fail
         vm.prank(alice);
@@ -478,7 +478,7 @@ contract FullLifecycleTest is Test {
         _supplyToMarket(lender1, 100_000e18);
 
         // $50K collateral, 65% LTV = $32.5K max
-        uint256 posId = _depositLP(alice, 1, 100e18);
+        uint256 posId = _depositLP(alice, 0, 100e18);
 
         vm.prank(alice);
         vm.expectRevert("EXCEEDS_MAX_LTV");
@@ -497,7 +497,7 @@ contract FullLifecycleTest is Test {
         _supplyToMarket(lender1, 100_000e18);
 
         // Borrow near max LTV
-        uint256 posId = _depositLP(alice, 1, 100e18);
+        uint256 posId = _depositLP(alice, 0, 100e18);
         vm.prank(alice);
         le.borrow(posId, 32_000e18);
 
@@ -520,7 +520,7 @@ contract FullLifecycleTest is Test {
     function test_partialLiquidation_twoRounds() public {
         _supplyToMarket(lender1, 100_000e18);
 
-        uint256 posId = _depositLP(alice, 1, 100e18);
+        uint256 posId = _depositLP(alice, 0, 100e18);
         vm.prank(alice);
         le.borrow(posId, 30_000e18);
 
@@ -537,7 +537,7 @@ contract FullLifecycleTest is Test {
         vm.prank(liquidator);
         usdc.approve(address(liq), maxRepay1);
         vm.prank(liquidator);
-        liq.liquidate(posId, maxRepay1, block.timestamp + 1 hours);
+        liq.liquidate(posId, maxRepay1, block.timestamp + 1 hours, 0, 0);
 
         uint256 debtAfterFirst = le.getDebt(posId);
         uint256 amountAfterFirst = pm.getPosition(posId).amount;
@@ -551,7 +551,7 @@ contract FullLifecycleTest is Test {
             vm.prank(liquidator);
             usdc.approve(address(liq), maxRepay2);
             vm.prank(liquidator);
-            liq.liquidate(posId, maxRepay2, block.timestamp + 1 hours);
+            liq.liquidate(posId, maxRepay2, block.timestamp + 1 hours, 0, 0);
 
             // Position further reduced
             assertLt(pm.getPosition(posId).amount, amountAfterFirst);
@@ -565,7 +565,7 @@ contract FullLifecycleTest is Test {
     function test_feeCollection_duringLiquidation() public {
         _supplyToMarket(lender1, 100_000e18);
 
-        uint256 posId = _depositLP(alice, 1, 100e18);
+        uint256 posId = _depositLP(alice, 0, 100e18);
         vm.prank(alice);
         le.borrow(posId, 30_000e18);
 
@@ -582,7 +582,7 @@ contract FullLifecycleTest is Test {
         uint256 treasuryBefore = usdc.balanceOf(treasury);
 
         vm.prank(liquidator);
-        liq.liquidate(posId, totalDebt, block.timestamp + 1 hours);
+        liq.liquidate(posId, totalDebt, block.timestamp + 1 hours, 0, 0);
 
         // Check if fees were collected (FeeCollector should have received some)
         uint256 fcBalance = usdc.balanceOf(address(fc));
@@ -599,7 +599,7 @@ contract FullLifecycleTest is Test {
     function test_cannotBorrowOnClosedPosition() public {
         _supplyToMarket(lender1, 100_000e18);
 
-        uint256 posId = _depositLP(alice, 1, 100e18);
+        uint256 posId = _depositLP(alice, 0, 100e18);
         vm.prank(alice);
         le.borrow(posId, 10_000e18);
 
@@ -623,7 +623,7 @@ contract FullLifecycleTest is Test {
 
     function test_pauseUnpause_lifecycle() public {
         _supplyToMarket(lender1, 100_000e18);
-        uint256 posId = _depositLP(alice, 1, 100e18);
+        uint256 posId = _depositLP(alice, 0, 100e18);
 
         // Guardian pauses
         vm.prank(guardian);
@@ -681,7 +681,7 @@ contract FullLifecycleTest is Test {
     // ========================================================
 
     function test_accessControl_comprehensive() public {
-        uint256 posId = _depositLP(alice, 1, 100e18);
+        uint256 posId = _depositLP(alice, 0, 100e18);
 
         // Bob can't withdraw Alice's position
         vm.prank(bob);

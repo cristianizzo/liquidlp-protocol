@@ -96,8 +96,24 @@ contract MockLPAdapter is ILPAdapter {
         }
     }
 
-    function collectFees(address, uint256) external pure override returns (uint256, uint256) {
-        return (0, 0);
+    // Configurable fee returns for fee-only liquidation tests
+    uint256 public mockFee0;
+    uint256 public mockFee1;
+
+    function setMockFees(uint256 _fee0, uint256 _fee1) external {
+        mockFee0 = _fee0;
+        mockFee1 = _fee1;
+    }
+
+    function collectFees(address, uint256) external override returns (uint256, uint256) {
+        // Transfer fees to caller (like real adapter would)
+        if (mockFee0 > 0 && token0Return != address(0)) {
+            require(IERC20(token0Return).transfer(msg.sender, mockFee0), "TRANSFER_FAILED");
+        }
+        if (mockFee1 > 0 && token1Return != address(0)) {
+            require(IERC20(token1Return).transfer(msg.sender, mockFee1), "TRANSFER_FAILED");
+        }
+        return (mockFee0, mockFee1);
     }
 
     function addLiquidity(
@@ -115,6 +131,21 @@ contract MockLPAdapter is ILPAdapter {
         returns (uint256, uint256, uint256)
     {
         return (amount0 + amount1, amount0, amount1);
+    }
+
+    // Override liquidity for V3-style tests (amount=0, liquidity from NFT)
+    uint128 public mockLiquidity;
+    bool public useMockLiquidity;
+
+    function setMockLiquidity(uint128 _liq) external {
+        mockLiquidity = _liq;
+        useMockLiquidity = true;
+    }
+
+    function getLiquidity(address, uint256, uint256 amount) external view override returns (uint128) {
+        if (useMockLiquidity) return mockLiquidity;
+        require(amount <= type(uint128).max, "AMOUNT_OVERFLOW");
+        return uint128(amount);
     }
 
     function lpType() external view override returns (LPType) {
