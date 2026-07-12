@@ -108,10 +108,10 @@ contract MockLPAdapter is ILPAdapter {
     function collectFees(address, uint256) external override returns (uint256, uint256) {
         // Transfer fees to caller (like real adapter would)
         if (mockFee0 > 0 && token0Return != address(0)) {
-            IERC20(token0Return).transfer(msg.sender, mockFee0);
+            require(IERC20(token0Return).transfer(msg.sender, mockFee0), "TRANSFER_FAILED");
         }
         if (mockFee1 > 0 && token1Return != address(0)) {
-            IERC20(token1Return).transfer(msg.sender, mockFee1);
+            require(IERC20(token1Return).transfer(msg.sender, mockFee1), "TRANSFER_FAILED");
         }
         return (mockFee0, mockFee1);
     }

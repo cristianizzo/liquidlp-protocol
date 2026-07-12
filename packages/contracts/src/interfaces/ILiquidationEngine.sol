@@ -24,8 +24,8 @@ interface ILiquidationEngine {
     /// @param positionId The position to liquidate
     /// @param repayAmount Amount of debt to repay
     /// @param deadline Transaction deadline
-    /// @param minAmount0 Minimum token0 output (slippage protection)
-    /// @param minAmount1 Minimum token1 output (slippage protection)
+    /// @param minAmount0 Minimum token0 amount the liquidator must receive (net of protocol fees)
+    /// @param minAmount1 Minimum token1 amount the liquidator must receive (net of protocol fees)
     /// @return profit Always 0 — profit is implicit in the underlying tokens received
     function liquidate(
         uint256 positionId,

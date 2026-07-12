@@ -309,30 +309,11 @@ contract V3LiquidationPaths is Test {
     // ========== 7. Ring buffer volatility after 100+ entries ==========
     // (PriceValidator test — included here for completeness)
 
-    function test_ringBuffer_volatilityAfterWrap() public {
-        // This is a logic test — PriceValidator uses ring buffer after 100 entries
-        // The fix ensures _checkVolatility scans all entries by timestamp, not order
-        // Verified by the ring buffer implementation using bestDelta search
-        // No separate contract interaction needed — the fix is structural
-        assertTrue(true, "Ring buffer fix verified structurally");
-    }
-
-    // ========== 8. AMOUNT_OVERFLOW revert for V2 > uint128 ==========
+    // ========== 7. AMOUNT_OVERFLOW revert for V2 > uint128 ==========
 
     function test_v2_amountOverflow_reverts() public {
         // V2 getLiquidity reverts on amount > uint128.max
         vm.expectRevert("AMOUNT_OVERFLOW");
         v2Adapter.getLiquidity(v2LpToken, 0, uint256(type(uint128).max) + 1);
-    }
-
-    // ========== 9. observationCardinality < 2 revert ==========
-    // (Fork test needed for real pool — unit test verifies the require exists)
-
-    function test_cardinalityCheck_exists() public {
-        // The cardinality check is in UniswapV3Oracle._getTwapTick():
-        //   require(observationCardinality >= 2, "INSUFFICIENT_CARDINALITY")
-        // This is verified by fork tests against real pools.
-        // Unit test confirms the require string exists in the bytecode.
-        assertTrue(true, "Cardinality check verified in oracle code");
     }
 }
