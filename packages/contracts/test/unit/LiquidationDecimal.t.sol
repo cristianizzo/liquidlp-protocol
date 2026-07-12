@@ -159,7 +159,7 @@ contract LiquidationDecimalTest is Test {
         uint256 wethBefore = weth.balanceOf(liquidator);
 
         vm.prank(liquidator);
-        uint256 profit = liq.liquidate(posId, maxRepay, block.timestamp + 1 hours);
+        uint256 profit = liq.liquidate(posId, maxRepay, block.timestamp + 1 hours, 0, 0);
 
         // Verify outcomes
         uint256 debtAfter = le.getDebt(posId);
@@ -218,7 +218,7 @@ contract LiquidationDecimalTest is Test {
         usdc6.approve(address(liq), maxRepay);
 
         vm.prank(liquidator);
-        liq.liquidate(posId, maxRepay, block.timestamp + 1 hours);
+        liq.liquidate(posId, maxRepay, block.timestamp + 1 hours, 0, 0);
 
         assertLt(pm.getPosition(posId).amount, 100e18, "Position amount must decrease");
         assertLt(le.getDebt(posId), 30_000e6, "Debt must decrease");
@@ -278,7 +278,7 @@ contract LiquidationDecimalTest is Test {
         uint256 wethBefore = weth.balanceOf(liquidator);
 
         vm.prank(liquidator);
-        liq.liquidate(posId, maxRepay, block.timestamp + 1 hours);
+        liq.liquidate(posId, maxRepay, block.timestamp + 1 hours, 0, 0);
 
         assertLt(pm.getPosition(posId).amount, 100e18, "Position amount must decrease");
         // Liquidator receives underlying tokens (WETH + WBTC)
@@ -332,7 +332,7 @@ contract LiquidationDecimalTest is Test {
 
         // This MUST succeed — underwater positions must be liquidatable
         vm.prank(liquidator);
-        liq.liquidate(posId, maxRepay, block.timestamp + 1 hours);
+        liq.liquidate(posId, maxRepay, block.timestamp + 1 hours, 0, 0);
 
         assertEq(le.getDebt(posId), 0, "Debt should be fully repaid");
     }

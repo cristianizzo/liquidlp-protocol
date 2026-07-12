@@ -290,7 +290,7 @@ contract LiquidationEngineTest is Test {
 
         vm.prank(liquidator);
         vm.expectRevert("NOT_LIQUIDATABLE");
-        liq.liquidate(posId, 5000e18, block.timestamp + 1 hours);
+        liq.liquidate(posId, 5000e18, block.timestamp + 1 hours, 0, 0);
     }
 
     function test_liquidate_revertsZeroAmount() public {
@@ -298,7 +298,7 @@ contract LiquidationEngineTest is Test {
 
         vm.prank(liquidator);
         vm.expectRevert("ZERO_AMOUNT");
-        liq.liquidate(posId, 0, block.timestamp + 1 hours);
+        liq.liquidate(posId, 0, block.timestamp + 1 hours, 0, 0);
     }
 
     function test_liquidate_revertsExceedsMaxRepay() public {
@@ -312,7 +312,7 @@ contract LiquidationEngineTest is Test {
 
         vm.prank(liquidator);
         vm.expectRevert("EXCEEDS_MAX_REPAY");
-        liq.liquidate(posId, maxRepay + 1, block.timestamp + 1 hours);
+        liq.liquidate(posId, maxRepay + 1, block.timestamp + 1 hours, 0, 0);
     }
 
     function test_liquidate_revertsWhenPaused() public {
@@ -323,7 +323,7 @@ contract LiquidationEngineTest is Test {
 
         vm.prank(liquidator);
         vm.expectRevert("PAUSED");
-        liq.liquidate(posId, 1000e18, block.timestamp + 1 hours);
+        liq.liquidate(posId, 1000e18, block.timestamp + 1 hours, 0, 0);
     }
 
     function test_liquidate_reducesDebt() public {
@@ -339,7 +339,7 @@ contract LiquidationEngineTest is Test {
         usdc.approve(address(liq), repayAmount);
 
         vm.prank(liquidator);
-        liq.liquidate(posId, repayAmount, block.timestamp + 1 hours);
+        liq.liquidate(posId, repayAmount, block.timestamp + 1 hours, 0, 0);
 
         uint256 debtAfter = le.getDebt(posId);
         assertLt(debtAfter, debtBefore);
@@ -358,7 +358,7 @@ contract LiquidationEngineTest is Test {
         vm.recordLogs();
 
         vm.prank(liquidator);
-        liq.liquidate(posId, repayAmount, block.timestamp + 1 hours);
+        liq.liquidate(posId, repayAmount, block.timestamp + 1 hours, 0, 0);
 
         Vm.Log[] memory entries = vm.getRecordedLogs();
         // LiquidationExecuted should be the last event
@@ -526,7 +526,7 @@ contract LiquidationEngineTest is Test {
 
             // This should NOT revert with "ZERO_LIQUIDITY" anymore
             vm.prank(liquidator);
-            liq.liquidate(posId, repayAmount, block.timestamp + 1 hours);
+            liq.liquidate(posId, repayAmount, block.timestamp + 1 hours, 0, 0);
 
             // Position amount should have decreased
             IPositionManager.Position memory pos = pm.getPosition(posId);
@@ -561,7 +561,7 @@ contract LiquidationEngineTest is Test {
         uint256 amountBefore = pm.getPosition(posId).amount;
 
         vm.prank(liquidator);
-        liq.liquidate(posId, repayAmount, block.timestamp + 1 hours);
+        liq.liquidate(posId, repayAmount, block.timestamp + 1 hours, 0, 0);
 
         uint256 amountAfter = pm.getPosition(posId).amount;
         assertLt(amountAfter, amountBefore, "Must work with 18-dec token too");
@@ -584,7 +584,7 @@ contract LiquidationEngineTest is Test {
         usdc.approve(address(liq), repayAmount);
 
         vm.prank(liquidator);
-        liq.liquidate(posId, repayAmount, block.timestamp + 1 hours);
+        liq.liquidate(posId, repayAmount, block.timestamp + 1 hours, 0, 0);
 
         // Position amount should be REDUCED after partial liquidation
         IPositionManager.Position memory posAfter = pm.getPosition(posId);
@@ -603,7 +603,7 @@ contract LiquidationEngineTest is Test {
         vm.prank(liquidator);
         usdc.approve(address(liq), repay1);
         vm.prank(liquidator);
-        liq.liquidate(posId, repay1, block.timestamp + 1 hours);
+        liq.liquidate(posId, repay1, block.timestamp + 1 hours, 0, 0);
 
         uint256 amountAfterFirst = pm.getPosition(posId).amount;
         assertLt(amountAfterFirst, 100e18);
@@ -618,7 +618,7 @@ contract LiquidationEngineTest is Test {
             vm.prank(liquidator);
             usdc.approve(address(liq), repay2);
             vm.prank(liquidator);
-            liq.liquidate(posId, repay2, block.timestamp + 1 hours);
+            liq.liquidate(posId, repay2, block.timestamp + 1 hours, 0, 0);
 
             uint256 amountAfterSecond = pm.getPosition(posId).amount;
             assertLt(amountAfterSecond, amountAfterFirst, "Amount must decrease further on second liquidation");
@@ -640,7 +640,7 @@ contract LiquidationEngineTest is Test {
         usdc.approve(address(liq), totalDebt);
 
         vm.prank(liquidator);
-        liq.liquidate(posId, totalDebt, block.timestamp + 1 hours);
+        liq.liquidate(posId, totalDebt, block.timestamp + 1 hours, 0, 0);
 
         // Verify debt is fully repaid
         assertEq(le.getDebt(posId), 0);
@@ -683,7 +683,7 @@ contract LiquidationEngineTest is Test {
         uint256 unlocksBefore = adapter.unlockCallCount();
 
         vm.prank(liquidator);
-        liq.liquidate(posId, totalDebt, block.timestamp + 1 hours);
+        liq.liquidate(posId, totalDebt, block.timestamp + 1 hours, 0, 0);
 
         assertEq(le.getDebt(posId), 0);
 
@@ -716,7 +716,7 @@ contract LiquidationEngineTest is Test {
         uint256 unlocksBefore = adapter.unlockCallCount();
 
         vm.prank(liquidator);
-        liq.liquidate(posId, repayAmount, block.timestamp + 1 hours);
+        liq.liquidate(posId, repayAmount, block.timestamp + 1 hours, 0, 0);
 
         // Debt still exists — position should NOT be marked liquidated
         assertGt(le.getDebt(posId), 0);
@@ -755,7 +755,7 @@ contract LiquidationEngineTest is Test {
         uint256 wethBefore = weth.balanceOf(liquidator);
 
         vm.prank(liquidator);
-        liq.liquidate(posId, maxRepay, block.timestamp + 1 hours);
+        liq.liquidate(posId, maxRepay, block.timestamp + 1 hours, 0, 0);
 
         // Liquidator should have received WETH (token0 + token1)
         uint256 wethAfter = weth.balanceOf(liquidator);
@@ -788,7 +788,7 @@ contract LiquidationEngineTest is Test {
         uint256 wethBefore = weth.balanceOf(liquidator);
 
         vm.prank(liquidator);
-        liq.liquidate(posId, maxRepay, block.timestamp + 1 hours);
+        liq.liquidate(posId, maxRepay, block.timestamp + 1 hours, 0, 0);
 
         // Liquidator receives underlying tokens directly
         uint256 usdcAfter = usdc.balanceOf(liquidator);
@@ -825,7 +825,7 @@ contract LiquidationEngineTest is Test {
         uint256 usdcBefore = usdc.balanceOf(liquidator);
 
         vm.prank(liquidator);
-        liq.liquidate(posId, repayAmount, block.timestamp + 1 hours);
+        liq.liquidate(posId, repayAmount, block.timestamp + 1 hours, 0, 0);
 
         uint256 wethAfter = weth.balanceOf(liquidator);
         uint256 usdcAfter = usdc.balanceOf(liquidator);
@@ -848,7 +848,7 @@ contract LiquidationEngineTest is Test {
         usdc.approve(address(liq), maxRepay);
 
         vm.prank(liquidator);
-        uint256 profit = liq.liquidate(posId, maxRepay, block.timestamp + 1 hours);
+        uint256 profit = liq.liquidate(posId, maxRepay, block.timestamp + 1 hours, 0, 0);
 
         // Profit is always 0 since liquidator receives raw tokens (not borrow asset)
         assertEq(profit, 0, "Profit must be 0 in no-swap design");

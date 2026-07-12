@@ -286,7 +286,7 @@ contract FullLifecycleTest is Test {
         uint256 wethBefore = weth.balanceOf(liquidator);
 
         vm.prank(liquidator);
-        liq.liquidate(posId, 15_000e18, block.timestamp + 1 hours);
+        liq.liquidate(posId, 15_000e18, block.timestamp + 1 hours, 0, 0);
 
         // Debt should be reduced
         uint256 debtAfter = le.getDebt(posId);
@@ -333,7 +333,7 @@ contract FullLifecycleTest is Test {
         uint256 unlocksBefore = adapter.unlockCallCount();
 
         vm.prank(liquidator);
-        liq.liquidate(posId, totalDebt, block.timestamp + 1 hours);
+        liq.liquidate(posId, totalDebt, block.timestamp + 1 hours, 0, 0);
 
         // Debt fully repaid (no fee deducted from repayment)
         assertEq(le.getDebt(posId), 0);
@@ -537,7 +537,7 @@ contract FullLifecycleTest is Test {
         vm.prank(liquidator);
         usdc.approve(address(liq), maxRepay1);
         vm.prank(liquidator);
-        liq.liquidate(posId, maxRepay1, block.timestamp + 1 hours);
+        liq.liquidate(posId, maxRepay1, block.timestamp + 1 hours, 0, 0);
 
         uint256 debtAfterFirst = le.getDebt(posId);
         uint256 amountAfterFirst = pm.getPosition(posId).amount;
@@ -551,7 +551,7 @@ contract FullLifecycleTest is Test {
             vm.prank(liquidator);
             usdc.approve(address(liq), maxRepay2);
             vm.prank(liquidator);
-            liq.liquidate(posId, maxRepay2, block.timestamp + 1 hours);
+            liq.liquidate(posId, maxRepay2, block.timestamp + 1 hours, 0, 0);
 
             // Position further reduced
             assertLt(pm.getPosition(posId).amount, amountAfterFirst);
@@ -582,7 +582,7 @@ contract FullLifecycleTest is Test {
         uint256 treasuryBefore = usdc.balanceOf(treasury);
 
         vm.prank(liquidator);
-        liq.liquidate(posId, totalDebt, block.timestamp + 1 hours);
+        liq.liquidate(posId, totalDebt, block.timestamp + 1 hours, 0, 0);
 
         // Check if fees were collected (FeeCollector should have received some)
         uint256 fcBalance = usdc.balanceOf(address(fc));

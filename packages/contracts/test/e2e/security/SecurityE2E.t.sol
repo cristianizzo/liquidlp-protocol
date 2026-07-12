@@ -201,7 +201,7 @@ contract SecurityE2E is E2EBase {
         vm.startPrank(alice);
         IERC20(Constants.USDC).approve(address(liquidationEngine), maxRepay);
         IERC20(Constants.USDC).approve(v2MarketAddr, maxRepay);
-        liquidationEngine.liquidate(positionId, maxRepay, block.timestamp);
+        liquidationEngine.liquidate(positionId, maxRepay, block.timestamp, 0, 0);
         vm.stopPrank();
 
         uint256 debtAfter = _getDebt(positionId);

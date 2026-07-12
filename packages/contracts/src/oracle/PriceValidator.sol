@@ -42,6 +42,7 @@ contract PriceValidator {
     }
 
     mapping(address => PriceSnapshot[]) public priceHistory;
+    mapping(address => uint256) public priceHistoryIndex; // ring buffer write index
 
     // --- Events ---
     event PriceValidated(address indexed pool, uint256 price, uint256 confidence);
@@ -160,13 +161,16 @@ contract PriceValidator {
             }
         }
 
-        // Record price snapshot (capped at 100 entries to prevent unbounded gas growth)
+        // Record price snapshot (ring buffer — overwrites oldest entry at 100 cap)
         lastKnownTvl[pool] = poolTvl;
         lastPriceTimestamp[pool] = block.timestamp;
-        if (priceHistory[pool].length >= 100) {
-            delete priceHistory[pool];
+        if (priceHistory[pool].length < 100) {
+            priceHistory[pool].push(PriceSnapshot(twapPrice, block.timestamp));
+        } else {
+            uint256 idx = priceHistoryIndex[pool] % 100;
+            priceHistory[pool][idx] = PriceSnapshot(twapPrice, block.timestamp);
+            priceHistoryIndex[pool] = idx + 1;
         }
-        priceHistory[pool].push(PriceSnapshot(twapPrice, block.timestamp));
 
         emit PriceValidated(pool, twapPrice, 10_000 - adjustedHaircutBps);
         return (true, adjustedHaircutBps);

@@ -113,7 +113,9 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
     function liquidate(
         uint256 positionId,
         uint256 repayAmount,
-        uint256 deadline
+        uint256 deadline,
+        uint256 minAmount0,
+        uint256 minAmount1
     )
         external
         whenNotPaused
@@ -195,6 +197,10 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
             (amount0, amount1) = adapter.unwind(pos.lpToken, pos.tokenId, liquidityToRemove);
         }
 
+        // Slippage protection — liquidator sets minimum acceptable output
+        require(amount0 >= minAmount0, "SLIPPAGE_AMOUNT0");
+        require(amount1 >= minAmount1, "SLIPPAGE_AMOUNT1");
+
         // Step 8: Protocol fee — taken from underlying tokens (Aave pattern).
         // Fee = liquidationFeeBps % of the bonus portion of the seized collateral.
         // This is proportionally deducted from both token0 and token1.
@@ -274,6 +280,10 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
     uint256 public constant CRITICAL_HF_THRESHOLD = 0.95e18; // 0.95
 
     /// @inheritdoc ILiquidationEngine
+    /// @dev WARNING: This is a view function and does NOT call accrueInterest().
+    ///      Health factor may be stale. For accurate results, call
+    ///      lendingEngine.accrueInterest(marketId) first, or rely on liquidate()
+    ///      which accrues automatically before checking.
     function isLiquidatable(uint256 positionId) public view returns (bool liquidatable, uint256 maxRepay) {
         uint256 healthFactor = positionManager.getHealthFactor(positionId);
 
@@ -316,13 +326,16 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
     // --- Internal ---
 
     /// @notice Convert borrow asset amount to 18-dec USD value
-    /// @dev Uses PriceFeedRegistry if available, falls back to decimal normalization (assumes $1 peg)
+    /// @dev Uses PriceFeedRegistry when available. Fallback normalizes decimals (assumes $1 peg).
+    ///      WARNING: Fallback is only safe for USD-pegged stablecoins (USDC, DAI, USDT).
+    ///      Non-stablecoin borrow assets MUST have PriceFeedRegistry configured.
     function _getRepayValueUsd(address borrowAsset, uint256 amount, uint8 decimals) internal view returns (uint256) {
         require(decimals <= 36, "INVALID_DECIMALS");
         PriceFeedRegistry registry = positionManager.priceFeedRegistry();
         if (address(registry) != address(0)) {
             return registry.getUsdValue(borrowAsset, amount, decimals);
         }
+        // Fallback: decimal normalization (assumes $1 peg — safe for stablecoins only)
         if (decimals < 18) {
             return Math.mulDiv(amount, 10 ** (18 - decimals), 1);
         } else if (decimals > 18) {
