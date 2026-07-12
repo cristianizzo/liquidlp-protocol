@@ -462,6 +462,7 @@ contract UniswapV3Oracle is ILPOracle {
         // To get a decimal-normalized ratio, multiply by 10^(dec0-dec1)
         // Example: WETH(18)/USDC(6) → multiply by 10^12 to normalize
         // Overflow-safe decimal normalization via mulDiv
+        require(dec0 <= 36 && dec1 <= 36, "INVALID_DECIMALS");
         uint256 twapRatioNormalized;
         if (dec0 >= dec1) {
             twapRatioNormalized = LiquidityAmountsLib.mulDiv(twapRatioRaw, 10 ** (dec0 - dec1), 1);
