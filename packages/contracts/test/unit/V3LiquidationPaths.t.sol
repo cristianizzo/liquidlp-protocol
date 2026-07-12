@@ -183,7 +183,7 @@ contract V3LiquidationPaths is Test {
 
         v3Adapter.setMockLiquidity(0);
         v3Adapter.setMockFees(10e18, 10_000e18); // fees in adapter
-        oracle.setPrice(6_000e18); // position worth $6K with $5K debt → HF < 1.0
+        oracle.setPrice(6000e18); // position worth $6K with $5K debt → HF < 1.0
 
         // Partial liquidation — repay a portion
         (, uint256 maxRepay) = liq.isLiquidatable(posId);
