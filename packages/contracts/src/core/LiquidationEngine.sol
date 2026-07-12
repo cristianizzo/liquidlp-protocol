@@ -176,6 +176,11 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
             // V3 fee-only position: no liquidity to unwind, seize uncollected fees instead
             require(positionValue > 0, "ZERO_LIQUIDITY");
             (amount0, amount1) = adapter.collectFees(pos.lpToken, pos.tokenId);
+            // Scale to proportional seizure (don't take all fees for partial repay)
+            if (collateralToSeizeNormalized < positionValue) {
+                amount0 = Math.mulDiv(amount0, collateralToSeizeNormalized, positionValue);
+                amount1 = Math.mulDiv(amount1, collateralToSeizeNormalized, positionValue);
+            }
         } else {
             // Normal path: proportional liquidity removal
             uint256 liquidityToRemove256;

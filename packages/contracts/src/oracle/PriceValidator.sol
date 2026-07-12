@@ -189,6 +189,7 @@ contract PriceValidator {
         if (history.length == 0) return 0;
 
         // Find entry closest to 5 minutes ago (ring buffer — entries not chronologically ordered)
+        if (block.timestamp < 300) return 0;
         uint256 targetTimestamp = block.timestamp - 300;
         uint256 bestPrice = 0;
         uint256 bestDelta = type(uint256).max;
