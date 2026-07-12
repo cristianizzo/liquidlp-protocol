@@ -382,8 +382,8 @@ contract UniswapV3Oracle is ILPOracle {
     /// @dev Validates observation cardinality before calling pool.observe()
     function _getTwapTick(address pool) internal view returns (int24 twapTick) {
         // Verify pool has sufficient observation history for TWAP period
-        (,,,, uint16 observationCardinalityNext,,) = IUniswapV3Pool(pool).slot0();
-        require(observationCardinalityNext >= 2, "INSUFFICIENT_CARDINALITY");
+        (,,, uint16 observationCardinality,,,) = IUniswapV3Pool(pool).slot0();
+        require(observationCardinality >= 2, "INSUFFICIENT_CARDINALITY");
 
         uint32[] memory secondsAgos = new uint32[](2);
         secondsAgos[0] = twapPeriod;

@@ -108,7 +108,7 @@ contract FullLifecycleTest is Test {
 
         // --- Market (UUPS proxy via real Market, not mock) ---
         IMarket.MarketConfig memory mConfig = IMarket.MarketConfig({
-            lpType: ILPAdapter.LPType.UniswapV3,
+            lpType: ILPAdapter.LPType.UniswapV2,
             borrowAsset: address(usdc),
             maxLtv: 6500,
             liquidationThreshold: 7500,
@@ -127,7 +127,7 @@ contract FullLifecycleTest is Test {
         );
 
         // --- Mocks ---
-        adapter = new MockLPAdapter(ILPAdapter.LPType.UniswapV3);
+        adapter = new MockLPAdapter(ILPAdapter.LPType.UniswapV2);
         adapter.setSupportedToken(lpToken, true);
         adapter.setTokenReturns(address(weth), address(usdc));
         adapter.setUnwindAmounts(25e18, 25_000e18); // 100 units = 25 WETH + 25K USDC
@@ -142,8 +142,8 @@ contract FullLifecycleTest is Test {
         aclManager.grantRole(aclManager.LIQUIDATION_ENGINE(), address(liq));
         aclManager.grantRole(aclManager.POSITION_MANAGER(), address(pm));
         aclManager.grantRole(aclManager.KEEPER(), address(liq));
-        core.registerAdapter(ILPAdapter.LPType.UniswapV3, address(adapter));
-        oracleHub.registerOracle(ILPAdapter.LPType.UniswapV3, address(oracle));
+        core.registerAdapter(ILPAdapter.LPType.UniswapV2, address(adapter));
+        oracleHub.registerOracle(ILPAdapter.LPType.UniswapV2, address(oracle));
         core.whitelistPool(lpToken);
         marketId = core.registerMarket(address(market));
         pm.setLendingEngine(address(le));

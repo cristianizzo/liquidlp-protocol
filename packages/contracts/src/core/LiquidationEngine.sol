@@ -189,8 +189,11 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
             uint128 liquidityToRemove = uint128(liquidityToRemove256);
 
             // Step 7: Reduce position amount BEFORE external call (CEI)
-            // Only for ERC-20 LP (V2) — V3 liquidity lives in the NFT
-            if (pos.tokenId == 0 && pos.amount > 0) {
+            // ERC-20 LP types track liquidity via pos.amount — reduce it.
+            // NFT LP types (V3) track liquidity in the NFT — skip.
+            bool isErc20LP = pos.lpType == ILPAdapter.LPType.UniswapV2 || pos.lpType == ILPAdapter.LPType.PancakeSwapV2
+                || pos.lpType == ILPAdapter.LPType.Curve;
+            if (isErc20LP && pos.amount > 0) {
                 uint256 amountToReduce = liquidityToRemove256 > pos.amount ? pos.amount : liquidityToRemove256;
                 positionManager.reducePositionAmount(positionId, amountToReduce);
             }
@@ -248,11 +251,13 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
 
             // Return remaining LP to borrower (V2: LP tokens, V3: NFT even if empty)
             uint128 remainingLiquidity = adapter.getLiquidity(freshPos.lpToken, freshPos.tokenId, freshPos.amount);
-            if (remainingLiquidity > 0 || freshPos.tokenId > 0) {
-                // V3: always return NFT (even with 0 liquidity — borrower owns the NFT)
-                // V2: return remaining LP tokens
+            bool isNFT = freshPos.lpType == ILPAdapter.LPType.UniswapV3
+                || freshPos.lpType == ILPAdapter.LPType.PancakeSwapV3 || freshPos.lpType == ILPAdapter.LPType.Aerodrome;
+            if (remainingLiquidity > 0 || isNFT) {
+                // NFT positions: always return NFT (even empty — borrower owns it)
+                // ERC-20 positions: return remaining LP tokens
                 adapter.unlock(freshPos.lpToken, freshPos.tokenId, freshPos.amount, freshPos.owner);
-                if (freshPos.tokenId == 0 && freshPos.amount > 0) {
+                if (!isNFT && freshPos.amount > 0) {
                     positionManager.reducePositionAmount(positionId, freshPos.amount);
                 }
             }

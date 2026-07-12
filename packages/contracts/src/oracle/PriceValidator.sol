@@ -188,12 +188,20 @@ contract PriceValidator {
         PriceSnapshot[] storage history = priceHistory[pool];
         if (history.length == 0) return 0;
 
+        // Find entry closest to 5 minutes ago (ring buffer — entries not chronologically ordered)
         uint256 targetTimestamp = block.timestamp - 300;
-        for (uint256 i = history.length; i > 0; i--) {
-            if (history[i - 1].timestamp <= targetTimestamp) {
-                return _calculateDeviation(currentPrice, history[i - 1].price);
+        uint256 bestPrice = 0;
+        uint256 bestDelta = type(uint256).max;
+        for (uint256 i = 0; i < history.length; i++) {
+            if (history[i].timestamp <= targetTimestamp) {
+                uint256 delta = targetTimestamp - history[i].timestamp;
+                if (delta < bestDelta) {
+                    bestDelta = delta;
+                    bestPrice = history[i].price;
+                }
             }
         }
-        return 0;
+        if (bestPrice == 0) return 0;
+        return _calculateDeviation(currentPrice, bestPrice);
     }
 }

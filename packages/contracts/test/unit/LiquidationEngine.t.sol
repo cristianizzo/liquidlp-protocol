@@ -95,11 +95,12 @@ contract LiquidationEngineTest is Test {
         );
 
         // Mocks
-        adapter = new MockLPAdapter(ILPAdapter.LPType.UniswapV3);
+        adapter = new MockLPAdapter(ILPAdapter.LPType.UniswapV2);
         adapter.setSupportedToken(lpToken, true);
         oracle = new MockLPOracle();
         oracle.setPrice(50_000e18);
         market = new MockMarket(address(usdc), address(irm));
+        market.setLpType(ILPAdapter.LPType.UniswapV2);
 
         // Register and grant roles
         vm.startPrank(owner);
@@ -107,8 +108,8 @@ contract LiquidationEngineTest is Test {
         aclManager.grantRole(aclManager.LENDING_ENGINE(), address(le));
         aclManager.grantRole(aclManager.LIQUIDATION_ENGINE(), address(liq));
         aclManager.grantRole(aclManager.POSITION_MANAGER(), address(pm));
-        core.registerAdapter(ILPAdapter.LPType.UniswapV3, address(adapter));
-        oracleHub.registerOracle(ILPAdapter.LPType.UniswapV3, address(oracle));
+        core.registerAdapter(ILPAdapter.LPType.UniswapV2, address(adapter));
+        oracleHub.registerOracle(ILPAdapter.LPType.UniswapV2, address(oracle));
         core.whitelistPool(lpToken);
         marketId = core.registerMarket(address(market));
         pm.setLendingEngine(address(le));
@@ -487,6 +488,7 @@ contract LiquidationEngineTest is Test {
         MockERC20 usdc6 = new MockERC20("USDC", "USDC", 6);
         InterestRateModel irm6 = new InterestRateModel(200, 600, 10_000, 8000);
         MockMarket market6 = new MockMarket(address(usdc6), address(irm6));
+        market6.setLpType(ILPAdapter.LPType.UniswapV2);
 
         // Register the new market
         vm.prank(owner);
