@@ -3,6 +3,8 @@ pragma solidity ^0.8.26;
 
 import {ILPAdapter} from "../interfaces/ILPAdapter.sol";
 import {IPositionManager} from "../interfaces/IPositionManager.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ProtocolCore} from "../core/ProtocolCore.sol";
 import {ACLManager} from "../core/ACLManager.sol";
 import {PositionManager} from "../core/PositionManager.sol";
@@ -11,10 +13,13 @@ import {PositionManager} from "../core/PositionManager.sol";
 /// @notice Auto-compounds trading fees back into LP positions
 /// @dev Called by keeper bots to compound fees for all active positions
 contract LPCompounder {
+    using SafeERC20 for IERC20;
+
     ProtocolCore public immutable core;
     PositionManager public immutable positionManager;
 
     event FeesCompounded(uint256 indexed positionId, uint256 fees0, uint256 fees1);
+    event TokensSwept(address indexed token, address indexed to, uint256 amount);
 
     modifier onlyKeeper() {
         require(core.aclManager().isKeeper(msg.sender) || core.aclManager().isPoolAdmin(msg.sender), "NOT_KEEPER");
@@ -70,5 +75,17 @@ contract LPCompounder {
             // Skip errors for individual positions
             try this.compoundPosition(positionIds[i]) {} catch {}
         }
+    }
+
+    /// @notice Sweep tokens stuck in this contract (from collected but not yet compounded fees)
+    /// @dev Only callable by PoolAdmin. Sends to a specified recipient (treasury or position owner).
+    function sweepTokens(address token, address to, uint256 amount) external {
+        require(core.aclManager().isPoolAdmin(msg.sender), "NOT_POOL_ADMIN");
+        require(token != address(0) && to != address(0), "ZERO_ADDRESS");
+        uint256 balance = IERC20(token).balanceOf(address(this));
+        uint256 sweepAmount = amount > balance ? balance : amount;
+        require(sweepAmount > 0, "NO_BALANCE");
+        IERC20(token).safeTransfer(to, sweepAmount);
+        emit TokensSwept(token, to, sweepAmount);
     }
 }
