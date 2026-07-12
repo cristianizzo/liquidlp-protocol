@@ -229,9 +229,11 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
         if (remainingDebt == 0) {
             PositionManager.Position memory freshPos = positionManager.getPosition(positionId);
 
-            // Check for remaining liquidity (V3: read from NFT, V2: use pos.amount)
+            // Return remaining LP to borrower (V2: LP tokens, V3: NFT even if empty)
             uint128 remainingLiquidity = adapter.getLiquidity(freshPos.lpToken, freshPos.tokenId, freshPos.amount);
-            if (remainingLiquidity > 0) {
+            if (remainingLiquidity > 0 || freshPos.tokenId > 0) {
+                // V3: always return NFT (even with 0 liquidity — borrower owns the NFT)
+                // V2: return remaining LP tokens
                 adapter.unlock(freshPos.lpToken, freshPos.tokenId, freshPos.amount, freshPos.owner);
                 if (freshPos.amount > 0) {
                     positionManager.reducePositionAmount(positionId, freshPos.amount);
