@@ -82,6 +82,7 @@ contract LPCompounder {
     function sweepTokens(address token, address to, uint256 amount) external {
         require(core.aclManager().isPoolAdmin(msg.sender), "NOT_POOL_ADMIN");
         require(token != address(0) && to != address(0), "ZERO_ADDRESS");
+        require(amount > 0, "ZERO_AMOUNT");
         uint256 balance = IERC20(token).balanceOf(address(this));
         uint256 sweepAmount = amount > balance ? balance : amount;
         require(sweepAmount > 0, "NO_BALANCE");
