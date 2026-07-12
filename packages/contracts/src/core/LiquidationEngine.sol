@@ -14,6 +14,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ProtocolCore} from "./ProtocolCore.sol";
 import {ACLManager} from "./ACLManager.sol";
 import {PositionManager} from "./PositionManager.sol";
+import {IPositionManager} from "../interfaces/IPositionManager.sol";
 import {LendingEngine} from "./LendingEngine.sol";
 import {FeeCollector} from "./FeeCollector.sol";
 import {PriceFeedRegistry} from "../oracle/PriceFeedRegistry.sol";
@@ -127,6 +128,11 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
 
         // Step 1: Accrue interest BEFORE health factor check
         PositionManager.Position memory pos = positionManager.getPosition(positionId);
+        require(
+            pos.status == IPositionManager.PositionStatus.Active
+                || pos.status == IPositionManager.PositionStatus.Borrowed,
+            "POSITION_NOT_ACTIVE"
+        );
         lendingEngine.accrueInterest(pos.marketId);
 
         // Step 2: Verify position is liquidatable (with fresh interest)

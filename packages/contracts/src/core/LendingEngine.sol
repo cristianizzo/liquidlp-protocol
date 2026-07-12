@@ -286,6 +286,13 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
 
         // Record deficit on the market (burns from totalBorrow, tracks as deficit)
         market.recordDeficit(currentDebt);
+
+        // Update RiskManager to prevent ghost debt from blocking new borrows
+        if (address(riskManager) != address(0)) {
+            IMarket.MarketConfig memory config = IMarket(marketAddr).getConfig();
+            uint256 debtUsd = _toUsd(currentDebt, config.borrowAsset);
+            riskManager.recordRepay(debtUsd, pos.lpType);
+        }
     }
 
     // --- Storage Gap ---

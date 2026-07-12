@@ -354,8 +354,11 @@ contract UniswapV3Oracle is ILPOracle {
                     / 1e18
                     + (_normalizeTo18(uint256(tokensOwed1), dec1) * price1)
                     / 1e18) / 2;
-        // Cap fees at 20% of principal value (prevents fee inflation via self-trades)
-        // Skip cap when principalValue == 0 (fee-only positions — fees ARE the value)
+        // Cap fees at 20% of principal value (prevents fee inflation via self-trades).
+        // Skip cap when principalValue == 0 (fee-only positions — fees ARE the value).
+        // @dev Accepted tradeoff: capping when principal=0 would value fee-only positions
+        //      at $0, blocking liquidation and creating unrecoverable bad debt.
+        //      Protection: 50% fee discount + haircut + pool whitelist with min TVL.
         if (principalValue > 0) {
             uint256 maxFee = principalValue / 5;
             if (feeValue > maxFee) feeValue = maxFee;

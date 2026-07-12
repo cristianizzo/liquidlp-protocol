@@ -133,18 +133,17 @@ contract UniswapV3Adapter is ILPAdapter {
         require(liquidityToRemove > 0, "ZERO_LIQUIDITY");
         require(nftManager.ownerOf(tokenId) == address(this), "NOT_HELD");
 
-        // Decrease liquidity — amount0Min/amount1Min intentionally 0.
-        // Slippage protection is handled by LiquidationEngine which validates
-        // total output value against oracle price after the swap step (Aave pattern).
-        // Adding min amounts here would be redundant and could cause liquidations
-        // to revert during high volatility — exactly when they're needed most.
+        // Decrease liquidity
         nftManager.decreaseLiquidity(
             INonfungiblePositionManager.DecreaseLiquidityParams({
                 tokenId: tokenId, liquidity: liquidityToRemove, amount0Min: 0, amount1Min: 0, deadline: block.timestamp
             })
         );
 
-        // Collect all (decreased liquidity + fees)
+        // Collect decreased liquidity + accumulated fees.
+        // Fees are intentionally included — they are part of the collateral value
+        // (priced by oracle at 50% discount + 20% cap + haircut).
+        // This matches Aave/Revert where the entire NFT is liquidatable collateral.
         (amount0, amount1) = nftManager.collect(
             INonfungiblePositionManager.CollectParams({
                 tokenId: tokenId, recipient: msg.sender, amount0Max: type(uint128).max, amount1Max: type(uint128).max

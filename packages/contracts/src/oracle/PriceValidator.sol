@@ -169,7 +169,7 @@ contract PriceValidator {
         } else {
             uint256 idx = priceHistoryIndex[pool] % 100;
             priceHistory[pool][idx] = PriceSnapshot(twapPrice, block.timestamp);
-            priceHistoryIndex[pool] = idx + 1;
+            priceHistoryIndex[pool] = (idx + 1) % 100;
         }
 
         emit PriceValidated(pool, twapPrice, 10_000 - adjustedHaircutBps);
