@@ -200,10 +200,6 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
             (amount0, amount1) = adapter.unwind(pos.lpToken, pos.tokenId, liquidityToRemove);
         }
 
-        // Slippage protection — liquidator sets minimum acceptable output
-        require(amount0 >= minAmount0, "SLIPPAGE_AMOUNT0");
-        require(amount1 >= minAmount1, "SLIPPAGE_AMOUNT1");
-
         // Step 8: Protocol fee — taken from underlying tokens (Aave pattern).
         // Fee = liquidationFeeBps % of the bonus portion of the seized collateral.
         // This is proportionally deducted from both token0 and token1.
@@ -243,6 +239,10 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
         if (amount1 > 0) {
             OZIERC20(pos.token1).safeTransfer(msg.sender, amount1);
         }
+
+        // Slippage protection — checked AFTER fees so liquidator gets accurate net amounts
+        require(amount0 >= minAmount0, "SLIPPAGE_AMOUNT0");
+        require(amount1 >= minAmount1, "SLIPPAGE_AMOUNT1");
 
         // Step 10: Handle full debt repayment — return remaining LP to borrower
         uint256 remainingDebt = lendingEngine.getDebt(positionId);

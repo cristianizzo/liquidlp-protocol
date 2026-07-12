@@ -354,9 +354,12 @@ contract UniswapV3Oracle is ILPOracle {
                     / 1e18
                     + (_normalizeTo18(uint256(tokensOwed1), dec1) * price1)
                     / 1e18) / 2;
-        // Cap fees at 20% of principal value
-        uint256 maxFee = principalValue / 5;
-        if (feeValue > maxFee) feeValue = maxFee;
+        // Cap fees at 20% of principal value (prevents fee inflation via self-trades)
+        // Skip cap when principalValue == 0 (fee-only positions — fees ARE the value)
+        if (principalValue > 0) {
+            uint256 maxFee = principalValue / 5;
+            if (feeValue > maxFee) feeValue = maxFee;
+        }
 
         // Step 8: Apply haircut based on position characteristics
         uint256 haircut = _computeHaircut(tickLower, tickUpper, twapTick);
