@@ -118,7 +118,8 @@ contract MockLPAdapter is ILPAdapter {
     }
 
     function getLiquidity(address, uint256, uint256 amount) external pure override returns (uint128) {
-        return amount > type(uint128).max ? type(uint128).max : uint128(amount);
+        require(amount <= type(uint128).max, "AMOUNT_OVERFLOW");
+        return uint128(amount);
     }
 
     function lpType() external view override returns (LPType) {
