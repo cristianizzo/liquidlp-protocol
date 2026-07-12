@@ -82,7 +82,7 @@ contract CurveAdapter is ILPAdapter {
     }
 
     /// @inheritdoc ILPAdapter
-    function getLiquidity(address, uint256, uint256) external pure returns (uint128) {
+    function getLiquidity(address, uint256, uint256) external pure override returns (uint128) {
         revert("NOT_IMPLEMENTED");
     }
 
