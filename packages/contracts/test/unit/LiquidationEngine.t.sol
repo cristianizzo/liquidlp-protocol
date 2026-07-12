@@ -133,7 +133,7 @@ contract LiquidationEngineTest is Test {
     function _createLiquidatablePosition() internal returns (uint256 posId) {
         // Alice deposits LP worth $50K
         vm.prank(alice);
-        posId = pm.deposit(lpToken, 1, 100e18, marketId);
+        posId = pm.deposit(lpToken, 0, 100e18, marketId);
         vm.roll(block.number + 2);
 
         // Advance past borrow cooldown
@@ -192,7 +192,7 @@ contract LiquidationEngineTest is Test {
 
     function test_isLiquidatable_falseWhenHealthy() public {
         vm.prank(alice);
-        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+        uint256 posId = pm.deposit(lpToken, 0, 100e18, marketId);
         vm.roll(block.number + 2);
         vm.roll(block.number + 2);
 
@@ -219,7 +219,7 @@ contract LiquidationEngineTest is Test {
         // For HF = 0.975: collateral = debt * 10000 * 0.975 / 7500 = debt * 1.3
         oracle.setPrice(50_000e18);
         vm.prank(alice);
-        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+        uint256 posId = pm.deposit(lpToken, 0, 100e18, marketId);
         vm.roll(block.number + 2);
         vm.prank(alice);
         le.borrow(posId, 30_000e18);
@@ -253,7 +253,7 @@ contract LiquidationEngineTest is Test {
 
     function test_isLiquidatable_falseForNoDebt() public {
         vm.prank(alice);
-        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+        uint256 posId = pm.deposit(lpToken, 0, 100e18, marketId);
         vm.roll(block.number + 2);
         vm.roll(block.number + 2);
 
@@ -265,7 +265,7 @@ contract LiquidationEngineTest is Test {
 
     function test_getLiquidationBonus_returnsMarketConfig() public {
         vm.prank(alice);
-        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+        uint256 posId = pm.deposit(lpToken, 0, 100e18, marketId);
         vm.roll(block.number + 2);
         vm.roll(block.number + 2);
 
@@ -277,7 +277,7 @@ contract LiquidationEngineTest is Test {
 
     function test_liquidate_revertsNotLiquidatable() public {
         vm.prank(alice);
-        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+        uint256 posId = pm.deposit(lpToken, 0, 100e18, marketId);
         vm.roll(block.number + 2);
         vm.roll(block.number + 2);
 
@@ -394,7 +394,7 @@ contract LiquidationEngineTest is Test {
         // Create position with HF between 0.95-1.0 (partial liq rules apply)
         oracle.setPrice(50_000e18);
         vm.prank(alice);
-        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+        uint256 posId = pm.deposit(lpToken, 0, 100e18, marketId);
         vm.roll(block.number + 2);
         vm.prank(alice);
         le.borrow(posId, 30_000e18);
@@ -504,7 +504,7 @@ contract LiquidationEngineTest is Test {
         // Alice deposits LP worth $50K
         oracle.setPrice(50_000e18); // Oracle always returns 18 decimals
         vm.prank(alice);
-        uint256 posId = pm.deposit(lpToken, 5, 100e18, marketId6);
+        uint256 posId = pm.deposit(lpToken, 0, 100e18, marketId6);
         vm.roll(block.number + 2);
         vm.roll(block.number + 2);
 
@@ -660,7 +660,7 @@ contract LiquidationEngineTest is Test {
 
         oracle.setPrice(50_000e18);
         vm.prank(alice);
-        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+        uint256 posId = pm.deposit(lpToken, 0, 100e18, marketId);
         vm.roll(block.number + 2);
         vm.roll(block.number + 2);
 
@@ -739,7 +739,7 @@ contract LiquidationEngineTest is Test {
 
         oracle.setPrice(50_000e18);
         vm.prank(alice);
-        uint256 posId = pm.deposit(lpToken, 2, 100e18, marketId);
+        uint256 posId = pm.deposit(lpToken, 0, 100e18, marketId);
         vm.roll(block.number + 2);
         vm.prank(alice);
         le.borrow(posId, 30_000e18);
@@ -770,7 +770,7 @@ contract LiquidationEngineTest is Test {
 
         oracle.setPrice(50_000e18);
         vm.prank(alice);
-        uint256 posId = pm.deposit(lpToken, 3, 100e18, marketId);
+        uint256 posId = pm.deposit(lpToken, 0, 100e18, marketId);
         vm.roll(block.number + 2);
         vm.prank(alice);
         le.borrow(posId, 30_000e18);

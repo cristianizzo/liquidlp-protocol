@@ -127,7 +127,7 @@ contract LiquidationDecimalTest is Test {
         // Alice deposits, oracle = $50K
         oracle.setPrice(50_000e18);
         vm.prank(alice);
-        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+        uint256 posId = pm.deposit(lpToken, 0, 100e18, marketId);
         vm.roll(block.number + 2);
 
         // Borrow 30K USDC (6 dec)
@@ -196,7 +196,7 @@ contract LiquidationDecimalTest is Test {
 
         oracle.setPrice(50_000e18);
         vm.prank(alice);
-        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+        uint256 posId = pm.deposit(lpToken, 0, 100e18, marketId);
         vm.roll(block.number + 2);
 
         // Borrow — fallback _getMaxBorrow normalizes to 6-dec
@@ -249,7 +249,7 @@ contract LiquidationDecimalTest is Test {
 
         oracle.setPrice(100_000e18); // $100K collateral
         vm.prank(alice);
-        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+        uint256 posId = pm.deposit(lpToken, 0, 100e18, marketId);
         vm.roll(block.number + 2);
 
         // Borrow 0.5 WBTC ($30K)
@@ -310,7 +310,7 @@ contract LiquidationDecimalTest is Test {
 
         oracle.setPrice(50_000e18);
         vm.prank(alice);
-        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+        uint256 posId = pm.deposit(lpToken, 0, 100e18, marketId);
         vm.roll(block.number + 2);
 
         vm.prank(alice);
@@ -358,7 +358,7 @@ contract LiquidationDecimalTest is Test {
 
         oracle.setPrice(50_000e18);
         vm.prank(alice);
-        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+        uint256 posId = pm.deposit(lpToken, 0, 100e18, marketId);
         vm.roll(block.number + 2);
 
         // maxBorrow = 50_000 * 0.65 = 32_500 USDC
@@ -394,7 +394,7 @@ contract LiquidationDecimalTest is Test {
 
         oracle.setPrice(100_000e18);
         vm.prank(alice);
-        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+        uint256 posId = pm.deposit(lpToken, 0, 100e18, marketId);
         vm.roll(block.number + 2);
 
         // maxBorrow = 100_000 * 0.65 / 60_000 = 1.0833 WBTC = 108_333_333 (8 dec)

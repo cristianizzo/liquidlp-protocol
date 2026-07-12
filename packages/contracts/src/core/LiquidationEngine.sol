@@ -166,23 +166,34 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
 
         uint256 positionValue = positionManager.getPositionValue(positionId);
         uint256 totalLiquidity = uint256(adapter.getLiquidity(pos.lpToken, pos.tokenId, pos.amount));
-        uint256 liquidityToRemove256;
-        if (positionValue == 0 || collateralToSeizeNormalized >= positionValue) {
-            liquidityToRemove256 = totalLiquidity;
-        } else {
-            liquidityToRemove256 = (totalLiquidity * collateralToSeizeNormalized) / positionValue;
-        }
-        require(liquidityToRemove256 > 0, "ZERO_LIQUIDITY");
-        require(liquidityToRemove256 <= type(uint128).max, "LIQUIDITY_OVERFLOW");
-        uint128 liquidityToRemove = uint128(liquidityToRemove256);
 
-        // Step 7: Unwind LP — reduce position amount BEFORE external call (CEI pattern)
-        // For V2: pos.amount tracks liquidity, reduce it. For V3: liquidity is in NFT, skip.
-        if (pos.amount > 0) {
-            uint256 amountToReduce = liquidityToRemove256 > pos.amount ? pos.amount : liquidityToRemove256;
-            positionManager.reducePositionAmount(positionId, amountToReduce);
+        uint256 amount0;
+        uint256 amount1;
+
+        if (totalLiquidity == 0 && pos.tokenId > 0) {
+            // V3 fee-only position: no liquidity to unwind, seize uncollected fees instead
+            require(positionValue > 0, "ZERO_LIQUIDITY");
+            (amount0, amount1) = adapter.collectFees(pos.lpToken, pos.tokenId);
+        } else {
+            // Normal path: proportional liquidity removal
+            uint256 liquidityToRemove256;
+            if (positionValue == 0 || collateralToSeizeNormalized >= positionValue) {
+                liquidityToRemove256 = totalLiquidity;
+            } else {
+                liquidityToRemove256 = Math.mulDiv(totalLiquidity, collateralToSeizeNormalized, positionValue);
+            }
+            require(liquidityToRemove256 > 0, "ZERO_LIQUIDITY");
+            require(liquidityToRemove256 <= type(uint128).max, "LIQUIDITY_OVERFLOW");
+            uint128 liquidityToRemove = uint128(liquidityToRemove256);
+
+            // Step 7: Reduce position amount BEFORE external call (CEI)
+            // Only for ERC-20 LP (V2) — V3 liquidity lives in the NFT
+            if (pos.tokenId == 0 && pos.amount > 0) {
+                uint256 amountToReduce = liquidityToRemove256 > pos.amount ? pos.amount : liquidityToRemove256;
+                positionManager.reducePositionAmount(positionId, amountToReduce);
+            }
+            (amount0, amount1) = adapter.unwind(pos.lpToken, pos.tokenId, liquidityToRemove);
         }
-        (uint256 amount0, uint256 amount1) = adapter.unwind(pos.lpToken, pos.tokenId, liquidityToRemove);
 
         // Step 8: Protocol fee — taken from underlying tokens (Aave pattern).
         // Fee = liquidationFeeBps % of the bonus portion of the seized collateral.
@@ -235,7 +246,7 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
                 // V3: always return NFT (even with 0 liquidity — borrower owns the NFT)
                 // V2: return remaining LP tokens
                 adapter.unlock(freshPos.lpToken, freshPos.tokenId, freshPos.amount, freshPos.owner);
-                if (freshPos.amount > 0) {
+                if (freshPos.tokenId == 0 && freshPos.amount > 0) {
                     positionManager.reducePositionAmount(positionId, freshPos.amount);
                 }
             }

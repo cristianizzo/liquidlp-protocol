@@ -145,7 +145,7 @@ contract EdgeCasesTest is Test {
 
         // Deposit LP
         vm.prank(alice);
-        uint256 posId = pm.deposit(lpToken, 1, 100e18, mId);
+        uint256 posId = pm.deposit(lpToken, 0, 100e18, mId);
         vm.roll(block.number + 2);
 
         // Borrow 25K USDC (6 decimals)
@@ -173,7 +173,7 @@ contract EdgeCasesTest is Test {
         (Market market8, uint256 mId) = _deployWithToken(wbtc);
 
         vm.prank(alice);
-        uint256 posId = pm.deposit(lpToken, 1, 100e18, mId);
+        uint256 posId = pm.deposit(lpToken, 0, 100e18, mId);
         vm.roll(block.number + 2);
 
         // Borrow 0.5 WBTC
@@ -201,7 +201,7 @@ contract EdgeCasesTest is Test {
         (Market m, uint256 mId) = _deployWithToken(token);
 
         vm.prank(alice);
-        uint256 posId = pm.deposit(lpToken, 1, 100e18, mId);
+        uint256 posId = pm.deposit(lpToken, 0, 100e18, mId);
         vm.roll(block.number + 2);
 
         // Borrow 1 wei
@@ -256,7 +256,7 @@ contract EdgeCasesTest is Test {
         oracle.setPrice(100_000_000e18); // $100M collateral
 
         vm.prank(alice);
-        uint256 posId = pm.deposit(lpToken, 1, 100e18, mId);
+        uint256 posId = pm.deposit(lpToken, 0, 100e18, mId);
         vm.roll(block.number + 2);
 
         // Borrow $50M
@@ -316,7 +316,7 @@ contract EdgeCasesTest is Test {
         (Market m, uint256 mId) = _deployWithToken(token);
 
         vm.prank(alice);
-        uint256 posId = pm.deposit(lpToken, 1, 100e18, mId);
+        uint256 posId = pm.deposit(lpToken, 0, 100e18, mId);
         vm.roll(block.number + 2);
 
         vm.prank(alice);
@@ -347,7 +347,7 @@ contract EdgeCasesTest is Test {
         (Market m, uint256 mId) = _deployWithToken(token);
 
         vm.prank(alice);
-        uint256 posId = pm.deposit(lpToken, 1, 100e18, mId);
+        uint256 posId = pm.deposit(lpToken, 0, 100e18, mId);
         vm.roll(block.number + 2);
 
         // Borrow $20K
@@ -391,7 +391,7 @@ contract EdgeCasesTest is Test {
         (, uint256 mId) = _deployWithToken(token);
 
         vm.prank(alice);
-        uint256 posId = pm.deposit(lpToken, 1, 100e18, mId);
+        uint256 posId = pm.deposit(lpToken, 0, 100e18, mId);
         vm.roll(block.number + 2);
 
         vm.prank(alice);
@@ -415,7 +415,7 @@ contract EdgeCasesTest is Test {
         (, uint256 mId) = _deployWithToken(token);
 
         vm.prank(alice);
-        uint256 posId = pm.deposit(lpToken, 1, 100e18, mId);
+        uint256 posId = pm.deposit(lpToken, 0, 100e18, mId);
         vm.roll(block.number + 2);
 
         vm.prank(alice);
@@ -437,7 +437,7 @@ contract EdgeCasesTest is Test {
         (Market m, uint256 mId) = _deployWithToken(token);
 
         vm.prank(alice);
-        uint256 posId = pm.deposit(lpToken, 1, 100e18, mId);
+        uint256 posId = pm.deposit(lpToken, 0, 100e18, mId);
         vm.roll(block.number + 2);
 
         vm.prank(alice);
@@ -472,7 +472,7 @@ contract EdgeCasesTest is Test {
         // Borrow to ~50% utilization
         oracle.setPrice(20_000_000e18); // Very high collateral to borrow a lot
         vm.prank(alice);
-        uint256 posId = pm.deposit(lpToken, 1, 100e18, mId);
+        uint256 posId = pm.deposit(lpToken, 0, 100e18, mId);
         vm.roll(block.number + 2);
         vm.prank(alice);
         le.borrow(posId, 5_000_000e18); // 50% of 10M supply
