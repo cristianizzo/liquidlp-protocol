@@ -303,4 +303,54 @@ contract RiskManagerIntegrationTest is Test {
         vm.expectRevert("ZERO_VALUE");
         rm.setMaxPositionValue(0);
     }
+
+    // ========== Event Emission ==========
+
+    event BorrowRecorded(uint256 amountUsd, uint256 newGlobalBorrows);
+    event RepayRecorded(uint256 amountUsd, uint256 newGlobalBorrows);
+    event DepositRecorded(uint256 valueUsd, uint256 indexed marketId, uint256 newMarketSupply);
+    event WithdrawRecorded(uint256 valueUsd, uint256 indexed marketId, uint256 newMarketSupply);
+    event BorrowTrackingDrift(uint256 tracked, uint256 repaid, bool isGlobal);
+
+    function test_recordBorrow_emitsEvent() public {
+        vm.expectEmit(false, false, false, true);
+        emit BorrowRecorded(1000e18, 1000e18);
+        vm.prank(address(le));
+        rm.recordBorrow(1000e18, ILPAdapter.LPType.UniswapV2);
+    }
+
+    function test_recordRepay_emitsEvent() public {
+        vm.prank(address(le));
+        rm.recordBorrow(1000e18, ILPAdapter.LPType.UniswapV2);
+        vm.expectEmit(false, false, false, true);
+        emit RepayRecorded(500e18, 500e18);
+        vm.prank(address(le));
+        rm.recordRepay(500e18, ILPAdapter.LPType.UniswapV2);
+    }
+
+    function test_recordRepay_emitsDriftOnClamp() public {
+        vm.prank(address(le));
+        rm.recordBorrow(100e18, ILPAdapter.LPType.UniswapV2);
+        vm.expectEmit(false, false, false, true);
+        emit BorrowTrackingDrift(100e18, 200e18, true);
+        vm.prank(address(le));
+        rm.recordRepay(200e18, ILPAdapter.LPType.UniswapV2);
+        assertEq(rm.currentGlobalBorrows(), 0);
+    }
+
+    function test_recordDeposit_emitsEvent() public {
+        vm.expectEmit(true, false, false, true);
+        emit DepositRecorded(5000e18, marketId, 5000e18);
+        vm.prank(address(pm));
+        rm.recordDeposit(5000e18, marketId);
+    }
+
+    function test_recordWithdraw_emitsEvent() public {
+        vm.prank(address(pm));
+        rm.recordDeposit(5000e18, marketId);
+        vm.expectEmit(true, false, false, true);
+        emit WithdrawRecorded(3000e18, marketId, 2000e18);
+        vm.prank(address(pm));
+        rm.recordWithdraw(3000e18, marketId);
+    }
 }

@@ -40,7 +40,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
 
     // --- Events ---
     event CollateralAdded(uint256 indexed positionId, uint256 addedLiquidity, uint256 used0, uint256 used1);
-    event CircuitBreakerNotConfigured();
+    event CircuitBreakerNotConfigured(uint256 indexed marketId, address pool);
     event PositionAmountReduced(uint256 indexed positionId, uint256 amountRemoved, uint256 newAmount);
     event LendingEngineUpdated(address indexed oldEngine, address indexed newEngine);
     event PriceFeedRegistryUpdated(address indexed oldRegistry, address indexed newRegistry);
@@ -171,7 +171,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
             require(!circuitBreaker.poolPaused(info.pool), "POOL_CIRCUIT_BREAKER");
             require(!circuitBreaker.marketFrozen(marketId), "MARKET_FROZEN");
         } else {
-            emit CircuitBreakerNotConfigured();
+            emit CircuitBreakerNotConfigured(marketId, info.pool);
         }
 
         // Get oracle price to validate position has value

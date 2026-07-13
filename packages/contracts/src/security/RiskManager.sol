@@ -33,7 +33,7 @@ contract RiskManager {
     event MaxPositionValueUpdated(uint256 oldValue, uint256 newValue);
     event MaxPositionsPerUserUpdated(uint256 oldValue, uint256 newValue);
     event MarketSupplyCapUpdated(uint256 indexed marketId, uint256 oldValue, uint256 newValue);
-    event BorrowTrackingDrift(uint256 tracked, uint256 repaid);
+    event BorrowTrackingDrift(uint256 tracked, uint256 repaid, bool isGlobal);
     event BorrowRecorded(uint256 amountUsd, uint256 newGlobalBorrows);
     event RepayRecorded(uint256 amountUsd, uint256 newGlobalBorrows);
     event DepositRecorded(uint256 valueUsd, uint256 indexed marketId, uint256 newMarketSupply);
@@ -110,13 +110,13 @@ contract RiskManager {
     /// @dev Clamped to prevent underflow when repay includes accrued interest
     function recordRepay(uint256 amountUsd, ILPAdapter.LPType lpType) external onlyLendingEngine {
         if (amountUsd > currentGlobalBorrows) {
-            emit BorrowTrackingDrift(currentGlobalBorrows, amountUsd);
+            emit BorrowTrackingDrift(currentGlobalBorrows, amountUsd, true);
             currentGlobalBorrows = 0;
         } else {
             currentGlobalBorrows -= amountUsd;
         }
         if (amountUsd > lpTypeCurrentBorrows[lpType]) {
-            emit BorrowTrackingDrift(lpTypeCurrentBorrows[lpType], amountUsd);
+            emit BorrowTrackingDrift(lpTypeCurrentBorrows[lpType], amountUsd, false);
             lpTypeCurrentBorrows[lpType] = 0;
         } else {
             lpTypeCurrentBorrows[lpType] -= amountUsd;
