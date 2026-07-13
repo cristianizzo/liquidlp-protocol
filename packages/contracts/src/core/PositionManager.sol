@@ -18,6 +18,7 @@ import {ACLManager} from "./ACLManager.sol";
 import {PriceFeedRegistry} from "../oracle/PriceFeedRegistry.sol";
 import {RiskManager} from "../security/RiskManager.sol";
 import {CircuitBreaker} from "../security/CircuitBreaker.sol";
+import {TokenUtils} from "../libraries/TokenUtils.sol";
 
 /// @title PositionManager
 /// @notice Manages LP position deposits, withdrawals, and position state tracking
@@ -39,6 +40,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
 
     // --- Events ---
     event CollateralAdded(uint256 indexed positionId, uint256 addedLiquidity, uint256 used0, uint256 used1);
+    event CircuitBreakerNotConfigured();
     event PositionAmountReduced(uint256 indexed positionId, uint256 amountRemoved, uint256 newAmount);
     event LendingEngineUpdated(address indexed oldEngine, address indexed newEngine);
     event PriceFeedRegistryUpdated(address indexed oldRegistry, address indexed newRegistry);
@@ -152,6 +154,9 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         IMarket.MarketConfig memory mConfig = IMarket(marketAddr).getConfig();
         require(lpType == mConfig.lpType, "LP_TYPE_MISMATCH");
 
+        // Validate oracle is healthy before accepting deposit
+        require(oracleHub.isOracleHealthy(lpType), "ORACLE_UNHEALTHY");
+
         address adapterAddr = core.adapters(lpType);
         require(adapterAddr != address(0), "NO_ADAPTER");
 
@@ -165,6 +170,8 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         if (address(circuitBreaker) != address(0)) {
             require(!circuitBreaker.poolPaused(info.pool), "POOL_CIRCUIT_BREAKER");
             require(!circuitBreaker.marketFrozen(marketId), "MARKET_FROZEN");
+        } else {
+            emit CircuitBreakerNotConfigured();
         }
 
         // Get oracle price to validate position has value
@@ -399,12 +406,10 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
 
         // Convert debt from borrow asset decimals to 18-dec USD value (Aave-style)
         uint256 debtUsd;
+        uint8 borrowDecimals = TokenUtils.safeDecimals(config.borrowAsset);
         if (address(priceFeedRegistry) != address(0)) {
-            uint8 borrowDecimals = IERC20(config.borrowAsset).decimals();
             debtUsd = priceFeedRegistry.getUsdValue(config.borrowAsset, debt, borrowDecimals);
         } else {
-            uint8 borrowDecimals = IERC20(config.borrowAsset).decimals();
-            require(borrowDecimals <= 36, "INVALID_DECIMALS");
             if (borrowDecimals < 18) {
                 debtUsd = Math.mulDiv(debt, 10 ** (18 - borrowDecimals), 1);
             } else if (borrowDecimals > 18) {

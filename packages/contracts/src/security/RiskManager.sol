@@ -33,6 +33,7 @@ contract RiskManager {
     event MaxPositionValueUpdated(uint256 oldValue, uint256 newValue);
     event MaxPositionsPerUserUpdated(uint256 oldValue, uint256 newValue);
     event MarketSupplyCapUpdated(uint256 indexed marketId, uint256 oldValue, uint256 newValue);
+    event BorrowTrackingDrift(uint256 tracked, uint256 repaid);
 
     // --- ACL ---
     function _acl() internal view returns (ACLManager) {
@@ -103,7 +104,12 @@ contract RiskManager {
     /// @notice Record a repayment for cap tracking (18-dec USD)
     /// @dev Clamped to prevent underflow when repay includes accrued interest
     function recordRepay(uint256 amountUsd, ILPAdapter.LPType lpType) external onlyLendingEngine {
-        currentGlobalBorrows = amountUsd > currentGlobalBorrows ? 0 : currentGlobalBorrows - amountUsd;
+        if (amountUsd > currentGlobalBorrows) {
+            emit BorrowTrackingDrift(currentGlobalBorrows, amountUsd);
+            currentGlobalBorrows = 0;
+        } else {
+            currentGlobalBorrows -= amountUsd;
+        }
         lpTypeCurrentBorrows[lpType] =
             amountUsd > lpTypeCurrentBorrows[lpType] ? 0 : lpTypeCurrentBorrows[lpType] - amountUsd;
     }

@@ -16,6 +16,7 @@ import {PositionManager} from "./PositionManager.sol";
 import {Market} from "../markets/Market.sol";
 import {RiskManager} from "../security/RiskManager.sol";
 import {CircuitBreaker} from "../security/CircuitBreaker.sol";
+import {TokenUtils} from "../libraries/TokenUtils.sol";
 
 /// @title LendingEngine
 /// @notice Handles borrowing against LP positions and repayment with interest
@@ -228,8 +229,7 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
         IMarket.MarketConfig memory config = IMarket(marketAddr).getConfig();
         uint256 maxBorrowUsd = (collateralValue * config.maxLtv) / 10_000;
 
-        uint8 borrowDecimals = IERC20(config.borrowAsset).decimals();
-        require(borrowDecimals <= 36, "INVALID_DECIMALS");
+        uint8 borrowDecimals = TokenUtils.safeDecimals(config.borrowAsset);
 
         PriceFeedRegistry registry = positionManager.priceFeedRegistry();
         if (address(registry) != address(0)) {
@@ -247,8 +247,7 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
 
     /// @notice Convert borrow asset amount to 18-dec USD
     function _toUsd(uint256 amount, address borrowAsset) internal view returns (uint256) {
-        uint8 dec = IERC20(borrowAsset).decimals();
-        require(dec <= 36, "INVALID_DECIMALS");
+        uint8 dec = TokenUtils.safeDecimals(borrowAsset);
         PriceFeedRegistry registry = positionManager.priceFeedRegistry();
         if (address(registry) != address(0)) {
             return registry.getUsdValue(borrowAsset, amount, dec);

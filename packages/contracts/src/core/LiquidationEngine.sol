@@ -15,6 +15,7 @@ import {ProtocolCore} from "./ProtocolCore.sol";
 import {ACLManager} from "./ACLManager.sol";
 import {PositionManager} from "./PositionManager.sol";
 import {IPositionManager} from "../interfaces/IPositionManager.sol";
+import {TokenUtils} from "../libraries/TokenUtils.sol";
 import {LendingEngine} from "./LendingEngine.sol";
 import {FeeCollector} from "./FeeCollector.sol";
 import {PriceFeedRegistry} from "../oracle/PriceFeedRegistry.sol";
@@ -148,7 +149,7 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
 
         // Step 4: Calculate collateral to seize in USD (18 decimals)
         uint256 bonus = config.liquidationBonus;
-        uint8 borrowDecimals = IERC20(borrowAsset).decimals();
+        uint8 borrowDecimals = TokenUtils.safeDecimals(borrowAsset);
         uint256 collateralToSeizeNormalized;
         {
             uint256 repayUsd = _getRepayValueUsd(borrowAsset, repayAmount, borrowDecimals);
