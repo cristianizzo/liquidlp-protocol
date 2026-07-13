@@ -424,7 +424,7 @@ Anyone calls LPCompounder.compoundPosition(positionId)
 - **Critical liquidation:** Full liquidation allowed when HF < 0.95 (prevents bad debt accumulation)
 - **Circuit breakers:** Per-market and per-pool pause on oracle anomalies
 - **Interest rate cap:** Absolute ceiling of ~500% APR — governance misconfiguration cannot cause absurd accrual
-- **Token constraints:** Borrow assets MUST be standard ERC20 tokens (USDC, USDT, DAI, WETH). Fee-on-transfer, rebasing, and ERC-777 tokens are NOT supported as borrow assets. The LiquidationEngine enforces exact-balance checks on repayment — fee-on-transfer tokens would block all liquidations in that market, creating guaranteed bad debt. This is validated off-chain during market creation and enforced at runtime.
+- **Token constraints:** Borrow assets MUST be standard ERC20 tokens (USDC, USDT, DAI, WETH). Fee-on-transfer, rebasing, and ERC-777 tokens are NOT supported as borrow assets. The LiquidationEngine enforces exact-balance checks on repayment — fee-on-transfer tokens would block all liquidations in that market, creating guaranteed bad debt. This is validated off-chain during market creation and enforced at runtime. Similarly, whitelisted LP pools must NOT contain ERC-777 or other hook-capable tokens — during liquidation, `adapter.unwind()` sends underlying tokens to the LiquidationEngine, and transfer hooks could trigger callbacks. All reentry points are protected by ACL + nonReentrant, but pools with hook-capable tokens should not be whitelisted as defense-in-depth.
 
 ### Bad Debt Management (Aave V3.3 Pattern)
 
