@@ -431,6 +431,79 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         return _positions[positionId].depositBlock;
     }
 
+    /// @notice Collect fees and reinvest as liquidity (called by LPCompounder)
+    /// @dev Permissionless via LPCompounder. PositionManager mediates adapter access.
+    /// @param positionId The position to compound
+    /// @param protocolFeeRecipient Where to send protocol fee (FeeCollector)
+    /// @param protocolFeeBps Protocol fee in basis points (e.g., 190 = 1.9%)
+    /// @param callerRewardRecipient Where to send caller reward (msg.sender of LPCompounder)
+    /// @param callerRewardBps Caller reward in basis points (e.g., 10 = 0.1%)
+    /// @param dustRefundTo Where to send unused tokens (position owner)
+    /// @return fees0 Total fees collected in token0
+    /// @return fees1 Total fees collected in token1
+    /// @return addedLiquidity Liquidity added back to position
+    function compoundFees(
+        uint256 positionId,
+        address protocolFeeRecipient,
+        uint256 protocolFeeBps,
+        address callerRewardRecipient,
+        uint256 callerRewardBps,
+        address dustRefundTo
+    )
+        external
+        whenNotPaused
+        nonReentrant
+        positionExists(positionId)
+        returns (uint256 fees0, uint256 fees1, uint256 addedLiquidity)
+    {
+        // Access: only keeper or pool admin (LPCompounder has KEEPER role)
+        require(_acl().isKeeper(msg.sender) || _acl().isPoolAdmin(msg.sender), "NOT_KEEPER");
+
+        Position storage pos = _positions[positionId];
+        require(pos.status == PositionStatus.Active || pos.status == PositionStatus.Borrowed, "POSITION_NOT_ACTIVE");
+
+        address adapterAddr = core.adapters(pos.lpType);
+        require(adapterAddr != address(0), "NO_ADAPTER");
+        ILPAdapter adapter = ILPAdapter(adapterAddr);
+
+        // Step 1: Collect fees from NFT → tokens to this contract
+        (fees0, fees1) = adapter.collectFees(pos.lpToken, pos.tokenId);
+        if (fees0 == 0 && fees1 == 0) return (0, 0, 0);
+
+        uint256 totalDeducted0;
+        uint256 totalDeducted1;
+
+        // Step 2: Protocol fee (1.9%) → FeeCollector
+        if (protocolFeeBps > 0 && protocolFeeRecipient != address(0)) {
+            uint256 pFee0 = (fees0 * protocolFeeBps) / 10_000;
+            uint256 pFee1 = (fees1 * protocolFeeBps) / 10_000;
+            if (pFee0 > 0) OZIERC20(pos.token0).safeTransfer(protocolFeeRecipient, pFee0);
+            if (pFee1 > 0) OZIERC20(pos.token1).safeTransfer(protocolFeeRecipient, pFee1);
+            totalDeducted0 += pFee0;
+            totalDeducted1 += pFee1;
+        }
+
+        // Step 3: Caller reward (0.1%) → whoever triggered the compound
+        if (callerRewardBps > 0 && callerRewardRecipient != address(0)) {
+            uint256 cReward0 = (fees0 * callerRewardBps) / 10_000;
+            uint256 cReward1 = (fees1 * callerRewardBps) / 10_000;
+            if (cReward0 > 0) OZIERC20(pos.token0).safeTransfer(callerRewardRecipient, cReward0);
+            if (cReward1 > 0) OZIERC20(pos.token1).safeTransfer(callerRewardRecipient, cReward1);
+            totalDeducted0 += cReward0;
+            totalDeducted1 += cReward1;
+        }
+
+        // Step 4: Reinvest remainder as liquidity
+        uint256 reinvest0 = fees0 - totalDeducted0;
+        uint256 reinvest1 = fees1 - totalDeducted1;
+
+        if (reinvest0 > 0) OZIERC20(pos.token0).safeTransfer(adapterAddr, reinvest0);
+        if (reinvest1 > 0) OZIERC20(pos.token1).safeTransfer(adapterAddr, reinvest1);
+
+        (addedLiquidity,,) =
+            adapter.addLiquidity(pos.lpToken, pos.tokenId, pos.token0, pos.token1, reinvest0, reinvest1, dustRefundTo);
+    }
+
     // --- New state vars (appended for UUPS upgrade safety) ---
     PriceFeedRegistry public priceFeedRegistry;
     RiskManager public riskManager;

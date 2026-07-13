@@ -6,79 +6,104 @@ import {IPositionManager} from "../interfaces/IPositionManager.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ProtocolCore} from "../core/ProtocolCore.sol";
-import {ACLManager} from "../core/ACLManager.sol";
 import {PositionManager} from "../core/PositionManager.sol";
+import {FeeCollector} from "../core/FeeCollector.sol";
 
 /// @title LPCompounder
-/// @notice Auto-compounds trading fees back into LP positions
-/// @dev Called by keeper bots to compound fees for all active positions
+/// @notice Permissionless auto-compound for V3 LP positions
+/// @dev Anyone can compound any V3 position. Fee split on every compound:
+///      - 1.9% → FeeCollector (protocol revenue)
+///      - 0.1% → msg.sender (caller reward for gas)
+///      - 98% → reinvested as liquidity
+///      V2/Curve positions auto-compound natively — no action needed.
 contract LPCompounder {
     using SafeERC20 for IERC20;
 
     ProtocolCore public immutable core;
     PositionManager public immutable positionManager;
+    FeeCollector public immutable feeCollector;
 
-    event FeesCompounded(uint256 indexed positionId, uint256 fees0, uint256 fees1);
+    /// @notice Total fee on compounded fees (basis points). Default 200 = 2%.
+    uint256 public compoundFeeBps = 200;
+    /// @notice Caller reward portion (basis points). Default 10 = 0.1%.
+    uint256 public callerRewardBps = 10;
+    uint256 public constant MAX_COMPOUND_FEE = 1000; // 10% max total
+
+    /// @notice Minimum fee per token to justify compounding
+    uint256 public minCompoundThreshold = 1000;
+
+    event FeesCompounded(
+        uint256 indexed positionId, uint256 fees0, uint256 fees1, uint256 addedLiquidity, address indexed compounder
+    );
+    event CompoundFeeUpdated(uint256 oldTotal, uint256 newTotal, uint256 oldCaller, uint256 newCaller);
+    event MinCompoundThresholdUpdated(uint256 oldValue, uint256 newValue);
     event TokensSwept(address indexed token, address indexed to, uint256 amount);
 
-    modifier onlyKeeper() {
-        require(core.aclManager().isKeeper(msg.sender) || core.aclManager().isPoolAdmin(msg.sender), "NOT_KEEPER");
-        _;
-    }
-
-    constructor(address _core, address _positionManager) {
+    constructor(address _core, address _positionManager, address _feeCollector) {
+        require(_core != address(0) && _positionManager != address(0) && _feeCollector != address(0), "ZERO_ADDRESS");
         core = ProtocolCore(_core);
         positionManager = PositionManager(_positionManager);
+        feeCollector = FeeCollector(_feeCollector);
     }
 
-    /// @notice Compound fees for a V3 position (collect fees + add back as liquidity)
-    function compoundPosition(uint256 positionId) external onlyKeeper {
+    /// @notice Compound fees for a V3 position — permissionless
+    /// @param positionId The position to compound
+    function compoundPosition(uint256 positionId) external {
         PositionManager.Position memory pos = positionManager.getPosition(positionId);
-        require(pos.status != IPositionManager.PositionStatus.Liquidated, "LIQUIDATED");
 
-        // Only V3-style positions have collectable fees
-        // V2 and Curve auto-compound natively
-        if (
-            pos.lpType != ILPAdapter.LPType.UniswapV3 && pos.lpType != ILPAdapter.LPType.PancakeSwapV3
-                && pos.lpType != ILPAdapter.LPType.Aerodrome
-        ) {
-            return;
-        }
+        require(
+            pos.lpType == ILPAdapter.LPType.UniswapV3 || pos.lpType == ILPAdapter.LPType.PancakeSwapV3
+                || pos.lpType == ILPAdapter.LPType.Aerodrome,
+            "NOT_V3_POSITION"
+        );
 
-        address adapterAddr = core.adapters(pos.lpType);
-        ILPAdapter adapter = ILPAdapter(adapterAddr);
+        // Calculate fee split: total 2% = 1.9% protocol + 0.1% caller
+        uint256 protocolFeeBps = compoundFeeBps > callerRewardBps ? compoundFeeBps - callerRewardBps : 0;
 
-        // Collect fees
-        (uint256 fees0, uint256 fees1) = adapter.collectFees(pos.lpToken, pos.tokenId);
+        // Compound via PositionManager (which has adapter access)
+        (uint256 fees0, uint256 fees1, uint256 addedLiquidity) = positionManager.compoundFees(
+            positionId,
+            address(feeCollector), // 1.9% → protocol
+            protocolFeeBps,
+            msg.sender, // 0.1% → caller
+            callerRewardBps,
+            pos.owner // dust → position owner
+        );
 
-        if (fees0 == 0 && fees1 == 0) return;
+        require(fees0 >= minCompoundThreshold || fees1 >= minCompoundThreshold, "BELOW_THRESHOLD");
 
-        // For V3-style positions, collected fees need to be added back as liquidity
-        // via INonfungiblePositionManager.increaseLiquidity(). This requires:
-        //   1. Approve both tokens to the NFT manager
-        //   2. Call increaseLiquidity with the correct amounts for the position's tick range
-        //   3. The NFT manager calculates the optimal ratio based on current tick
-        //
-        // For now, fees are held by the adapter contract and increase collateral value
-        // via the oracle's fee calculation. Full auto-compound will be implemented
-        // when adapter contracts are wired to mainnet DEX interfaces.
-        //
-        // The fees still count toward position value because the oracle
-        // reads unclaimed fees directly from the pool's feeGrowth tracking.
-
-        emit FeesCompounded(positionId, fees0, fees1);
+        emit FeesCompounded(positionId, fees0, fees1, addedLiquidity, msg.sender);
     }
 
     /// @notice Batch compound multiple positions
-    function batchCompound(uint256[] calldata positionIds) external onlyKeeper {
+    function batchCompound(uint256[] calldata positionIds) external {
         for (uint256 i = 0; i < positionIds.length; i++) {
-            // Skip errors for individual positions
             try this.compoundPosition(positionIds[i]) {} catch {}
         }
     }
 
-    /// @notice Sweep tokens stuck in this contract (from collected but not yet compounded fees)
-    /// @dev Only callable by PoolAdmin. Sends to a specified recipient (treasury or position owner).
+    // --- Admin ---
+
+    /// @notice Set compound fee split (total and caller portion)
+    function setCompoundFee(uint256 _totalBps, uint256 _callerBps) external {
+        require(
+            core.aclManager().isRiskAdmin(msg.sender) || core.aclManager().isPoolAdmin(msg.sender), "NOT_RISK_ADMIN"
+        );
+        require(_totalBps <= MAX_COMPOUND_FEE, "FEE_TOO_HIGH");
+        require(_callerBps <= _totalBps, "CALLER_EXCEEDS_TOTAL");
+        emit CompoundFeeUpdated(compoundFeeBps, _totalBps, callerRewardBps, _callerBps);
+        compoundFeeBps = _totalBps;
+        callerRewardBps = _callerBps;
+    }
+
+    /// @notice Set minimum fee threshold
+    function setMinCompoundThreshold(uint256 _threshold) external {
+        require(core.aclManager().isPoolAdmin(msg.sender), "NOT_POOL_ADMIN");
+        emit MinCompoundThresholdUpdated(minCompoundThreshold, _threshold);
+        minCompoundThreshold = _threshold;
+    }
+
+    /// @notice Sweep stuck tokens
     function sweepTokens(address token, address to, uint256 amount) external {
         require(core.aclManager().isPoolAdmin(msg.sender), "NOT_POOL_ADMIN");
         require(token != address(0) && to != address(0), "ZERO_ADDRESS");
