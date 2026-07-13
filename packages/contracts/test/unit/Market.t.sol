@@ -317,6 +317,24 @@ contract MarketTest is Test {
         market.updateConfig(9600, 8000, 600, 800, 20_000_000e6);
     }
 
+    function test_initialize_revertsBonusTooHigh() public {
+        IMarket.MarketConfig memory badConfig = IMarket.MarketConfig({
+            lpType: ILPAdapter.LPType.UniswapV3,
+            borrowAsset: address(usdc),
+            maxLtv: 6500,
+            liquidationThreshold: 7500,
+            liquidationBonus: market.MAX_LIQUIDATION_BONUS() + 1,
+            haircut: 700,
+            borrowCap: 10_000_000e6,
+            minPoolTvl: 5_000_000e18,
+            minPoolAge: 0
+        });
+
+        Market impl = new Market();
+        vm.expectRevert("BONUS_TOO_HIGH");
+        new ERC1967Proxy(address(impl), abi.encodeCall(Market.initialize, (badConfig, address(irm), address(core))));
+    }
+
     function test_updateConfig_revertsBonusTooHigh() public {
         uint256 maxBonus = market.MAX_LIQUIDATION_BONUS();
         vm.prank(owner);

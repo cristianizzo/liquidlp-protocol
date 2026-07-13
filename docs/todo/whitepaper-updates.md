@@ -61,7 +61,7 @@ within 10-100% bounds. This matches Aave V3's `DEFAULT_LIQUIDATION_CLOSE_FACTOR`
 
 ## 3. Fix Section 5 LiquidationEngine Description ✅
 
-**Status:** Already fixed in this session — updated to remove stale "swap to borrow asset" reference and reflect actual flow.
+**Status:** Completed — updated to remove stale "swap to borrow asset" reference and reflect actual flow.
 
 ---
 
