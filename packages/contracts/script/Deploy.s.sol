@@ -118,9 +118,9 @@ contract Deploy is Script {
     }
 
     function _configureRoles() internal {
-        aclManager.grantRole(aclManager.LENDING_ENGINE(), address(lendingEngine));
-        aclManager.grantRole(aclManager.LIQUIDATION_ENGINE(), address(liquidationEngine));
-        aclManager.grantRole(aclManager.POSITION_MANAGER(), address(positionManager));
+        aclManager.addLendingEngine(address(lendingEngine));
+        aclManager.addLiquidationEngine(address(liquidationEngine));
+        aclManager.addPositionManager(address(positionManager));
         positionManager.setLendingEngine(address(lendingEngine));
         core.setMarketFactory(address(marketFactory));
     }

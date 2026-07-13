@@ -204,9 +204,9 @@ abstract contract ForkTestBase is Test {
         positionViewer = new PositionViewer(address(core), address(positionManager), address(lendingEngine));
 
         // 13. Grant ACL roles
-        aclManager.grantRole(aclManager.LENDING_ENGINE(), address(lendingEngine));
-        aclManager.grantRole(aclManager.LIQUIDATION_ENGINE(), address(liquidationEngine));
-        aclManager.grantRole(aclManager.POSITION_MANAGER(), address(positionManager));
+        aclManager.addLendingEngine(address(lendingEngine));
+        aclManager.addLiquidationEngine(address(liquidationEngine));
+        aclManager.addPositionManager(address(positionManager));
         positionManager.setLendingEngine(address(lendingEngine));
 
         // 14. Wire RiskManager + PriceFeedRegistry
@@ -216,7 +216,7 @@ abstract contract ForkTestBase is Test {
         positionManager.setPriceFeedRegistry(address(priceFeedRegistry));
 
         // 15. Grant KEEPER to PriceValidator (so it can call CircuitBreaker.pausePool)
-        aclManager.grantRole(aclManager.KEEPER(), address(priceValidator));
+        aclManager.addKeeper(address(priceValidator));
 
         vm.stopPrank();
     }

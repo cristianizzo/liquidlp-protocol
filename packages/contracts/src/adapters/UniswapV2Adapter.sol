@@ -70,7 +70,7 @@ contract UniswapV2Adapter is ILPAdapter {
         require(v2Factory.getPair(token0, token1) == lpToken, "INVALID_PAIR");
 
         // Transfer LP tokens from user to adapter
-        require(pair.transferFrom(from, address(this), amount), "TRANSFER_FAILED");
+        OZIERC20(address(pair)).safeTransferFrom(from, address(this), amount);
 
         info = LPInfo({
             lpType: LPType.UniswapV2,
@@ -100,7 +100,7 @@ contract UniswapV2Adapter is ILPAdapter {
         require(to != address(this), "CANNOT_UNLOCK_TO_SELF");
         require(amount > 0, "ZERO_AMOUNT");
 
-        require(IUniswapV2Pair(lpToken).transfer(to, amount), "TRANSFER_FAILED");
+        OZIERC20(lpToken).safeTransfer(to, amount);
 
         emit PositionUnlocked(lpToken, to, amount);
     }

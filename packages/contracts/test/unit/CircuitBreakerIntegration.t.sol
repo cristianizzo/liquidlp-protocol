@@ -75,9 +75,9 @@ contract CircuitBreakerIntegrationTest is Test {
         market = new MockMarket(address(usdc), address(irm));
 
         vm.startPrank(owner);
-        aclManager.grantRole(aclManager.LENDING_ENGINE(), address(le));
-        aclManager.grantRole(aclManager.POSITION_MANAGER(), address(pm));
-        aclManager.grantRole(aclManager.KEEPER(), keeper);
+        aclManager.addLendingEngine(address(le));
+        aclManager.addPositionManager(address(pm));
+        aclManager.addKeeper(keeper);
         core.registerAdapter(ILPAdapter.LPType.UniswapV3, address(adapter));
         oracleHub.registerOracle(ILPAdapter.LPType.UniswapV3, address(oracle));
         core.whitelistPool(lpToken);

@@ -16,6 +16,7 @@ import {PositionManager} from "./PositionManager.sol";
 import {Market} from "../markets/Market.sol";
 import {RiskManager} from "../security/RiskManager.sol";
 import {CircuitBreaker} from "../security/CircuitBreaker.sol";
+import {TokenUtils} from "../libraries/TokenUtils.sol";
 
 /// @title LendingEngine
 /// @notice Handles borrowing against LP positions and repayment with interest
@@ -62,6 +63,11 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
 
     modifier onlyPoolAdmin() {
         require(_acl().isPoolAdmin(msg.sender), "NOT_POOL_ADMIN");
+        _;
+    }
+
+    modifier onlyLiquidationEngine() {
+        require(_acl().isLiquidationEngine(msg.sender), "NOT_LIQUIDATION_ENGINE");
         _;
     }
 
@@ -151,8 +157,15 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
     }
 
     /// @notice Repay debt on behalf of a borrower (used by LiquidationEngine)
-    function repayOnBehalf(uint256 positionId, uint256 repayAmount) external whenNotPaused nonReentrant {
-        require(_acl().isLiquidationEngine(msg.sender), "NOT_LIQUIDATION_ENGINE");
+    function repayOnBehalf(
+        uint256 positionId,
+        uint256 repayAmount
+    )
+        external
+        whenNotPaused
+        onlyLiquidationEngine
+        nonReentrant
+    {
         _repayInternal(positionId, repayAmount, msg.sender);
     }
 
@@ -228,8 +241,7 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
         IMarket.MarketConfig memory config = IMarket(marketAddr).getConfig();
         uint256 maxBorrowUsd = (collateralValue * config.maxLtv) / 10_000;
 
-        uint8 borrowDecimals = IERC20(config.borrowAsset).decimals();
-        require(borrowDecimals <= 36, "INVALID_DECIMALS");
+        uint8 borrowDecimals = TokenUtils.safeDecimals(config.borrowAsset);
 
         PriceFeedRegistry registry = positionManager.priceFeedRegistry();
         if (address(registry) != address(0)) {
@@ -247,8 +259,7 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
 
     /// @notice Convert borrow asset amount to 18-dec USD
     function _toUsd(uint256 amount, address borrowAsset) internal view returns (uint256) {
-        uint8 dec = IERC20(borrowAsset).decimals();
-        require(dec <= 36, "INVALID_DECIMALS");
+        uint8 dec = TokenUtils.safeDecimals(borrowAsset);
         PriceFeedRegistry registry = positionManager.priceFeedRegistry();
         if (address(registry) != address(0)) {
             return registry.getUsdValue(borrowAsset, amount, dec);
@@ -267,9 +278,7 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
 
     /// @notice Write off bad debt from an underwater position (called by LiquidationEngine)
     /// @dev Zeros out the position's debt and records deficit on the market
-    function writeOffDebt(uint256 positionId) external whenNotPaused nonReentrant {
-        require(_acl().isLiquidationEngine(msg.sender), "NOT_LIQUIDATION_ENGINE");
-
+    function writeOffDebt(uint256 positionId) external whenNotPaused onlyLiquidationEngine nonReentrant {
         PositionManager.Position memory pos = positionManager.getPosition(positionId);
         address marketAddr = _getMarketAddr(pos.marketId);
         Market market = Market(marketAddr);

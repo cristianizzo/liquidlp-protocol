@@ -214,9 +214,9 @@ abstract contract DeployBase is Script {
 
     function _configureRoles(ChainConfig memory cfg) internal {
         // Contract roles
-        aclManager.grantRole(aclManager.LENDING_ENGINE(), address(lendingEngine));
-        aclManager.grantRole(aclManager.LIQUIDATION_ENGINE(), address(liquidationEngine));
-        aclManager.grantRole(aclManager.POSITION_MANAGER(), address(positionManager));
+        aclManager.addLendingEngine(address(lendingEngine));
+        aclManager.addLiquidationEngine(address(liquidationEngine));
+        aclManager.addPositionManager(address(positionManager));
 
         // Human roles
         if (cfg.guardian != address(0)) {
@@ -237,8 +237,8 @@ abstract contract DeployBase is Script {
         // FlashloanLiquidator (periphery) handles swaps outside the core protocol.
 
         // Grant KEEPER to security contracts so they can trigger CircuitBreaker.pausePool()
-        aclManager.grantRole(aclManager.KEEPER(), address(priceValidator));
-        aclManager.grantRole(aclManager.KEEPER(), address(poolHealthMonitor));
+        aclManager.addKeeper(address(priceValidator));
+        aclManager.addKeeper(address(poolHealthMonitor));
     }
 
     function _createMarket(ChainConfig memory cfg) internal {

@@ -35,6 +35,7 @@ contract ACLManager is AccessControlEnumerable {
     }
 
     function removePoolAdmin(address admin) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(admin != address(0), "ZERO_ADDRESS");
         revokeRole(POOL_ADMIN, admin);
     }
 
@@ -49,6 +50,7 @@ contract ACLManager is AccessControlEnumerable {
     }
 
     function removeEmergencyAdmin(address admin) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(admin != address(0), "ZERO_ADDRESS");
         revokeRole(EMERGENCY_ADMIN, admin);
     }
 
@@ -63,6 +65,7 @@ contract ACLManager is AccessControlEnumerable {
     }
 
     function removeRiskAdmin(address admin) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(admin != address(0), "ZERO_ADDRESS");
         revokeRole(RISK_ADMIN, admin);
     }
 
@@ -70,17 +73,60 @@ contract ACLManager is AccessControlEnumerable {
         return hasRole(RISK_ADMIN, admin);
     }
 
-    // --- Contract Roles ---
+    // --- Contract Roles (Lending Engine) ---
+    function addLendingEngine(address addr) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(addr != address(0), "ZERO_ADDRESS");
+        grantRole(LENDING_ENGINE, addr);
+    }
+
+    function removeLendingEngine(address addr) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(addr != address(0), "ZERO_ADDRESS");
+        revokeRole(LENDING_ENGINE, addr);
+    }
+
     function isLendingEngine(address addr) external view returns (bool) {
         return hasRole(LENDING_ENGINE, addr);
+    }
+
+    // --- Contract Roles (Liquidation Engine) ---
+    function addLiquidationEngine(address addr) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(addr != address(0), "ZERO_ADDRESS");
+        grantRole(LIQUIDATION_ENGINE, addr);
+    }
+
+    function removeLiquidationEngine(address addr) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(addr != address(0), "ZERO_ADDRESS");
+        revokeRole(LIQUIDATION_ENGINE, addr);
     }
 
     function isLiquidationEngine(address addr) external view returns (bool) {
         return hasRole(LIQUIDATION_ENGINE, addr);
     }
 
+    // --- Contract Roles (Position Manager) ---
+    function addPositionManager(address addr) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(addr != address(0), "ZERO_ADDRESS");
+        grantRole(POSITION_MANAGER, addr);
+    }
+
+    function removePositionManager(address addr) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(addr != address(0), "ZERO_ADDRESS");
+        revokeRole(POSITION_MANAGER, addr);
+    }
+
     function isPositionManager(address addr) external view returns (bool) {
         return hasRole(POSITION_MANAGER, addr);
+    }
+
+    // --- Contract Roles (Keeper) ---
+    function addKeeper(address addr) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(addr != address(0), "ZERO_ADDRESS");
+        grantRole(KEEPER, addr);
+    }
+
+    function removeKeeper(address addr) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(addr != address(0), "ZERO_ADDRESS");
+        revokeRole(KEEPER, addr);
     }
 
     function isKeeper(address addr) external view returns (bool) {

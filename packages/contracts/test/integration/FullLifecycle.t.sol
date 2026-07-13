@@ -138,10 +138,10 @@ contract FullLifecycleTest is Test {
         // --- Register everything and grant roles ---
         vm.startPrank(owner);
         aclManager.addEmergencyAdmin(guardian);
-        aclManager.grantRole(aclManager.LENDING_ENGINE(), address(le));
-        aclManager.grantRole(aclManager.LIQUIDATION_ENGINE(), address(liq));
-        aclManager.grantRole(aclManager.POSITION_MANAGER(), address(pm));
-        aclManager.grantRole(aclManager.KEEPER(), address(liq));
+        aclManager.addLendingEngine(address(le));
+        aclManager.addLiquidationEngine(address(liq));
+        aclManager.addPositionManager(address(pm));
+        aclManager.addKeeper(address(liq));
         core.registerAdapter(ILPAdapter.LPType.UniswapV2, address(adapter));
         oracleHub.registerOracle(ILPAdapter.LPType.UniswapV2, address(oracle));
         core.whitelistPool(lpToken);

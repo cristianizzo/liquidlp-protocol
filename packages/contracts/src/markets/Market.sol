@@ -74,6 +74,11 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
         _;
     }
 
+    modifier whenNotPaused() {
+        require(!core.paused(), "PAUSED");
+        _;
+    }
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
@@ -228,8 +233,7 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
     // --- Lender Operations ---
 
     /// @inheritdoc IMarket
-    function supply(uint256 amount) external nonReentrant returns (uint256 sharesToMint) {
-        require(!core.paused(), "PAUSED");
+    function supply(uint256 amount) external whenNotPaused nonReentrant returns (uint256 sharesToMint) {
         require(amount > 0, "ZERO_AMOUNT");
         accrueInterest();
 
@@ -258,8 +262,7 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
     }
 
     /// @inheritdoc IMarket
-    function withdraw(uint256 sharesToBurn) external nonReentrant returns (uint256 amount) {
-        require(!core.paused(), "PAUSED");
+    function withdraw(uint256 sharesToBurn) external whenNotPaused nonReentrant returns (uint256 amount) {
         require(sharesToBurn > 0, "ZERO_SHARES");
         accrueInterest();
 
