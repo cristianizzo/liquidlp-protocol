@@ -106,7 +106,9 @@ contract DepositValidationTest is Test {
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bytes32 cbEventSig = keccak256("CircuitBreakerNotConfigured(uint256,address)");
         for (uint256 i = 0; i < logs.length; i++) {
-            assertFalse(logs[i].topics[0] == cbEventSig, "Should not emit CircuitBreakerNotConfigured");
+            if (logs[i].topics.length > 0) {
+                assertFalse(logs[i].topics[0] == cbEventSig, "Should not emit CircuitBreakerNotConfigured");
+            }
         }
     }
 
