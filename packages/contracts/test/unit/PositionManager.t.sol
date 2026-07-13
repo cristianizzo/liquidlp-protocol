@@ -92,9 +92,9 @@ contract PositionManagerTest is Test {
         // Register everything and grant roles via ACLManager
         vm.startPrank(owner);
         aclManager.addEmergencyAdmin(guardian);
-        aclManager.grantRole(aclManager.LENDING_ENGINE(), lendingEngine);
-        aclManager.grantRole(aclManager.LIQUIDATION_ENGINE(), liquidationEngine);
-        aclManager.grantRole(aclManager.POSITION_MANAGER(), address(pm));
+        aclManager.addLendingEngine(lendingEngine);
+        aclManager.addLiquidationEngine(liquidationEngine);
+        aclManager.addPositionManager(address(pm));
         core.registerAdapter(ILPAdapter.LPType.UniswapV3, address(adapter));
         oracleHub.registerOracle(ILPAdapter.LPType.UniswapV3, address(oracle));
         core.whitelistPool(lpToken);

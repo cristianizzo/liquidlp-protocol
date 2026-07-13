@@ -75,8 +75,8 @@ contract RiskManagerIntegrationTest is Test {
         rm = new RiskManager(address(core));
 
         vm.startPrank(owner);
-        aclManager.grantRole(aclManager.LENDING_ENGINE(), address(le));
-        aclManager.grantRole(aclManager.POSITION_MANAGER(), address(pm));
+        aclManager.addLendingEngine(address(le));
+        aclManager.addPositionManager(address(pm));
         core.registerAdapter(ILPAdapter.LPType.UniswapV3, address(adapter));
         oracleHub.registerOracle(ILPAdapter.LPType.UniswapV3, address(oracle));
         core.whitelistPool(lpToken);

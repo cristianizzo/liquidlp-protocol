@@ -57,7 +57,7 @@ contract MarketTest is Test {
         // Grant le the LENDING_ENGINE role so it can call transferOut/transferIn
         vm.startPrank(owner);
         aclManager.addEmergencyAdmin(guardian);
-        aclManager.grantRole(aclManager.LENDING_ENGINE(), le);
+        aclManager.addLendingEngine(le);
         vm.stopPrank();
     }
 
@@ -269,7 +269,7 @@ contract MarketTest is Test {
 
         vm.startPrank(owner);
         aclManager.revokeRole(aclManager.LENDING_ENGINE(), le);
-        aclManager.grantRole(aclManager.LENDING_ENGINE(), newLE);
+        aclManager.addLendingEngine(newLE);
         vm.stopPrank();
 
         // Old LE can no longer call

@@ -40,7 +40,7 @@ contract FeeCollectorTest is Test {
 
         vm.startPrank(owner);
         aclManager.addEmergencyAdmin(guardian);
-        aclManager.grantRole(aclManager.KEEPER(), keeper);
+        aclManager.addKeeper(keeper);
         vm.stopPrank();
     }
 

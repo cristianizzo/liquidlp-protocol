@@ -99,8 +99,8 @@ contract AddCollateralTest is Test {
 
         // Wire everything
         vm.startPrank(owner);
-        aclManager.grantRole(aclManager.LENDING_ENGINE(), address(le));
-        aclManager.grantRole(aclManager.POSITION_MANAGER(), address(pm));
+        aclManager.addLendingEngine(address(le));
+        aclManager.addPositionManager(address(pm));
 
         core.registerAdapter(ILPAdapter.LPType.UniswapV3, address(v3Adapter));
         core.registerAdapter(ILPAdapter.LPType.UniswapV2, address(v2Adapter));
