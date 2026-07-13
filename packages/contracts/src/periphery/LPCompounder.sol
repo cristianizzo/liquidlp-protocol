@@ -25,8 +25,8 @@ contract LPCompounder {
 
     /// @notice Total fee on compounded fees (basis points). Default 200 = 2%.
     uint256 public compoundFeeBps = 200;
-    /// @notice Caller reward portion (basis points). Default 10 = 0.1%.
-    uint256 public callerRewardBps = 10;
+    /// @notice Caller reward portion (basis points). Default 30 = 0.3%.
+    uint256 public callerRewardBps = 30;
     uint256 public constant MAX_COMPOUND_FEE = 1000; // 10% max total
 
     /// @notice Minimum fee per token to justify compounding
