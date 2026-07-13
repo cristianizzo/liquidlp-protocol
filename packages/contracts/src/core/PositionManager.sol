@@ -18,6 +18,7 @@ import {ACLManager} from "./ACLManager.sol";
 import {PriceFeedRegistry} from "../oracle/PriceFeedRegistry.sol";
 import {RiskManager} from "../security/RiskManager.sol";
 import {CircuitBreaker} from "../security/CircuitBreaker.sol";
+import {FeeCollector} from "./FeeCollector.sol";
 import {TokenUtils} from "../libraries/TokenUtils.sol";
 
 /// @title PositionManager
@@ -476,12 +477,18 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         uint256 totalDeducted0;
         uint256 totalDeducted1;
 
-        // Step 2: Protocol fee → FeeCollector
+        // Step 2: Protocol fee → FeeCollector (via collectFee so accumulatedFees is tracked)
         if (protocolFeeBps > 0 && protocolFeeRecipient != address(0)) {
             uint256 pFee0 = (fees0 * protocolFeeBps) / 10_000;
             uint256 pFee1 = (fees1 * protocolFeeBps) / 10_000;
-            if (pFee0 > 0) OZIERC20(pos.token0).safeTransfer(protocolFeeRecipient, pFee0);
-            if (pFee1 > 0) OZIERC20(pos.token1).safeTransfer(protocolFeeRecipient, pFee1);
+            if (pFee0 > 0) {
+                OZIERC20(pos.token0).forceApprove(protocolFeeRecipient, pFee0);
+                FeeCollector(protocolFeeRecipient).collectFee(pos.token0, pFee0, address(this), "compound");
+            }
+            if (pFee1 > 0) {
+                OZIERC20(pos.token1).forceApprove(protocolFeeRecipient, pFee1);
+                FeeCollector(protocolFeeRecipient).collectFee(pos.token1, pFee1, address(this), "compound");
+            }
             totalDeducted0 += pFee0;
             totalDeducted1 += pFee1;
         }

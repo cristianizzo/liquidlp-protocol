@@ -10,11 +10,11 @@ import {PositionManager} from "../core/PositionManager.sol";
 import {FeeCollector} from "../core/FeeCollector.sol";
 
 /// @title LPCompounder
-/// @notice Permissionless auto-compound for V3 LP positions
-/// @dev Anyone can compound any V3 position. Fee split on every compound:
-///      - 1.9% → FeeCollector (protocol revenue)
-///      - 0.1% → caller (reward for gas)
-///      - 98% → reinvested as liquidity
+/// @notice Permissionless auto-compound for Uniswap V3 LP positions
+/// @dev Anyone can compound any V3 position. Configurable fee split (default 2%):
+///      - compoundFeeBps - callerRewardBps → FeeCollector (protocol revenue)
+///      - callerRewardBps → caller (reward for gas)
+///      - remainder → reinvested as liquidity
 ///      V2/Curve positions auto-compound natively — no action needed.
 contract LPCompounder {
     using SafeERC20 for IERC20;
