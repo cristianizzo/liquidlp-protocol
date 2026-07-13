@@ -479,8 +479,8 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         (fees0, fees1) = adapter.collectFees(pos.lpToken, pos.tokenId);
         if (fees0 == 0 && fees1 == 0) return (0, 0, 0);
 
-        // Step 1b: Threshold check — bail early before spending gas on fee splits
-        if (fees0 < minFeeThreshold && fees1 < minFeeThreshold) return (fees0, fees1, 0);
+        // Step 1b: Threshold check — revert so fee collection is rolled back when not worth compounding
+        require(fees0 >= minFeeThreshold || fees1 >= minFeeThreshold, "BELOW_MIN_FEE_THRESHOLD");
 
         uint256 totalDeducted0;
         uint256 totalDeducted1;

@@ -196,15 +196,11 @@ contract CompoundFeesTest is Test {
 
     // ========== Threshold Check ==========
 
-    function test_compoundFees_belowThresholdReturnsEarly() public {
-        _setupFees(500, 500); // Below default threshold of 1000
+    function test_compoundFees_belowThresholdReverts() public {
+        _setupFees(500, 500); // Below threshold
         vm.prank(keeper);
-        (uint256 f0, uint256 f1, uint256 liq) =
-            pm.compoundFees(positionId, address(feeCollector), 200, keeper, 50, 1000, alice);
-        // Fees were collected but no liquidity added (threshold not met)
-        assertEq(f0, 500);
-        assertEq(f1, 500);
-        assertEq(liq, 0);
+        vm.expectRevert("BELOW_MIN_FEE_THRESHOLD");
+        pm.compoundFees(positionId, address(feeCollector), 200, keeper, 50, 1000, alice);
     }
 
     function test_compoundFees_aboveThresholdProceeds() public {
@@ -390,6 +386,12 @@ contract CompoundFeesTest is Test {
         compounder.compoundPosition(positionId, rewardTo);
 
         assertGt(token0.balanceOf(rewardTo), 0);
+    }
+
+    function test_compounder_revertsPositionNotFound() public {
+        vm.prank(alice);
+        vm.expectRevert("POSITION_NOT_FOUND");
+        compounder.compoundPosition(999);
     }
 
     function test_compounder_revertsNonV3() public {

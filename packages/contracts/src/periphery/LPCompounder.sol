@@ -55,6 +55,7 @@ contract LPCompounder {
     /// @param rewardRecipient Where to send the caller reward (callerRewardBps)
     function compoundPosition(uint256 positionId, address rewardRecipient) public {
         PositionManager.Position memory pos = positionManager.getPosition(positionId);
+        require(pos.owner != address(0), "POSITION_NOT_FOUND");
 
         // Only UniswapV3 positions (stub adapters revert, so only check real V3)
         require(pos.lpType == ILPAdapter.LPType.UniswapV3, "UNSUPPORTED_LP_TYPE");
