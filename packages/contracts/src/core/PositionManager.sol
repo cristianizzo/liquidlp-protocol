@@ -487,8 +487,8 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
 
         // Step 2: Protocol fee → FeeCollector (via collectFee so accumulatedFees is tracked)
         if (protocolFeeBps > 0 && protocolFeeRecipient != address(0)) {
-            uint256 pFee0 = (fees0 * protocolFeeBps) / 10_000;
-            uint256 pFee1 = (fees1 * protocolFeeBps) / 10_000;
+            uint256 pFee0 = Math.mulDiv(fees0, protocolFeeBps, 10_000);
+            uint256 pFee1 = Math.mulDiv(fees1, protocolFeeBps, 10_000);
             if (pFee0 > 0) {
                 OZIERC20(pos.token0).forceApprove(protocolFeeRecipient, pFee0);
                 FeeCollector(protocolFeeRecipient).collectFee(pos.token0, pFee0, address(this), "compound");
@@ -503,8 +503,8 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
 
         // Step 3: Caller reward → whoever triggered the compound
         if (callerRewardBps > 0 && callerRewardRecipient != address(0)) {
-            uint256 cReward0 = (fees0 * callerRewardBps) / 10_000;
-            uint256 cReward1 = (fees1 * callerRewardBps) / 10_000;
+            uint256 cReward0 = Math.mulDiv(fees0, callerRewardBps, 10_000);
+            uint256 cReward1 = Math.mulDiv(fees1, callerRewardBps, 10_000);
             if (cReward0 > 0) OZIERC20(pos.token0).safeTransfer(callerRewardRecipient, cReward0);
             if (cReward1 > 0) OZIERC20(pos.token1).safeTransfer(callerRewardRecipient, cReward1);
             totalDeducted0 += cReward0;
