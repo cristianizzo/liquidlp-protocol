@@ -83,8 +83,8 @@ contract FeeCollector is ReentrancyGuard {
     modifier onlyAuthorized() {
         ACLManager acl = _acl();
         require(
-            acl.isLiquidationEngine(msg.sender) || acl.isLendingEngine(msg.sender) || acl.isKeeper(msg.sender)
-                || acl.isPoolAdmin(msg.sender),
+            acl.isLiquidationEngine(msg.sender) || acl.isLendingEngine(msg.sender) || acl.isPositionManager(msg.sender)
+                || acl.isKeeper(msg.sender) || acl.isPoolAdmin(msg.sender),
             "NOT_AUTHORIZED"
         );
         _;
