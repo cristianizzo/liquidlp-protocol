@@ -46,6 +46,9 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
     uint256 public constant DEAD_SHARES = 1000;
     address internal constant DEAD_ADDRESS = address(0xdead);
 
+    /// @notice Maximum liquidation bonus in bps (15% — aligned with Aave V3 upper bound)
+    uint256 public constant MAX_LIQUIDATION_BONUS = 1500;
+
     event InterestRateModelUpdated(address oldModel, address newModel);
     event MarketConfigUpdated(string field, uint256 oldValue, uint256 newValue);
     event InterestAccrued(uint256 interestAmount, uint256 protocolShare, uint256 newBorrowIndex, uint256 timestamp);
@@ -176,7 +179,7 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
         require(_maxLtv <= 9500, "LTV_TOO_HIGH");
         require(_liquidationThreshold <= 9800, "THRESHOLD_TOO_HIGH");
         require(_maxLtv < _liquidationThreshold, "LTV_MUST_BE_BELOW_LIQ_THRESHOLD");
-        require(_liquidationBonus <= 2000, "BONUS_TOO_HIGH");
+        require(_liquidationBonus <= MAX_LIQUIDATION_BONUS, "BONUS_TOO_HIGH");
         require(_haircut <= 5000, "HAIRCUT_TOO_HIGH");
 
         if (_maxLtv != config.maxLtv) emit MarketConfigUpdated("maxLtv", config.maxLtv, _maxLtv);

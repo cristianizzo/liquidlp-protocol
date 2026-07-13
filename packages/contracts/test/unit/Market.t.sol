@@ -317,6 +317,20 @@ contract MarketTest is Test {
         market.updateConfig(9600, 8000, 600, 800, 20_000_000e6);
     }
 
+    function test_updateConfig_revertsBonusTooHigh() public {
+        vm.prank(owner);
+        vm.expectRevert("BONUS_TOO_HIGH");
+        market.updateConfig(7000, 8000, 1501, 800, 20_000_000e6);
+    }
+
+    function test_updateConfig_bonusAtMax() public {
+        vm.prank(owner);
+        market.updateConfig(7000, 8000, 1500, 800, 20_000_000e6);
+
+        IMarket.MarketConfig memory cfg = market.getConfig();
+        assertEq(cfg.liquidationBonus, 1500);
+    }
+
     function test_upgrade_onlyPoolAdmin() public {
         Market newImpl = new Market();
         vm.prank(alice);
