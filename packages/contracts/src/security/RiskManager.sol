@@ -115,8 +115,12 @@ contract RiskManager {
         } else {
             currentGlobalBorrows -= amountUsd;
         }
-        lpTypeCurrentBorrows[lpType] =
-            amountUsd > lpTypeCurrentBorrows[lpType] ? 0 : lpTypeCurrentBorrows[lpType] - amountUsd;
+        if (amountUsd > lpTypeCurrentBorrows[lpType]) {
+            emit BorrowTrackingDrift(lpTypeCurrentBorrows[lpType], amountUsd);
+            lpTypeCurrentBorrows[lpType] = 0;
+        } else {
+            lpTypeCurrentBorrows[lpType] -= amountUsd;
+        }
         emit RepayRecorded(amountUsd, currentGlobalBorrows);
     }
 
