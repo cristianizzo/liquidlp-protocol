@@ -1,4 +1,4 @@
-# LiquidLP Protocol — Whitepaper
+# Aurelia Protocol — Whitepaper
 
 > Unlock LP positions as collateral. Borrow against your liquidity without removing it.
 
@@ -8,7 +8,7 @@
 
 ## 1. Abstract
 
-LiquidLP is a decentralized lending protocol that unlocks ~$8B in locked LP capital across DeFi. Users deposit their LP positions (Uniswap V3/V2, Curve, Aerodrome, PancakeSwap) as collateral and borrow stablecoins against them — while the LP keeps earning swap fees. The protocol solves two hard technical problems that prevented LP collateral lending before: (1) a manipulation-resistant LP pricing oracle using dual TWAP + Chainlink cross-validation with 5 defense layers, and (2) an atomic liquidation engine where liquidators only deal in stablecoins — never touching LP tokens directly. Built with UUPS upgradeable proxies, Aave-style reserve factor fees, and DAO governance for progressive decentralization.
+Aurelia is a decentralized lending protocol that unlocks ~$8B in locked LP capital across DeFi. Users deposit their LP positions (Uniswap V3/V2, Curve, Aerodrome, PancakeSwap) as collateral and borrow stablecoins against them — while the LP keeps earning swap fees. The protocol solves two hard technical problems that prevented LP collateral lending before: (1) a manipulation-resistant LP pricing oracle using dual TWAP + Chainlink cross-validation with 5 defense layers, and (2) an atomic liquidation engine where liquidators only deal in stablecoins — never touching LP tokens directly. Built with UUPS upgradeable proxies, Aave-style reserve factor fees, and DAO governance for progressive decentralization.
 
 ---
 
@@ -55,7 +55,7 @@ The technical barriers are significant — and they explain why:
 - **LP positions are hard to liquidate** — unwinding requires DEX-specific operations (NFT decreaseLiquidity for V3, removeLiquidity via router for V2, multi-token withdrawal for Curve), plus token swaps and slippage management.
 - **Oracle manipulation** — naive LP pricing (reading pool reserves) is trivially exploitable via flash loans. Each AMM type requires a different manipulation-resistant pricing method.
 
-LiquidLP solves all three with a multi-DEX, purpose-built architecture: type-specific oracles behind a unified interface, DEX-specific adapters behind a common adapter interface, and an atomic liquidation engine where liquidators never touch LP tokens.
+Aurelia solves all three with a multi-DEX, purpose-built architecture: type-specific oracles behind a unified interface, DEX-specific adapters behind a common adapter interface, and an atomic liquidation engine where liquidators never touch LP tokens.
 
 ---
 
@@ -93,11 +93,11 @@ User deposits LP position → Protocol locks it → User borrows stablecoins
 
 Permissionless lending protocols (Morpho Blue, Euler V2, Silo Finance) allow anyone to create isolated markets with custom collateral. In theory, someone could create an LP collateral market on Morpho today. In practice, they can't — for two reasons:
 
-1. **Liquidation interface mismatch.** Morpho and Euler use a standard liquidation flow: seize collateral, give it to the liquidator. For LP tokens, this means the liquidator receives an opaque LP position (or worse, a Uniswap V3 NFT) they must manually unwind. No liquidation bot does this today. LiquidLP's atomic liquidation engine handles the unwinding internally — liquidators only deal in USDC.
+1. **Liquidation interface mismatch.** Morpho and Euler use a standard liquidation flow: seize collateral, give it to the liquidator. For LP tokens, this means the liquidator receives an opaque LP position (or worse, a Uniswap V3 NFT) they must manually unwind. No liquidation bot does this today. Aurelia's atomic liquidation engine handles the unwinding internally — liquidators only deal in USDC.
 
 2. **Oracle complexity.** These platforms require a single oracle address per collateral type. LP positions require type-specific pricing logic (sqrt(k) for V2, TWAP + tick math for V3, virtual price for Curve) with cross-validation and circuit breakers. This cannot be reduced to a simple Chainlink feed.
 
-LiquidLP is purpose-built infrastructure that solves both problems. It could eventually become an oracle + liquidation module for permissionless platforms, but the standalone protocol captures more value and allows tighter integration between oracle, adapter, and liquidation layers.
+Aurelia is purpose-built infrastructure that solves both problems. It could eventually become an oracle + liquidation module for permissionless platforms, but the standalone protocol captures more value and allows tighter integration between oracle, adapter, and liquidation layers.
 
 ### Direct Competitors
 
@@ -107,14 +107,14 @@ LiquidLP is purpose-built infrastructure that solves both problems. It could eve
 - **Oracle:** V2 pricing uses a sqrt(TWAP/spot) method that is mathematically sound for constant-product AMMs — since k = r0 x r1 is invariant to swaps, the price is immune to in-block reserve manipulation. No Chainlink cross-validation, but the math is elegant and works well for V2.
 - **Liquidation:** Liquidators receive LP tokens + 4% bonus — they must unwind the LP position themselves. Flash liquidation supported but adds complexity.
 - **Security:** Two exploits on Base in 2025, both on the V3 product ($300K flashloan attack in April, $380K collateral fee valuation flaw in November — $680K total). The V2 oracle was never exploited. The V3 failures occurred because concentrated liquidity breaks the sqrt(k) invariant — k is no longer constant when liquidity is concentrated in tick ranges, and Impermax attempted to reuse V2's pricing model for a fundamentally different AMM type.
-- **Key lesson:** Impermax proves that solid V2 oracle math cannot simply be extended to V3/Curve/Aerodrome. Each AMM type needs its own pricing model — exactly the problem LiquidLP's adapter pattern solves.
+- **Key lesson:** Impermax proves that solid V2 oracle math cannot simply be extended to V3/Curve/Aerodrome. Each AMM type needs its own pricing model — exactly the problem Aurelia's adapter pattern solves.
 - **Key gap:** No unified cross-AMM oracle. No Curve, no Aerodrome. Liquidators deal in LP tokens, not stablecoins.
 
 **Revert Lend** (~$7.4M TVL, 6 chains)
 Accepts Uniswap V3 NFTs as collateral. Recently added Aerodrome Slipstream support on Base (positions stay staked in gauge, earning AERO rewards while collateralized). Non-upgradeable contracts.
 
-- **Oracle:** Dual oracle (Chainlink + V3 TWAP with cross-validation) — architecturally similar to LiquidLP's approach. A Code4rena audit found a TWAP calculation bug for negative tick deltas that could affect liquidation triggers.
-- **Liquidation:** FlashloanLiquidator contract enables atomic liquidation — liquidators effectively deal in stablecoins. Dynamic penalty (2-10%) based on how underwater the position is. Closest to LiquidLP's atomic liquidation design.
+- **Oracle:** Dual oracle (Chainlink + V3 TWAP with cross-validation) — architecturally similar to Aurelia's approach. A Code4rena audit found a TWAP calculation bug for negative tick deltas that could affect liquidation triggers.
+- **Liquidation:** FlashloanLiquidator contract enables atomic liquidation — liquidators effectively deal in stablecoins. Dynamic penalty (2-10%) based on how underwater the position is. Closest to Aurelia's atomic liquidation design.
 - **Security:** Code4rena audit ($88.5K bounty pool, 6 high-severity findings). $50K exploit on Base (January 2026) — the Aerodrome GaugeManager allowed withdrawing collateral liquidity during an active loan. This exploit illustrates the risk of bolting on new AMM types without a clean adapter/oracle separation.
 - **Key gap:** Limited to V3 + Aerodrome. No V2, no Curve, no PancakeSwap. The Aerodrome exploit shows the difficulty of adding new AMM types to a monolithic architecture.
 
@@ -134,7 +134,7 @@ Accepts Uniswap V3 NFTs as collateral. Recently added Aerodrome Slipstream suppo
 | **Fluid (Instadapp)** | High-LTV vaults, DEX+lending combo | Generalist platform, not LP-specific. Could add LP support. |
 | **Aave (GHO facilitator)** | Proposal to accept V3 NFTs as collateral | Never implemented. Confirms demand but not execution. |
 
-### LiquidLP's Differentiator
+### Aurelia's Differentiator
 
 The gap in the market is not "lending against LP" — Impermax and Revert already do this. The gap is doing it **cross-AMM with a manipulation-resistant oracle for each curve type.**
 
@@ -143,9 +143,9 @@ The existing competitors validate the demand but also reveal the core challenge:
 - **Revert's Aerodrome exploit** ($50K) shows the risk of adding new AMM types without a clean adapter architecture — a single vulnerability in the integration layer can drain the protocol.
 - **Both have very low TVL** (~$86K real for Impermax, ~$7.4M for Revert) despite being live for years — the market exists but nobody has captured it at scale. Impermax V3 is effectively dead post-exploits.
 
-LiquidLP's architecture is designed to avoid these failure modes:
+Aurelia's architecture is designed to avoid these failure modes:
 
-| Problem | Impermax/Revert Approach | LiquidLP Approach |
+| Problem | Impermax/Revert Approach | Aurelia Approach |
 |---|---|---|
 | **Oracle** | Single source (AMM TWAP or Chainlink) | Dual oracle per AMM type (TWAP + Chainlink) with 5-layer validation and circuit breakers |
 | **New AMM types** | Monolithic integration (risk: Revert's Aerodrome exploit) | Clean adapter/oracle separation — deploy 1 adapter + 1 oracle, zero core changes |
@@ -160,7 +160,7 @@ This is the hard infrastructure layer — whoever builds the most accurate LP pr
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│                     LIQUIDLP PROTOCOL                         │
+│                     AURELIA PROTOCOL                          │
 │                                                                │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐        │
 │  │PositionManager│  │ LendingEngine│  │ Liquidation  │        │
@@ -206,7 +206,7 @@ This is the hard infrastructure layer — whoever builds the most accurate LP pr
 
 **LendingEngine** (UUPS Proxy) — Handles borrowing and repayment. Reads interest from Market's cumulative `borrowIndex` (single source of truth — no duplicate tracking). Enforces borrow cooldown, LTV limits, and borrow caps. Per-position debt calculated as `principal × currentBorrowIndex / positionBorrowIndex`.
 
-**LiquidationEngine** (UUPS Proxy) — Atomic liquidation flow: verify health factor → pull repayment from liquidator → repay debt → calculate proportional liquidity → unwind LP via adapter → swap to borrow asset → take protocol fee → send proceeds to liquidator → return remaining LP to borrower.
+**LiquidationEngine** (UUPS Proxy) — Atomic liquidation flow: accrue interest → verify health factor → cap to maxLiquidationPortion (50% default, 100% when HF < 0.95) → pull repayment from liquidator → unwind LP via adapter → slippage check (minAmount0/minAmount1) → take protocol fee from bonus portion → send raw underlying tokens to liquidator → repay debt → reduce position / mark liquidated → bad debt writeoff if needed. No swap — liquidators receive the underlying tokens directly.
 
 **Market** (UUPS Proxy) — Isolated lending pool per LP type. Lenders supply stablecoins and receive ERC-4626 style shares. Interest accrued via configurable kinked rate model. Single source of truth for `borrowIndex` — eliminates dual-tracking divergence. Dead shares minted on first deposit to prevent share inflation attacks.
 
@@ -266,6 +266,17 @@ HF < 1.0 → liquidatable
 HF < 0.95 → critically underwater → 100% liquidation allowed
 ```
 
+### Partial Liquidation Cap (Aave V3 Pattern)
+
+Not every liquidation should wipe the entire position. A partial cap gives borrowers a chance to recover after a moderate price drop, while still allowing full liquidation for critically underwater positions.
+
+| Health Factor | Max Liquidation | Rationale |
+|---|---|---|
+| 0.95 ≤ HF < 1.0 | 50% of debt | Partial liquidation — borrower can repay or add collateral to recover |
+| HF < 0.95 | 100% of debt | Full liquidation — position is critically underwater, bad debt risk |
+
+The 50% default (`maxLiquidationPortion`) is configurable by POOL_ADMIN within 10-100% bounds. This matches Aave V3's `DEFAULT_LIQUIDATION_CLOSE_FACTOR` / `MAX_LIQUIDATION_CLOSE_FACTOR` design exactly.
+
 ### Atomic Liquidation Flow
 
 1. **Accrue interest** — ensure health factor uses latest debt
@@ -285,6 +296,19 @@ HF < 0.95 → critically underwater → 100% liquidation allowed
 The protocol does NOT swap tokens during liquidation. The liquidator receives the raw underlying tokens (e.g., ETH + USDC) directly from the LP unwind. This eliminates swap slippage, MEV sandwich attacks, and SwapRouter dependency from the critical liquidation path.
 
 **Why?** Every LP lending protocol that swaps during liquidation passes `minAmountOut = 0` and relies on a post-swap check (including Revert Lend, audited by Code4rena). This is a known weak pattern — sandwich bots extract value up to the slippage tolerance, and if the swap fails (low liquidity, router bug), the entire liquidation fails, causing bad debt. By removing the swap, liquidations cannot fail due to market conditions.
+
+### V3 Fee-Only Liquidation (Zero Liquidity)
+
+A Uniswap V3 position can end up with zero liquidity (fully unwound by prior partial liquidations) but still hold uncollected trading fees and outstanding debt. The protocol handles this edge case explicitly:
+
+1. LiquidationEngine detects `totalLiquidity == 0 && pos.tokenId > 0` (V3 NFT with no liquidity)
+2. Adapter calls `collectFees()` on the NFT — no `decreaseLiquidity` needed
+3. Proportional seizure of collected fees based on debt ratio (if fees < total debt)
+4. Protocol fee deducted from the seized amount
+5. Remaining fees sent to liquidator
+6. Debt repaid, or written off as bad debt if fees are insufficient
+
+This ensures no position can avoid liquidation by having its liquidity removed through prior partial liquidations while leaving fees uncollected. The fees still have value and can be seized to cover (or partially cover) the remaining debt.
 
 ### Protocol Fee on Liquidation (Aave Pattern)
 
@@ -306,9 +330,9 @@ FeeCollector receives: proportional ETH + USDC (~$83)
 
 The fee is deducted proportionally from both tokens so no swap is needed. FeeCollector accumulates fees in any token — `distribute()` sends them to treasury + insurance.
 
-### FlashloanLiquidator (Optional Helper)
+### FlashloanLiquidator (Optional Helper — Planned)
 
-For liquidation bots that want single-asset simplicity, the protocol provides an optional `FlashloanLiquidator` periphery contract (inspired by Revert Lend's audited design):
+For liquidation bots that want single-asset simplicity, the protocol will provide an optional `FlashloanLiquidator` periphery contract (inspired by Revert Lend's audited design):
 
 ```
 1. Bot calls FlashloanLiquidator.liquidate()
@@ -389,6 +413,8 @@ Anyone calls LPCompounder.compoundPosition(positionId)
 | PancakeSwap V2/V3 | 60-65% | 70-75% | 5-6% | 7-8% | $3M |
 | Exotic pairs (memecoins) | 40% | 50% | 10% | 15% | $1M |
 
+*Hard cap: 15% maximum liquidation bonus enforced in code (`MAX_LIQUIDATION_BONUS = 1500 bps`), aligned with Aave V3's upper bound. Governance cannot set bonus above this limit.*
+
 ### Safety Mechanisms
 
 - **Borrow cooldown:** 1+ blocks between deposit and borrow (prevents flash loan attacks)
@@ -398,12 +424,13 @@ Anyone calls LPCompounder.compoundPosition(positionId)
 - **Critical liquidation:** Full liquidation allowed when HF < 0.95 (prevents bad debt accumulation)
 - **Circuit breakers:** Per-market and per-pool pause on oracle anomalies
 - **Interest rate cap:** Absolute ceiling of ~500% APR — governance misconfiguration cannot cause absurd accrual
+- **Token constraints:** Borrow assets MUST be standard ERC20 tokens (USDC, USDT, DAI, WETH). Fee-on-transfer, rebasing, and ERC-777 tokens are NOT supported as borrow assets. The LiquidationEngine enforces exact-balance checks on repayment — fee-on-transfer tokens would block all liquidations in that market, creating guaranteed bad debt. This is validated off-chain during market creation and enforced at runtime.
 
 ### Bad Debt Management (Aave V3.3 Pattern)
 
 When collateral crashes to $0, liquidation may not recover the full debt. Previous LP lending protocols (Impermax, Revert) had no mechanism for this — bad debt stayed on the books accruing phantom interest forever.
 
-LiquidLP handles bad debt automatically:
+Aurelia handles bad debt automatically:
 
 1. **During liquidation:** If collateral is fully consumed but debt remains, the remaining debt is **burned** from `totalBorrow` and recorded as `deficit` on the market.
 2. **Deficit coverage:** `protocolReserves` (the protocol's accumulated interest share) are used to cover the deficit. `RISK_ADMIN` triggers `eliminateDeficit()` to apply reserves against accumulated bad debt.
@@ -702,4 +729,4 @@ Phase 4 (Month 12+): Decentralization
 
 ---
 
-*LiquidLP Protocol — Unlocking the $8B LP economy.*
+*Aurelia — Unlocking the $8B LP economy. [aurelia.finance](https://aurelia.finance)*

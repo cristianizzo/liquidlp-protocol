@@ -46,6 +46,9 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
     uint256 public constant DEAD_SHARES = 1000;
     address internal constant DEAD_ADDRESS = address(0xdead);
 
+    /// @notice Maximum liquidation bonus in bps (15% — aligned with Aave V3 upper bound)
+    uint256 public constant MAX_LIQUIDATION_BONUS = 1500;
+
     event InterestRateModelUpdated(address oldModel, address newModel);
     event MarketConfigUpdated(string field, uint256 oldValue, uint256 newValue);
     event InterestAccrued(uint256 interestAmount, uint256 protocolShare, uint256 newBorrowIndex, uint256 timestamp);
@@ -87,6 +90,11 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
     function initialize(MarketConfig memory _config, address _interestRateModel, address _core) external initializer {
         require(_core != address(0), "ZERO_CORE");
         require(_interestRateModel != address(0), "ZERO_IRM");
+        require(_config.maxLtv <= 9500, "LTV_TOO_HIGH");
+        require(_config.liquidationThreshold <= 9800, "THRESHOLD_TOO_HIGH");
+        require(_config.maxLtv < _config.liquidationThreshold, "LTV_MUST_BE_BELOW_LIQ_THRESHOLD");
+        require(_config.liquidationBonus <= MAX_LIQUIDATION_BONUS, "BONUS_TOO_HIGH");
+        require(_config.haircut <= 5000, "HAIRCUT_TOO_HIGH");
         config = _config;
         interestRateModel = InterestRateModel(_interestRateModel);
         core = ProtocolCore(_core);
@@ -176,7 +184,7 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
         require(_maxLtv <= 9500, "LTV_TOO_HIGH");
         require(_liquidationThreshold <= 9800, "THRESHOLD_TOO_HIGH");
         require(_maxLtv < _liquidationThreshold, "LTV_MUST_BE_BELOW_LIQ_THRESHOLD");
-        require(_liquidationBonus <= 2000, "BONUS_TOO_HIGH");
+        require(_liquidationBonus <= MAX_LIQUIDATION_BONUS, "BONUS_TOO_HIGH");
         require(_haircut <= 5000, "HAIRCUT_TOO_HIGH");
 
         if (_maxLtv != config.maxLtv) emit MarketConfigUpdated("maxLtv", config.maxLtv, _maxLtv);
@@ -286,7 +294,7 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
 
     // --- LendingEngine Operations ---
 
-    function transferOut(address to, uint256 amount) external onlyLendingEngine {
+    function transferOut(address to, uint256 amount) external onlyLendingEngine nonReentrant {
         require(to != address(0), "ZERO_RECIPIENT");
         require(state.totalSupply > 0, "NO_SUPPLY");
         // Available = actual balance (reserves are accounting claims, not locked)
@@ -304,7 +312,7 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
         OZIERC20(config.borrowAsset).safeTransfer(to, amount);
     }
 
-    function transferIn(address from, uint256 amount) external onlyLendingEngine {
+    function transferIn(address from, uint256 amount) external onlyLendingEngine nonReentrant {
         require(from != address(0), "ZERO_SENDER");
         require(amount <= state.totalBorrow, "REPAY_EXCEEDS_BORROW");
 
