@@ -268,7 +268,7 @@ contract MarketTest is Test {
         address newLE = makeAddr("newLE");
 
         vm.startPrank(owner);
-        aclManager.revokeRole(aclManager.LENDING_ENGINE(), le);
+        aclManager.removeLendingEngine(le);
         aclManager.addLendingEngine(newLE);
         vm.stopPrank();
 

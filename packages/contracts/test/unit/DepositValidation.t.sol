@@ -98,8 +98,16 @@ contract DepositValidationTest is Test {
         vm.prank(owner);
         pm.setCircuitBreaker(address(circuitBreaker));
 
+        vm.recordLogs();
         vm.prank(alice);
         pm.deposit(lpToken, 0, 100e18, marketId);
+
+        // Verify CircuitBreakerNotConfigured was NOT emitted
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bytes32 cbEventSig = keccak256("CircuitBreakerNotConfigured(uint256,address)");
+        for (uint256 i = 0; i < logs.length; i++) {
+            assertFalse(logs[i].topics[0] == cbEventSig, "Should not emit CircuitBreakerNotConfigured");
+        }
     }
 
     // ========== Oracle Health Check ==========
