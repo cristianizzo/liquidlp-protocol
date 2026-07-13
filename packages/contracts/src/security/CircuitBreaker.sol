@@ -48,6 +48,7 @@ contract CircuitBreaker {
     }
 
     constructor(address _core) {
+        require(_core != address(0), "ZERO_CORE");
         core = ProtocolCore(_core);
     }
 

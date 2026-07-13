@@ -286,15 +286,15 @@ contract UniswapV3Oracle is ILPOracle {
         returns (uint256)
     {
         ILPOracleHub.PriceResult memory result = _computePrice(tokenId);
-        // Reverse the haircut to get raw value
-        if (result.haircut >= 10_000) return 0;
-        return (result.totalValue * 10_000) / (10_000 - result.haircut);
+        // Raw value = principal + fees (before haircut)
+        return result.principalValue + result.feeValue;
     }
 
     /// @inheritdoc ILPOracle
-    function isHealthy() external view returns (bool) {
-        // Oracle is healthy if it can respond (always true for a view-only oracle).
-        // Staleness is checked per-feed in _getChainlinkPrice.
+    /// @dev Always returns true — staleness is checked reactively inside _getChainlinkPrice()
+    ///      on every getPrice() call. Same rationale as V2Oracle: proactive Chainlink reads
+    ///      would add gas to every deposit for no additional safety.
+    function isHealthy() external pure returns (bool) {
         return true;
     }
 
@@ -385,25 +385,33 @@ contract UniswapV3Oracle is ILPOracle {
 
     /// @notice Get TWAP tick from pool using observe()
     /// @dev Uses configurable twapPeriod. Rounds towards negative infinity.
-    /// @dev Validates observation cardinality before calling pool.observe()
+    /// @dev Validates observation cardinality and wraps observe() in try/catch
+    ///      to convert Uniswap's cryptic "OLD" error into a clear revert.
     function _getTwapTick(address pool) internal view returns (int24 twapTick) {
-        // Verify pool has sufficient observation history for TWAP period
+        // Verify pool has sufficient observation history for TWAP period.
+        // Minimum cardinality: ceil(twapPeriod / 12) + 1 (assuming ~12s block time).
+        // For 1800s (30 min) TWAP: ceil(1800/12) + 1 = 151 observations.
         (,,, uint16 observationCardinality,,,) = IUniswapV3Pool(pool).slot0();
-        require(observationCardinality >= 2, "INSUFFICIENT_CARDINALITY");
+        uint256 requiredCardinality = (uint256(twapPeriod) + 11) / 12 + 1;
+        require(observationCardinality >= requiredCardinality, "INSUFFICIENT_CARDINALITY");
 
         uint32[] memory secondsAgos = new uint32[](2);
         secondsAgos[0] = twapPeriod;
         secondsAgos[1] = 0;
 
-        (int56[] memory tickCumulatives,) = IUniswapV3Pool(pool).observe(secondsAgos);
+        // Wrap observe() in try/catch — pool may revert with "OLD" if observation
+        // history doesn't span the full twapPeriod (e.g., recently created pool).
+        try IUniswapV3Pool(pool).observe(secondsAgos) returns (int56[] memory tickCumulatives, uint160[] memory) {
+            int56 tickCumulativesDelta = tickCumulatives[1] - tickCumulatives[0];
+            int56 period = int56(uint56(twapPeriod));
 
-        int56 tickCumulativesDelta = tickCumulatives[1] - tickCumulatives[0];
-        int56 period = int56(uint56(twapPeriod));
-
-        twapTick = int24(tickCumulativesDelta / period);
-        // Round towards negative infinity for consistency
-        if (tickCumulativesDelta < 0 && (tickCumulativesDelta % period != 0)) {
-            twapTick--;
+            twapTick = int24(tickCumulativesDelta / period);
+            // Round towards negative infinity for consistency
+            if (tickCumulativesDelta < 0 && (tickCumulativesDelta % period != 0)) {
+                twapTick--;
+            }
+        } catch {
+            revert("TWAP_UNAVAILABLE");
         }
     }
 

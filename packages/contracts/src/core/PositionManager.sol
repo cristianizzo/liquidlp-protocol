@@ -316,7 +316,15 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     // --- State Updates (role-based access) ---
 
     /// @notice Update position debt (called by LendingEngine)
-    function updateDebt(uint256 positionId, uint256 newDebt) external onlyLendingEngine positionExists(positionId) {
+    function updateDebt(
+        uint256 positionId,
+        uint256 newDebt
+    )
+        external
+        onlyLendingEngine
+        nonReentrant
+        positionExists(positionId)
+    {
         Position storage pos = _positions[positionId];
         require(pos.status == PositionStatus.Active || pos.status == PositionStatus.Borrowed, "POSITION_NOT_BORROWABLE");
 
@@ -342,6 +350,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     )
         external
         onlyLiquidationEngine
+        nonReentrant
         positionExists(positionId)
     {
         Position storage pos = _positions[positionId];
@@ -359,6 +368,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     )
         external
         onlyLiquidationEngine
+        nonReentrant
         positionExists(positionId)
     {
         require(liquidator != address(0), "ZERO_LIQUIDATOR");

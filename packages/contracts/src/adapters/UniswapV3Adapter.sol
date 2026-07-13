@@ -133,7 +133,8 @@ contract UniswapV3Adapter is ILPAdapter {
         require(liquidityToRemove > 0, "ZERO_LIQUIDITY");
         require(nftManager.ownerOf(tokenId) == address(this), "NOT_HELD");
 
-        // Decrease liquidity
+        // Decrease liquidity — slippage protection is enforced by LiquidationEngine
+        // via minAmount0/minAmount1, not at the adapter level.
         nftManager.decreaseLiquidity(
             INonfungiblePositionManager.DecreaseLiquidityParams({
                 tokenId: tokenId, liquidity: liquidityToRemove, amount0Min: 0, amount1Min: 0, deadline: block.timestamp
@@ -170,7 +171,9 @@ contract UniswapV3Adapter is ILPAdapter {
         (,,,,,,, uint128 currentLiquidity,,,,) = nftManager.positions(tokenId);
 
         if (currentLiquidity > 1) {
-            // Burn 1 wei of liquidity to trigger fee accounting sync (skip if only 1 left)
+            // Burn 1 wei of liquidity to trigger fee accounting sync.
+            // Skipped when liquidity <= 1 to avoid underflow — uncollected fees from the
+            // latest swap will be synced on the next pool interaction. Negligible amounts.
             nftManager.decreaseLiquidity(
                 INonfungiblePositionManager.DecreaseLiquidityParams({
                     tokenId: tokenId, liquidity: 1, amount0Min: 0, amount1Min: 0, deadline: block.timestamp
