@@ -318,17 +318,19 @@ contract MarketTest is Test {
     }
 
     function test_updateConfig_revertsBonusTooHigh() public {
+        uint256 maxBonus = market.MAX_LIQUIDATION_BONUS();
         vm.prank(owner);
         vm.expectRevert("BONUS_TOO_HIGH");
-        market.updateConfig(7000, 8000, 1501, 800, 20_000_000e6);
+        market.updateConfig(7000, 8000, maxBonus + 1, 800, 20_000_000e6);
     }
 
     function test_updateConfig_bonusAtMax() public {
+        uint256 maxBonus = market.MAX_LIQUIDATION_BONUS();
         vm.prank(owner);
-        market.updateConfig(7000, 8000, 1500, 800, 20_000_000e6);
+        market.updateConfig(7000, 8000, maxBonus, 800, 20_000_000e6);
 
         IMarket.MarketConfig memory cfg = market.getConfig();
-        assertEq(cfg.liquidationBonus, 1500);
+        assertEq(cfg.liquidationBonus, maxBonus);
     }
 
     function test_upgrade_onlyPoolAdmin() public {

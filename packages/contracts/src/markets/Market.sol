@@ -90,6 +90,7 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
     function initialize(MarketConfig memory _config, address _interestRateModel, address _core) external initializer {
         require(_core != address(0), "ZERO_CORE");
         require(_interestRateModel != address(0), "ZERO_IRM");
+        require(_config.liquidationBonus <= MAX_LIQUIDATION_BONUS, "BONUS_TOO_HIGH");
         config = _config;
         interestRateModel = InterestRateModel(_interestRateModel);
         core = ProtocolCore(_core);
