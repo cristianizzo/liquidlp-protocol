@@ -459,6 +459,9 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         // Access: only keeper or pool admin (LPCompounder has KEEPER role)
         require(_acl().isKeeper(msg.sender) || _acl().isPoolAdmin(msg.sender), "NOT_KEEPER");
 
+        // Validate fee bps — prevent misconfiguration/abuse
+        require(protocolFeeBps + callerRewardBps <= 5000, "FEES_TOO_HIGH"); // max 50% total
+
         Position storage pos = _positions[positionId];
         require(pos.status == PositionStatus.Active || pos.status == PositionStatus.Borrowed, "POSITION_NOT_ACTIVE");
 
@@ -473,7 +476,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         uint256 totalDeducted0;
         uint256 totalDeducted1;
 
-        // Step 2: Protocol fee (1.9%) → FeeCollector
+        // Step 2: Protocol fee → FeeCollector
         if (protocolFeeBps > 0 && protocolFeeRecipient != address(0)) {
             uint256 pFee0 = (fees0 * protocolFeeBps) / 10_000;
             uint256 pFee1 = (fees1 * protocolFeeBps) / 10_000;
@@ -483,7 +486,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
             totalDeducted1 += pFee1;
         }
 
-        // Step 3: Caller reward (0.1%) → whoever triggered the compound
+        // Step 3: Caller reward → whoever triggered the compound
         if (callerRewardBps > 0 && callerRewardRecipient != address(0)) {
             uint256 cReward0 = (fees0 * callerRewardBps) / 10_000;
             uint256 cReward1 = (fees1 * callerRewardBps) / 10_000;

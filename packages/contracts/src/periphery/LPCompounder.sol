@@ -13,7 +13,7 @@ import {FeeCollector} from "../core/FeeCollector.sol";
 /// @notice Permissionless auto-compound for V3 LP positions
 /// @dev Anyone can compound any V3 position. Fee split on every compound:
 ///      - 1.9% → FeeCollector (protocol revenue)
-///      - 0.1% → msg.sender (caller reward for gas)
+///      - 0.1% → caller (reward for gas)
 ///      - 98% → reinvested as liquidity
 ///      V2/Curve positions auto-compound natively — no action needed.
 contract LPCompounder {
@@ -48,37 +48,40 @@ contract LPCompounder {
 
     /// @notice Compound fees for a V3 position — permissionless
     /// @param positionId The position to compound
-    function compoundPosition(uint256 positionId) external {
+    /// @param rewardRecipient Where to send the 0.1% caller reward
+    function compoundPosition(uint256 positionId, address rewardRecipient) public {
         PositionManager.Position memory pos = positionManager.getPosition(positionId);
 
-        require(
-            pos.lpType == ILPAdapter.LPType.UniswapV3 || pos.lpType == ILPAdapter.LPType.PancakeSwapV3
-                || pos.lpType == ILPAdapter.LPType.Aerodrome,
-            "NOT_V3_POSITION"
-        );
+        // Only UniswapV3 positions (stub adapters revert, so only check real V3)
+        require(pos.lpType == ILPAdapter.LPType.UniswapV3, "NOT_V3_POSITION");
 
-        // Calculate fee split: total 2% = 1.9% protocol + 0.1% caller
+        // Calculate fee split
         uint256 protocolFeeBps = compoundFeeBps > callerRewardBps ? compoundFeeBps - callerRewardBps : 0;
 
         // Compound via PositionManager (which has adapter access)
         (uint256 fees0, uint256 fees1, uint256 addedLiquidity) = positionManager.compoundFees(
-            positionId,
-            address(feeCollector), // 1.9% → protocol
-            protocolFeeBps,
-            msg.sender, // 0.1% → caller
-            callerRewardBps,
-            pos.owner // dust → position owner
+            positionId, address(feeCollector), protocolFeeBps, rewardRecipient, callerRewardBps, pos.owner
         );
 
+        // Skip if no fees collected (no revert — graceful for batch)
+        if (fees0 == 0 && fees1 == 0) return;
+
+        // Check threshold after collection
         require(fees0 >= minCompoundThreshold || fees1 >= minCompoundThreshold, "BELOW_THRESHOLD");
 
-        emit FeesCompounded(positionId, fees0, fees1, addedLiquidity, msg.sender);
+        emit FeesCompounded(positionId, fees0, fees1, addedLiquidity, rewardRecipient);
     }
 
-    /// @notice Batch compound multiple positions
+    /// @notice Compound a single position (convenience — reward goes to msg.sender)
+    function compoundPosition(uint256 positionId) external {
+        compoundPosition(positionId, msg.sender);
+    }
+
+    /// @notice Batch compound multiple positions — reward goes to msg.sender
+    /// @dev Failures silently skipped — one bad position doesn't block others.
     function batchCompound(uint256[] calldata positionIds) external {
         for (uint256 i = 0; i < positionIds.length; i++) {
-            try this.compoundPosition(positionIds[i]) {} catch {}
+            try this.compoundPosition(positionIds[i], msg.sender) {} catch {}
         }
     }
 
@@ -87,7 +90,7 @@ contract LPCompounder {
     /// @notice Set compound fee split (total and caller portion)
     function setCompoundFee(uint256 _totalBps, uint256 _callerBps) external {
         require(
-            core.aclManager().isRiskAdmin(msg.sender) || core.aclManager().isPoolAdmin(msg.sender), "NOT_RISK_ADMIN"
+            core.aclManager().isRiskAdmin(msg.sender) || core.aclManager().isPoolAdmin(msg.sender), "NOT_AUTHORIZED"
         );
         require(_totalBps <= MAX_COMPOUND_FEE, "FEE_TOO_HIGH");
         require(_callerBps <= _totalBps, "CALLER_EXCEEDS_TOTAL");
@@ -98,7 +101,9 @@ contract LPCompounder {
 
     /// @notice Set minimum fee threshold
     function setMinCompoundThreshold(uint256 _threshold) external {
-        require(core.aclManager().isPoolAdmin(msg.sender), "NOT_POOL_ADMIN");
+        require(
+            core.aclManager().isRiskAdmin(msg.sender) || core.aclManager().isPoolAdmin(msg.sender), "NOT_AUTHORIZED"
+        );
         emit MinCompoundThresholdUpdated(minCompoundThreshold, _threshold);
         minCompoundThreshold = _threshold;
     }
