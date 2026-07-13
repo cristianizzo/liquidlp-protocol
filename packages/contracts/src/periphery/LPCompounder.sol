@@ -88,7 +88,7 @@ contract LPCompounder {
     }
 
     /// @notice Batch compound multiple positions — reward goes to msg.sender
-    /// @dev Failures silently skipped — one bad position doesn't block others.
+    /// @dev Failures skipped with CompoundFailed event — one bad position doesn't block others.
     function batchCompound(uint256[] calldata positionIds) external {
         for (uint256 i = 0; i < positionIds.length; i++) {
             try this.compoundPosition(positionIds[i], msg.sender) {}
