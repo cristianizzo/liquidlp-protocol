@@ -350,6 +350,29 @@ Example flow:
 
 The user stays in the protocol the entire time — no need to visit Uniswap, mint LP tokens, or manage NFTs separately. One call, health factor restored.
 
+### Auto-Compound (V3 Positions)
+
+Uniswap V3 positions accumulate trading fees as uncollected `tokensOwed`. Unlike V2 (where fees auto-compound into reserves), V3 fees sit idle until explicitly collected and reinvested.
+
+The LPCompounder contract auto-compounds these fees permissionlessly:
+
+```
+Anyone calls LPCompounder.compoundPosition(positionId)
+    → Collect trading fees from V3 NFT
+    → 2% protocol fee (FeeCollector) + 0.5% caller reward
+    → 97.5% reinvested as additional liquidity via increaseLiquidity()
+    → Dust refunded to position owner
+```
+
+**Permissionless:** Anyone can compound any position. No need for the position owner to act — MEV bots and keeper networks will compound profitable positions automatically.
+
+**Fee split (configurable by RISK_ADMIN):**
+- 2% → protocol (FeeCollector → treasury + insurance)
+- 0.5% → caller (reward for paying gas)
+- 97.5% → reinvested as liquidity
+
+**Batch compounding:** `batchCompound([positionIds])` compounds multiple positions in one transaction. Failures are silently skipped — one bad position doesn't block others.
+
 ---
 
 ## 8. Risk Framework
@@ -425,6 +448,7 @@ Inspired by Aave's revenue model ($907M in total fees in 2025, ~$140M protocol-r
 | Reserve factor | 10-25% of interest | Protocol keeps this % of borrow interest. Rest goes to lenders. Per LP type — higher risk = higher cut. |
 | Liquidation fee | 10% of liq. penalty | Protocol takes 10% of the liquidation bonus. Liquidators keep 90%. |
 | Management fee | 0.1% annual | Annual fee on deposited LP collateral value. Charged by keeper via periodic accrual. Configurable by RISK_ADMIN (max 1%). |
+| Compound fee | 2.5% of compounded fees | When V3 trading fees are auto-compounded, protocol keeps 2% and 0.5% goes to the caller as gas reward. Permissionless — anyone can trigger. |
 
 ### Reserve Factors by LP Type
 
