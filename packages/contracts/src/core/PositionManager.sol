@@ -432,13 +432,16 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         return _positions[positionId].depositBlock;
     }
 
+    event FeesCompoundedInternal(uint256 indexed positionId, uint256 fees0, uint256 fees1, uint256 addedLiquidity);
+
     /// @notice Collect fees and reinvest as liquidity (called by LPCompounder)
     /// @dev Permissionless via LPCompounder. PositionManager mediates adapter access.
     /// @param positionId The position to compound
     /// @param protocolFeeRecipient Where to send protocol fee (FeeCollector)
-    /// @param protocolFeeBps Protocol fee in basis points (e.g., 190 = 1.9%)
-    /// @param callerRewardRecipient Where to send caller reward (msg.sender of LPCompounder)
-    /// @param callerRewardBps Caller reward in basis points (e.g., 10 = 0.1%)
+    /// @param protocolFeeBps Protocol fee in basis points (e.g., 200 = 2%)
+    /// @param callerRewardRecipient Where to send caller reward
+    /// @param callerRewardBps Caller reward in basis points (e.g., 50 = 0.5%)
+    /// @param minFeeThreshold Minimum fee per token to proceed (gas optimization)
     /// @param dustRefundTo Where to send unused tokens (position owner)
     /// @return fees0 Total fees collected in token0
     /// @return fees1 Total fees collected in token1
@@ -449,6 +452,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         uint256 protocolFeeBps,
         address callerRewardRecipient,
         uint256 callerRewardBps,
+        uint256 minFeeThreshold,
         address dustRefundTo
     )
         external
@@ -474,6 +478,9 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         // Step 1: Collect fees from NFT → tokens to this contract
         (fees0, fees1) = adapter.collectFees(pos.lpToken, pos.tokenId);
         if (fees0 == 0 && fees1 == 0) return (0, 0, 0);
+
+        // Step 1b: Threshold check — bail early before spending gas on fee splits
+        if (fees0 < minFeeThreshold && fees1 < minFeeThreshold) return (fees0, fees1, 0);
 
         uint256 totalDeducted0;
         uint256 totalDeducted1;
@@ -513,6 +520,8 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
 
         (addedLiquidity,,) =
             adapter.addLiquidity(pos.lpToken, pos.tokenId, pos.token0, pos.token1, reinvest0, reinvest1, dustRefundTo);
+
+        emit FeesCompoundedInternal(positionId, fees0, fees1, addedLiquidity);
     }
 
     // --- New state vars (appended for UUPS upgrade safety) ---

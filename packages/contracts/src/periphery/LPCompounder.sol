@@ -11,7 +11,7 @@ import {FeeCollector} from "../core/FeeCollector.sol";
 
 /// @title LPCompounder
 /// @notice Permissionless auto-compound for Uniswap V3 LP positions
-/// @dev Anyone can compound any V3 position. Configurable fee split (default 2%):
+/// @dev Anyone can compound any V3 position. Configurable fee split (default 2.5%):
 ///      - compoundFeeBps - callerRewardBps → FeeCollector (protocol revenue)
 ///      - callerRewardBps → caller (reward for gas)
 ///      - remainder → reinvested as liquidity
@@ -63,15 +63,19 @@ contract LPCompounder {
         uint256 protocolFeeBps = compoundFeeBps > callerRewardBps ? compoundFeeBps - callerRewardBps : 0;
 
         // Compound via PositionManager (which has adapter access)
+        // Threshold check is inside compoundFees — reverts if below minCompoundThreshold
         (uint256 fees0, uint256 fees1, uint256 addedLiquidity) = positionManager.compoundFees(
-            positionId, address(feeCollector), protocolFeeBps, rewardRecipient, callerRewardBps, pos.owner
+            positionId,
+            address(feeCollector),
+            protocolFeeBps,
+            rewardRecipient,
+            callerRewardBps,
+            minCompoundThreshold,
+            pos.owner
         );
 
         // Skip if no fees collected (no revert — graceful for batch)
         if (fees0 == 0 && fees1 == 0) return;
-
-        // Check threshold after collection
-        require(fees0 >= minCompoundThreshold || fees1 >= minCompoundThreshold, "BELOW_THRESHOLD");
 
         emit FeesCompounded(positionId, fees0, fees1, addedLiquidity, rewardRecipient);
     }
