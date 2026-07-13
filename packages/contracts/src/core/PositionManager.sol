@@ -458,10 +458,11 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         returns (uint256 fees0, uint256 fees1, uint256 addedLiquidity)
     {
         // Access: only keeper or pool admin (LPCompounder has KEEPER role)
-        require(_acl().isKeeper(msg.sender) || _acl().isPoolAdmin(msg.sender), "NOT_KEEPER");
+        require(_acl().isKeeper(msg.sender) || _acl().isPoolAdmin(msg.sender), "NOT_AUTHORIZED");
 
-        // Validate fee bps — prevent misconfiguration/abuse
+        // Validate inputs
         require(protocolFeeBps + callerRewardBps <= 5000, "FEES_TOO_HIGH"); // max 50% total
+        require(dustRefundTo != address(0), "ZERO_REFUND_ADDRESS");
 
         Position storage pos = _positions[positionId];
         require(pos.status == PositionStatus.Active || pos.status == PositionStatus.Borrowed, "POSITION_NOT_ACTIVE");

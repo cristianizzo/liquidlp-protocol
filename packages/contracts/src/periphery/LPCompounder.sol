@@ -23,17 +23,21 @@ contract LPCompounder {
     PositionManager public immutable positionManager;
     FeeCollector public immutable feeCollector;
 
-    /// @notice Total fee on compounded fees (basis points). Default 200 = 2%.
-    uint256 public compoundFeeBps = 200;
-    /// @notice Caller reward portion (basis points). Default 30 = 0.3%.
-    uint256 public callerRewardBps = 30;
+    /// @notice Total fee on compounded fees (basis points). Default 250 = 2.5%.
+    uint256 public compoundFeeBps = 250;
+    /// @notice Caller reward portion (basis points). Default 50 = 0.5%.
+    uint256 public callerRewardBps = 50;
     uint256 public constant MAX_COMPOUND_FEE = 1000; // 10% max total
 
     /// @notice Minimum fee per token to justify compounding
     uint256 public minCompoundThreshold = 1000;
 
     event FeesCompounded(
-        uint256 indexed positionId, uint256 fees0, uint256 fees1, uint256 addedLiquidity, address indexed compounder
+        uint256 indexed positionId,
+        uint256 fees0,
+        uint256 fees1,
+        uint256 addedLiquidity,
+        address indexed rewardRecipient
     );
     event CompoundFeeUpdated(uint256 oldTotal, uint256 newTotal, uint256 oldCaller, uint256 newCaller);
     event MinCompoundThresholdUpdated(uint256 oldValue, uint256 newValue);
@@ -48,12 +52,12 @@ contract LPCompounder {
 
     /// @notice Compound fees for a V3 position — permissionless
     /// @param positionId The position to compound
-    /// @param rewardRecipient Where to send the 0.1% caller reward
+    /// @param rewardRecipient Where to send the caller reward (callerRewardBps)
     function compoundPosition(uint256 positionId, address rewardRecipient) public {
         PositionManager.Position memory pos = positionManager.getPosition(positionId);
 
         // Only UniswapV3 positions (stub adapters revert, so only check real V3)
-        require(pos.lpType == ILPAdapter.LPType.UniswapV3, "NOT_V3_POSITION");
+        require(pos.lpType == ILPAdapter.LPType.UniswapV3, "UNSUPPORTED_LP_TYPE");
 
         // Calculate fee split
         uint256 protocolFeeBps = compoundFeeBps > callerRewardBps ? compoundFeeBps - callerRewardBps : 0;
