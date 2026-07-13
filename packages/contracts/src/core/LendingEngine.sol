@@ -66,6 +66,11 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
         _;
     }
 
+    modifier onlyLiquidationEngine() {
+        require(_acl().isLiquidationEngine(msg.sender), "NOT_LIQUIDATION_ENGINE");
+        _;
+    }
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
@@ -152,8 +157,15 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
     }
 
     /// @notice Repay debt on behalf of a borrower (used by LiquidationEngine)
-    function repayOnBehalf(uint256 positionId, uint256 repayAmount) external whenNotPaused nonReentrant {
-        require(_acl().isLiquidationEngine(msg.sender), "NOT_LIQUIDATION_ENGINE");
+    function repayOnBehalf(
+        uint256 positionId,
+        uint256 repayAmount
+    )
+        external
+        whenNotPaused
+        onlyLiquidationEngine
+        nonReentrant
+    {
         _repayInternal(positionId, repayAmount, msg.sender);
     }
 
@@ -266,9 +278,7 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
 
     /// @notice Write off bad debt from an underwater position (called by LiquidationEngine)
     /// @dev Zeros out the position's debt and records deficit on the market
-    function writeOffDebt(uint256 positionId) external whenNotPaused nonReentrant {
-        require(_acl().isLiquidationEngine(msg.sender), "NOT_LIQUIDATION_ENGINE");
-
+    function writeOffDebt(uint256 positionId) external whenNotPaused onlyLiquidationEngine nonReentrant {
         PositionManager.Position memory pos = positionManager.getPosition(positionId);
         address marketAddr = _getMarketAddr(pos.marketId);
         Market market = Market(marketAddr);

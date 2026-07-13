@@ -93,6 +93,6 @@ contract CurveAdapter is ILPAdapter {
 
     /// @inheritdoc ILPAdapter
     function isSupported(address) external pure returns (bool) {
-        return false; // TODO: implement
+        return false; // Phase 2 — not yet implemented
     }
 }

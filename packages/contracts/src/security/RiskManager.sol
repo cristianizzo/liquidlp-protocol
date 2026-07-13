@@ -34,6 +34,10 @@ contract RiskManager {
     event MaxPositionsPerUserUpdated(uint256 oldValue, uint256 newValue);
     event MarketSupplyCapUpdated(uint256 indexed marketId, uint256 oldValue, uint256 newValue);
     event BorrowTrackingDrift(uint256 tracked, uint256 repaid);
+    event BorrowRecorded(uint256 amountUsd, uint256 newGlobalBorrows);
+    event RepayRecorded(uint256 amountUsd, uint256 newGlobalBorrows);
+    event DepositRecorded(uint256 valueUsd, uint256 indexed marketId, uint256 newMarketSupply);
+    event WithdrawRecorded(uint256 valueUsd, uint256 indexed marketId, uint256 newMarketSupply);
 
     // --- ACL ---
     function _acl() internal view returns (ACLManager) {
@@ -99,6 +103,7 @@ contract RiskManager {
     function recordBorrow(uint256 amountUsd, ILPAdapter.LPType lpType) external onlyLendingEngine {
         currentGlobalBorrows += amountUsd;
         lpTypeCurrentBorrows[lpType] += amountUsd;
+        emit BorrowRecorded(amountUsd, currentGlobalBorrows);
     }
 
     /// @notice Record a repayment for cap tracking (18-dec USD)
@@ -112,6 +117,7 @@ contract RiskManager {
         }
         lpTypeCurrentBorrows[lpType] =
             amountUsd > lpTypeCurrentBorrows[lpType] ? 0 : lpTypeCurrentBorrows[lpType] - amountUsd;
+        emit RepayRecorded(amountUsd, currentGlobalBorrows);
     }
 
     // --- Deposit Validation (called by PositionManager) ---
@@ -153,12 +159,14 @@ contract RiskManager {
     /// @notice Record a deposit for supply cap tracking (18-dec USD)
     function recordDeposit(uint256 valueUsd, uint256 marketId) external onlyPositionManager {
         marketCurrentSupply[marketId] += valueUsd;
+        emit DepositRecorded(valueUsd, marketId, marketCurrentSupply[marketId]);
     }
 
     /// @notice Record a withdrawal for supply cap tracking (18-dec USD)
     function recordWithdraw(uint256 valueUsd, uint256 marketId) external onlyPositionManager {
         marketCurrentSupply[marketId] =
             valueUsd > marketCurrentSupply[marketId] ? 0 : marketCurrentSupply[marketId] - valueUsd;
+        emit WithdrawRecorded(valueUsd, marketId, marketCurrentSupply[marketId]);
     }
 
     // --- Admin (RISK_ADMIN) ---

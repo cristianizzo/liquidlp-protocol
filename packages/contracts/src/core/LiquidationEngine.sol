@@ -369,5 +369,6 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
     }
 
     // --- Storage Gap (UUPS upgrade safety) ---
-    uint256[50] private __gap;
+    // Reduced from 50 to 49 after adding feeCollector.
+    uint256[49] private __gap;
 }

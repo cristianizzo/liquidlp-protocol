@@ -424,6 +424,9 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         return Math.mulDiv(numerator, 1e18, debtUsd);
     }
 
+    /// @notice Get the block number at which a position was deposited (used for borrow cooldown)
+    /// @param positionId The position to query
+    /// @return The block number of the deposit
     function getDepositBlock(uint256 positionId) external view returns (uint256) {
         return _positions[positionId].depositBlock;
     }

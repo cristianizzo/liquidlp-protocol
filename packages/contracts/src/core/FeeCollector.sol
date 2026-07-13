@@ -90,6 +90,11 @@ contract FeeCollector is ReentrancyGuard {
         _;
     }
 
+    modifier whenNotPaused() {
+        require(!core.paused(), "PAUSED");
+        _;
+    }
+
     constructor(address _core, address _treasury, address _insuranceFund) {
         require(_core != address(0), "ZERO_CORE");
         require(_treasury != address(0), "ZERO_TREASURY");
@@ -118,9 +123,9 @@ contract FeeCollector is ReentrancyGuard {
     )
         external
         onlyAuthorized
+        whenNotPaused
         nonReentrant
     {
-        require(!core.paused(), "PAUSED");
         require(amount > 0, "ZERO_AMOUNT");
         require(token != address(0), "ZERO_TOKEN");
         require(from != address(0), "ZERO_FROM");
@@ -137,8 +142,7 @@ contract FeeCollector is ReentrancyGuard {
 
     /// @notice Distribute accumulated fees to treasury and insurance fund
     /// @dev Uses OZ ReentrancyGuard — cannot get permanently stuck on revert
-    function distribute(address token) external onlyAuthorized nonReentrant {
-        require(!core.paused(), "PAUSED");
+    function distribute(address token) external onlyAuthorized whenNotPaused nonReentrant {
         require(token != address(0), "ZERO_TOKEN");
         require(treasury != address(0), "TREASURY_NOT_SET");
         require(insuranceFund != address(0), "INSURANCE_NOT_SET");
@@ -168,8 +172,7 @@ contract FeeCollector is ReentrancyGuard {
     /// @notice Accept reserve transfers from registered Market contracts only
     /// @dev Called by Market.distributeReserves() which approves this contract first.
     ///      Pulls tokens via safeTransferFrom and tracks via balance delta.
-    function depositReserves(address token, uint256 expectedAmount) external nonReentrant {
-        require(!core.paused(), "PAUSED");
+    function depositReserves(address token, uint256 expectedAmount) external whenNotPaused nonReentrant {
         require(core.registeredMarkets(msg.sender), "NOT_REGISTERED_MARKET");
         require(token != address(0), "ZERO_TOKEN");
         require(expectedAmount > 0, "ZERO_AMOUNT");

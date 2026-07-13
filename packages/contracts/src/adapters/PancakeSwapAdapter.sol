@@ -95,6 +95,6 @@ contract PancakeSwapAdapter is ILPAdapter {
     /// @inheritdoc ILPAdapter
     function isSupported(address lpToken) external view returns (bool) {
         if (isV3) return lpToken == v3NftManager;
-        return false; // TODO: implement
+        return false; // Phase 2 — not yet implemented
     }
 }
