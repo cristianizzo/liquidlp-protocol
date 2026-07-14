@@ -55,6 +55,7 @@ contract MockSwapRouter is ISwapRouter {
         require(!shouldRevert, "SWAP_FAILED");
 
         // Decode first token from path (first 20 bytes of packed encoding)
+        require(params.path.length >= 20, "INVALID_PATH");
         address tokenIn = address(bytes20(params.path[:20]));
 
         // Pull tokenIn from caller

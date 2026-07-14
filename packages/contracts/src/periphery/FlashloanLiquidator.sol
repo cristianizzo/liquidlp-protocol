@@ -16,7 +16,7 @@ import {IPositionManager} from "../interfaces/IPositionManager.sol";
 ///         by flash-borrowing the repayment asset from a Uniswap V3 pool, liquidating the
 ///         position, swapping received tokens back, repaying the flash loan, and sending
 ///         profit to the caller.
-/// @dev Uses Uniswap V3 pool.flash() (0.01% fee). Supports multi-hop swap paths for
+/// @dev Uses Uniswap V3 pool.flash() (fee = pool's fee tier). Supports multi-hop swap paths for
 ///      exotic token pairs (e.g., WBTC→WETH→USDC). The borrow asset is read dynamically
 ///      from the market config — not hardcoded to any specific token.
 contract FlashloanLiquidator is IUniswapV3FlashCallback {
@@ -79,8 +79,8 @@ contract FlashloanLiquidator is IUniswapV3FlashCallback {
         IMarket.MarketConfig memory config = IMarket(marketAddr).getConfig();
         address borrowAsset = config.borrowAsset;
 
-        // Determine which flash pool token is the borrow asset
-        // Flash the borrow asset amount we need to repay the debt
+        // Track balance before for accurate profit calculation
+        uint256 balanceBefore = IERC20(borrowAsset).balanceOf(address(this));
         FlashCallbackData memory cbData = FlashCallbackData({
             positionId: params.positionId,
             repayAmount: params.repayAmount,
@@ -95,17 +95,19 @@ contract FlashloanLiquidator is IUniswapV3FlashCallback {
             flashLoanPool: params.flashLoanPool
         });
 
-        // Determine flash amounts based on which token in the pool is the borrow asset
+        // Verify flash pool contains the borrow asset and determine flash amounts
         address poolToken0 = IUniswapV3PoolMinimal(params.flashLoanPool).token0();
+        address poolToken1 = IUniswapV3PoolMinimal(params.flashLoanPool).token1();
+        require(poolToken0 == borrowAsset || poolToken1 == borrowAsset, "POOL_MISSING_BORROW_ASSET");
         uint256 flashAmount0 = poolToken0 == borrowAsset ? params.repayAmount : 0;
         uint256 flashAmount1 = poolToken0 == borrowAsset ? 0 : params.repayAmount;
 
         // Execute flash loan — callback will handle liquidation + swaps + repayment
         IUniswapV3PoolMinimal(params.flashLoanPool).flash(address(this), flashAmount0, flashAmount1, abi.encode(cbData));
 
-        // Profit was sent to caller in the callback
-        // Return the profit amount (stored in event)
-        profit = IERC20(borrowAsset).balanceOf(address(this));
+        // Transfer profit to caller (balance delta avoids sweeping pre-existing tokens)
+        uint256 balanceAfter = IERC20(borrowAsset).balanceOf(address(this));
+        profit = balanceAfter > balanceBefore ? balanceAfter - balanceBefore : 0;
         if (profit > 0) {
             IERC20(borrowAsset).safeTransfer(msg.sender, profit);
         }
@@ -123,7 +125,6 @@ contract FlashloanLiquidator is IUniswapV3FlashCallback {
 
         // Step 1: Approve and execute liquidation
         IERC20(cb.borrowAsset).forceApprove(address(liquidationEngine), cb.repayAmount);
-        IERC20(cb.borrowAsset).forceApprove(cb.marketAddr, cb.repayAmount);
 
         liquidationEngine.liquidate(cb.positionId, cb.repayAmount, block.timestamp, 0, 0);
 
