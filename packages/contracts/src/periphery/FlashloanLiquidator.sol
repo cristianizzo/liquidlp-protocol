@@ -125,6 +125,8 @@ contract FlashloanLiquidator is IUniswapV3FlashCallback {
         if (profit > 0) {
             IERC20(borrowAsset).safeTransfer(msg.sender, profit);
         }
+
+        emit FlashLiquidation(params.positionId, msg.sender, borrowAsset, params.repayAmount, profit);
     }
 
     /// @notice Uniswap V3 flash loan callback — executes the liquidation
@@ -181,12 +183,8 @@ contract FlashloanLiquidator is IUniswapV3FlashCallback {
         uint256 totalBorrowAsset = IERC20(cb.borrowAsset).balanceOf(address(this));
         require(totalBorrowAsset >= totalOwed, "INSUFFICIENT_FOR_REPAY");
 
-        // Repay to the flash loan pool
-        IERC20(cb.borrowAsset).safeTransfer(cb.flashLoanPool, totalOwed);
-
-        // Profit check is in liquidate() via balance delta — not here
-        // (callback balance includes pre-existing tokens which distorts absolute check)
-        emit FlashLiquidation(cb.positionId, cb.caller, cb.borrowAsset, cb.repayAmount, 0);
+        // Repay to the verified flash pool (from state, not calldata)
+        IERC20(cb.borrowAsset).safeTransfer(_activeFlashPool, totalOwed);
     }
 }
 

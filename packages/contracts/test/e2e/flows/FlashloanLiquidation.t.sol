@@ -418,7 +418,7 @@ contract FlashloanLiquidation is E2EBase {
     // 7. AGGRESSIVE BORROW — 95% LTV, moderate dump
     // ========================================================================
 
-    function test_scenario_conservativeBorrow() public {
+    function test_scenario_aggressiveBorrow() public {
         // 95% borrow, small dump → barely liquidatable
         _runScenario("AGGRESSIVE BORROW", 95, 4100 ether);
     }
