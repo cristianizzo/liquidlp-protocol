@@ -146,9 +146,10 @@ contract FlashloanLiquidator is IUniswapV3FlashCallback {
 
         // Step 2: Swap received tokens back to borrow asset
         // Skip swap if token is already the borrow asset
-        if (cb.token0 != cb.borrowAsset && cb.swapPath0.length > 0) {
+        if (cb.token0 != cb.borrowAsset) {
             uint256 balance0 = IERC20(cb.token0).balanceOf(address(this));
             if (balance0 > 0) {
+                require(cb.swapPath0.length > 0, "MISSING_SWAP_PATH_0");
                 IERC20(cb.token0).forceApprove(address(swapRouter), balance0);
                 swapRouter.exactInput(
                     ISwapRouter.ExactInputParams({
@@ -162,9 +163,10 @@ contract FlashloanLiquidator is IUniswapV3FlashCallback {
             }
         }
 
-        if (cb.token1 != cb.borrowAsset && cb.swapPath1.length > 0) {
+        if (cb.token1 != cb.borrowAsset) {
             uint256 balance1 = IERC20(cb.token1).balanceOf(address(this));
             if (balance1 > 0) {
+                require(cb.swapPath1.length > 0, "MISSING_SWAP_PATH_1");
                 IERC20(cb.token1).forceApprove(address(swapRouter), balance1);
                 swapRouter.exactInput(
                     ISwapRouter.ExactInputParams({
