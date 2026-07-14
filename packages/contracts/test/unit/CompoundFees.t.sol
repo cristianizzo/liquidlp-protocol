@@ -505,4 +505,89 @@ contract CompoundFeesTest is Test {
         vm.expectRevert("NOT_POOL_ADMIN");
         compounder.sweepTokens(address(token0), treasury, 1e18);
     }
+
+    // ========== _distributeFees (via compoundFees) ==========
+
+    function test_distributeFees_onlyProtocolFee_noCallerReward() public {
+        uint256 fee0 = 10_000e18;
+        uint256 fee1 = 20_000e6;
+        _setupFees(fee0, fee1);
+
+        // 5% protocol, 0% caller
+        vm.prank(keeper);
+        (,, uint256 liq) = pm.compoundFees(positionId, address(feeCollector), 500, keeper, 0, 0, alice);
+
+        // 95% reinvested
+        uint256 expectedReinvest0 = fee0 - (fee0 * 500 / 10_000);
+        uint256 expectedReinvest1 = fee1 - (fee1 * 500 / 10_000);
+        assertEq(liq, expectedReinvest0 + expectedReinvest1);
+        assertEq(token0.balanceOf(keeper), 0, "No caller reward");
+    }
+
+    function test_distributeFees_onlyCallerReward_noProtocolFee() public {
+        uint256 fee0 = 10_000e18;
+        _setupFees(fee0, 0);
+
+        address rewardTo = makeAddr("rewardTo");
+        // 0% protocol, 3% caller
+        vm.prank(keeper);
+        pm.compoundFees(positionId, address(feeCollector), 0, rewardTo, 300, 0, alice);
+
+        assertEq(feeCollector.accumulatedFees(address(token0)), 0, "No protocol fee");
+        assertEq(token0.balanceOf(rewardTo), fee0 * 300 / 10_000, "Caller gets 3%");
+    }
+
+    function test_distributeFees_singleTokenFee() public {
+        // Only token0 has fees, token1 = 0
+        _setupFees(5e18, 0);
+
+        vm.prank(keeper);
+        (uint256 f0, uint256 f1, uint256 liq) =
+            pm.compoundFees(positionId, address(feeCollector), 200, keeper, 50, 0, alice);
+
+        assertEq(f0, 5e18);
+        assertEq(f1, 0);
+        assertGt(liq, 0);
+        // Protocol gets 2% of token0 only
+        assertEq(feeCollector.accumulatedFees(address(token0)), 5e18 * 200 / 10_000);
+        assertEq(feeCollector.accumulatedFees(address(token1)), 0);
+    }
+
+    function test_distributeFees_dustAmounts() public {
+        // Very small fees — just above threshold
+        _setupFees(1001, 0);
+
+        vm.prank(keeper);
+        (uint256 f0,, uint256 liq) = pm.compoundFees(positionId, address(feeCollector), 200, keeper, 50, 1000, alice);
+
+        assertEq(f0, 1001);
+        // 2% of 1001 = 20 (truncated), 0.5% of 1001 = 5 (truncated)
+        // Reinvested = 1001 - 20 - 5 = 976
+        assertGt(liq, 0);
+    }
+
+    function test_distributeFees_maxProtocolAndCallerFee() public {
+        // 25% protocol + 25% caller = 50% total (max allowed)
+        _setupFees(10_000e18, 10_000e6);
+
+        vm.prank(keeper);
+        (,, uint256 liq) = pm.compoundFees(positionId, address(feeCollector), 2500, keeper, 2500, 0, alice);
+
+        // 50% reinvested
+        uint256 expectedReinvest0 = 10_000e18 / 2;
+        uint256 expectedReinvest1 = 10_000e6 / 2;
+        assertEq(liq, expectedReinvest0 + expectedReinvest1);
+    }
+
+    // ========== batchCompound error event ==========
+
+    function test_batchCompound_emitsCompoundFailed() public {
+        // No fees set — position 999 doesn't exist
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = 999;
+
+        vm.prank(alice);
+        // Should emit CompoundFailed but not revert
+        compounder.batchCompound(ids);
+    }
 }
