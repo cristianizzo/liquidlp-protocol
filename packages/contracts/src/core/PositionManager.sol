@@ -53,6 +53,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         address callerRewardRecipient;
         uint256 callerRewardBps;
         address dustRefundTo;
+        uint256 maxSlippageBps;
     }
 
     // --- Events ---
@@ -265,7 +266,9 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     function addCollateral(
         uint256 positionId,
         uint256 amount0,
-        uint256 amount1
+        uint256 amount1,
+        uint256 minAmount0Used,
+        uint256 minAmount1Used
     )
         external
         whenNotPaused
@@ -307,6 +310,8 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
             .addLiquidity(pos.lpToken, pos.tokenId, pos.token0, pos.token1, received0, received1, msg.sender);
 
         require(addedLiquidity > 0, "ZERO_LIQUIDITY_ADDED");
+        require(used0 >= minAmount0Used, "SLIPPAGE_AMOUNT0");
+        require(used1 >= minAmount1Used, "SLIPPAGE_AMOUNT1");
 
         // For V2: LP tokens were minted → increase stored amount
         if (pos.lpType == ILPAdapter.LPType.UniswapV2 || pos.lpType == ILPAdapter.LPType.PancakeSwapV2) {
@@ -469,6 +474,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     /// @param callerRewardBps Caller reward in basis points (e.g., 50 = 0.5%)
     /// @param minFeeThreshold Minimum fee per token to proceed (gas optimization)
     /// @param dustRefundTo Where to send unused tokens (position owner)
+    /// @param maxSlippageBps Maximum slippage on reinvestment (e.g., 200 = 2%)
     /// @return fees0 Total fees collected in token0
     /// @return fees1 Total fees collected in token1
     /// @return addedLiquidity Liquidity added back to position
@@ -479,7 +485,8 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         address callerRewardRecipient,
         uint256 callerRewardBps,
         uint256 minFeeThreshold,
-        address dustRefundTo
+        address dustRefundTo,
+        uint256 maxSlippageBps
     )
         external
         whenNotPaused
@@ -522,7 +529,8 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
                 protocolFeeBps: protocolFeeBps,
                 callerRewardRecipient: callerRewardRecipient,
                 callerRewardBps: callerRewardBps,
-                dustRefundTo: dustRefundTo
+                dustRefundTo: dustRefundTo,
+                maxSlippageBps: maxSlippageBps
             });
             addedLiquidity = _distributeFees(adapter, cp);
         }
@@ -569,8 +577,22 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         if (reinvest0 > 0) OZIERC20(cp.token0).safeTransfer(cp.adapterAddr, reinvest0);
         if (reinvest1 > 0) OZIERC20(cp.token1).safeTransfer(cp.adapterAddr, reinvest1);
 
-        (addedLiquidity,,) =
+        uint256 used0;
+        uint256 used1;
+        (addedLiquidity, used0, used1) =
             adapter.addLiquidity(cp.lpToken, cp.tokenId, cp.token0, cp.token1, reinvest0, reinvest1, cp.dustRefundTo);
+
+        // Slippage protection on reinvestment — revert if too much value lost to sandwich.
+        // Check each side independently (V3 positions may only use one token at range edges).
+        if (cp.maxSlippageBps > 0) {
+            require(cp.maxSlippageBps <= 10_000, "SLIPPAGE_BPS_OVERFLOW");
+            if (reinvest0 > 0) {
+                require(used0 >= (reinvest0 * (10_000 - cp.maxSlippageBps)) / 10_000, "COMPOUND_SLIPPAGE_0");
+            }
+            if (reinvest1 > 0) {
+                require(used1 >= (reinvest1 * (10_000 - cp.maxSlippageBps)) / 10_000, "COMPOUND_SLIPPAGE_1");
+            }
+        }
     }
 
     // --- New state vars (appended for UUPS upgrade safety) ---

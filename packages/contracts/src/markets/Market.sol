@@ -208,21 +208,38 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
 
     function accrueInterest() public {
         if (block.timestamp <= state.lastAccrualTimestamp) return;
-        if (state.totalBorrow == 0 || state.totalSupply == 0) {
+        if (state.totalBorrow == 0) {
             state.lastAccrualTimestamp = block.timestamp;
             return;
         }
 
         uint256 elapsed = block.timestamp - state.lastAccrualTimestamp;
         uint256 totalPoolAssets = state.totalSupply + protocolReserves;
-        uint256 currentUtilization = (state.totalBorrow * 10_000) / totalPoolAssets;
+
+        // If no pool assets, use max utilization (10000 bps) — interest still accrues
+        // and goes entirely to protocol reserves. Prevents free borrowing when totalSupply = 0.
+        uint256 currentUtilization;
+        if (totalPoolAssets == 0) {
+            currentUtilization = 10_000;
+        } else {
+            uint256 rawUtil = (state.totalBorrow * 10_000) / totalPoolAssets;
+            currentUtilization = rawUtil > 10_000 ? 10_000 : rawUtil;
+        }
         uint256 borrowRatePerSecond = interestRateModel.getBorrowRate(currentUtilization);
 
         uint256 interestAccrued = (state.totalBorrow * borrowRatePerSecond * elapsed) / 1e18;
 
         // Split interest: protocol keeps reserveFactorBps%, lenders get the rest
-        uint256 protocolShare = (interestAccrued * reserveFactorBps) / 10_000;
-        uint256 lenderShare = interestAccrued - protocolShare;
+        uint256 protocolShare;
+        uint256 lenderShare;
+        if (state.totalSupply == 0) {
+            // No lenders — all interest goes to protocol reserves
+            protocolShare = interestAccrued;
+            lenderShare = 0;
+        } else {
+            protocolShare = (interestAccrued * reserveFactorBps) / 10_000;
+            lenderShare = interestAccrued - protocolShare;
+        }
 
         state.totalBorrow += interestAccrued; // Borrowers owe full interest
         state.totalSupply += lenderShare; // Lenders earn less than 100%

@@ -381,4 +381,61 @@ contract MarketTest is Test {
         uint256 received = market.withdraw(aliceShares);
         assertLe(amount - received, DEAD_SHARES);
     }
+
+    // ========== Interest Accrual — borrows always accrue ==========
+
+    function test_accrueInterest_withBorrows_alwaysAccrues() public {
+        // Verify interest accrues whenever totalBorrow > 0.
+        // The code fix changed `if (totalBorrow == 0 || totalSupply == 0)` to
+        // `if (totalBorrow == 0)` — only skipping when there are no borrows.
+
+        // 1. Set reserve factor so protocol gets a share of interest
+        vm.prank(owner);
+        aclManager.addRiskAdmin(owner);
+        vm.prank(owner);
+        market.setReserveFactor(2000); // 20%
+
+        // 2. Supply and borrow to set up state
+        _fundAndApprove(alice, 10_000e6);
+        vm.prank(alice);
+        market.supply(10_000e6);
+
+        vm.prank(le);
+        market.transferOut(makeAddr("borrower"), 5000e6);
+
+        // 3. Verify state: totalBorrow > 0 (the condition that must trigger accrual)
+        IMarket.MarketState memory s = market.getMarketState();
+        assertGt(s.totalSupply, 0, "Must have supply");
+        assertGt(s.totalBorrow, 0, "Must have borrows");
+
+        uint256 totalBorrowBefore = s.totalBorrow;
+        uint256 reservesBefore = market.protocolReserves();
+
+        // 3. Advance time
+        vm.warp(block.timestamp + 30 days);
+        market.accrueInterest();
+
+        IMarket.MarketState memory sAfter = market.getMarketState();
+        uint256 reservesAfter = market.protocolReserves();
+
+        // Interest MUST have accrued (not skipped)
+        assertGt(sAfter.totalBorrow, totalBorrowBefore, "Interest must accrue with outstanding borrows");
+        assertGt(market.borrowIndex(), 1e27, "BorrowIndex must grow");
+        assertGt(reservesAfter, reservesBefore, "Reserves must grow from protocol share of interest");
+        assertLe(sAfter.utilization, 10_000, "Utilization must be capped at 100%");
+    }
+
+    function test_accrueInterest_zeroBorrow_skips() public {
+        // No borrows — accrual should skip harmlessly
+        _fundAndApprove(alice, 10_000e6);
+        vm.prank(alice);
+        market.supply(10_000e6);
+
+        uint256 indexBefore = market.borrowIndex();
+        vm.warp(block.timestamp + 30 days);
+        market.accrueInterest();
+
+        // BorrowIndex should not change (no borrows to accrue on)
+        assertEq(market.borrowIndex(), indexBefore, "BorrowIndex must not change with zero borrows");
+    }
 }

@@ -377,7 +377,7 @@ contract AdversarialE2E is E2EBase {
         IERC20(Constants.WETH).approve(address(positionManager), 1 ether);
         IERC20(Constants.USDC).approve(address(positionManager), 2000e6);
         vm.expectRevert(); // addCollateral checks status
-        positionManager.addCollateral(positionId, 2000e6, 1 ether);
+        positionManager.addCollateral(positionId, 2000e6, 1 ether, 0, 0);
         vm.stopPrank();
 
         console.log("=== Borrow After Full Liquidation Blocked: Passed ===");
