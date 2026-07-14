@@ -76,9 +76,8 @@ contract MockMarket is IMarket {
     }
 
     function recordDeficit(uint256 amount) external {
-        if (amount <= _state.totalBorrow) {
-            _state.totalBorrow -= amount;
-        }
+        uint256 burn = amount > _state.totalBorrow ? _state.totalBorrow : amount;
+        _state.totalBorrow -= burn;
     }
 
     function eliminateDeficit() external {}

@@ -69,11 +69,12 @@ contract RiskManager {
 
     /// @notice Validate a borrow request against risk caps
     /// @param borrowAmountUsd Borrow amount in 18-dec USD
-    /// @param positionValue Position value in 18-dec USD
-    /// @param lpType LP type for per-type cap check
     /// @notice Validate borrow caps AND atomically record the borrow.
     ///         Prevents TOCTOU: two borrows in the same block cannot both pass
     ///         validation before either records, since validation + recording is atomic.
+    /// @param borrowAmountUsd Borrow amount in 18-dec USD
+    /// @param positionValue Position value in 18-dec USD
+    /// @param lpType LP type for per-type cap check
     function validateAndRecordBorrow(
         uint256 borrowAmountUsd,
         uint256 positionValue,

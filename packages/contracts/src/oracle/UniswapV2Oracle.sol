@@ -34,6 +34,7 @@ contract UniswapV2Oracle is ILPOracle {
         require(_core != address(0), "ZERO_CORE");
         require(_core.code.length > 0, "NOT_CONTRACT");
         require(_priceFeedRegistry != address(0), "ZERO_REGISTRY");
+        require(_priceFeedRegistry.code.length > 0, "NOT_CONTRACT");
         core = ProtocolCore(_core);
         priceFeedRegistry = PriceFeedRegistry(_priceFeedRegistry);
     }
