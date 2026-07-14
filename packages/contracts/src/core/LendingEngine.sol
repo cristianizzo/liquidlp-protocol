@@ -135,9 +135,9 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
             uint256 positionValue = positionManager.getPositionValue(positionId);
             IMarket.MarketConfig memory config = IMarket(marketAddr).getConfig();
             uint256 amountUsd = _toUsd(amount, config.borrowAsset);
-            (bool valid, string memory reason) = riskManager.validateBorrow(amountUsd, positionValue, pos.lpType);
+            (bool valid, string memory reason) =
+                riskManager.validateAndRecordBorrow(amountUsd, positionValue, pos.lpType);
             require(valid, reason);
-            riskManager.recordBorrow(amountUsd, pos.lpType);
         }
 
         uint256 currentBorrowIndex = market.borrowIndex();

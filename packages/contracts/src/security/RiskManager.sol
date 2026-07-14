@@ -71,13 +71,16 @@ contract RiskManager {
     /// @param borrowAmountUsd Borrow amount in 18-dec USD
     /// @param positionValue Position value in 18-dec USD
     /// @param lpType LP type for per-type cap check
-    function validateBorrow(
+    /// @notice Validate borrow caps AND atomically record the borrow.
+    ///         Prevents TOCTOU: two borrows in the same block cannot both pass
+    ///         validation before either records, since validation + recording is atomic.
+    function validateAndRecordBorrow(
         uint256 borrowAmountUsd,
         uint256 positionValue,
         ILPAdapter.LPType lpType
     )
         external
-        view
+        onlyLendingEngine
         returns (bool valid, string memory reason)
     {
         // Check 1: Position value cap
@@ -96,14 +99,12 @@ contract RiskManager {
             return (false, "LP_TYPE_CAP_REACHED");
         }
 
-        return (true, "");
-    }
+        // Atomically record the borrow (no gap between validate and record)
+        currentGlobalBorrows += borrowAmountUsd;
+        lpTypeCurrentBorrows[lpType] += borrowAmountUsd;
+        emit BorrowRecorded(borrowAmountUsd, currentGlobalBorrows);
 
-    /// @notice Record a borrow for cap tracking (18-dec USD)
-    function recordBorrow(uint256 amountUsd, ILPAdapter.LPType lpType) external onlyLendingEngine {
-        currentGlobalBorrows += amountUsd;
-        lpTypeCurrentBorrows[lpType] += amountUsd;
-        emit BorrowRecorded(amountUsd, currentGlobalBorrows);
+        return (true, "");
     }
 
     /// @notice Record a repayment for cap tracking (18-dec USD)

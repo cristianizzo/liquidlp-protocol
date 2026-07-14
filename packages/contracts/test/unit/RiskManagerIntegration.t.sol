@@ -312,16 +312,16 @@ contract RiskManagerIntegrationTest is Test {
     event WithdrawRecorded(uint256 valueUsd, uint256 indexed marketId, uint256 newMarketSupply);
     event BorrowTrackingDrift(uint256 tracked, uint256 repaid, bool isGlobal);
 
-    function test_recordBorrow_emitsEvent() public {
+    function test_validateAndRecordBorrow_emitsEvent() public {
         vm.expectEmit(false, false, false, true);
         emit BorrowRecorded(1000e18, 1000e18);
         vm.prank(address(le));
-        rm.recordBorrow(1000e18, ILPAdapter.LPType.UniswapV2);
+        rm.validateAndRecordBorrow(1000e18, 50_000e18, ILPAdapter.LPType.UniswapV2);
     }
 
     function test_recordRepay_emitsEvent() public {
         vm.prank(address(le));
-        rm.recordBorrow(1000e18, ILPAdapter.LPType.UniswapV2);
+        rm.validateAndRecordBorrow(1000e18, 50_000e18, ILPAdapter.LPType.UniswapV2);
         vm.expectEmit(false, false, false, true);
         emit RepayRecorded(500e18, 500e18);
         vm.prank(address(le));
@@ -330,7 +330,7 @@ contract RiskManagerIntegrationTest is Test {
 
     function test_recordRepay_emitsDriftOnClamp() public {
         vm.prank(address(le));
-        rm.recordBorrow(100e18, ILPAdapter.LPType.UniswapV2);
+        rm.validateAndRecordBorrow(100e18, 50_000e18, ILPAdapter.LPType.UniswapV2);
         vm.expectEmit(false, false, false, true);
         emit BorrowTrackingDrift(100e18, 200e18, true);
         vm.prank(address(le));
