@@ -475,4 +475,260 @@ contract AdversarialE2E is E2EBase {
 
         console.log("=== Stale Oracle Blocks Deposit: Passed ===");
     }
+
+    // ========== 11. Share Inflation / Donation Attack ==========
+
+    function test_attack_shareInflation_donationAttack() public {
+        address attacker = makeAddr("attacker");
+        address victim = makeAddr("victim");
+        address marketAddr = core.markets(ethUsdcMarketId);
+        Market market = Market(marketAddr);
+
+        // Attacker supplies 1 USDC to market (gets initial shares)
+        _fundUsdc(attacker, 10_001e6);
+        vm.startPrank(attacker);
+        IERC20(Constants.USDC).approve(marketAddr, type(uint256).max);
+        uint256 attackerShares = market.supply(1e6);
+        vm.stopPrank();
+
+        assertGt(attackerShares, 0, "Attacker must receive shares");
+
+        // Attacker donates 10,000 USDC directly to market contract (bypassing supply)
+        vm.prank(attacker);
+        IERC20(Constants.USDC).transfer(marketAddr, 10_000e6);
+
+        // Victim supplies 5,000 USDC
+        _fundUsdc(victim, 5000e6);
+        vm.startPrank(victim);
+        IERC20(Constants.USDC).approve(marketAddr, type(uint256).max);
+        uint256 victimShares = market.supply(5000e6);
+        vm.stopPrank();
+
+        // DEAD_SHARES protection: victim should get fair shares (not zero or dust)
+        assertGt(victimShares, 0, "Victim must receive non-zero shares");
+
+        // Both withdraw
+        uint256 attackerBalBefore = IERC20(Constants.USDC).balanceOf(attacker);
+        vm.prank(attacker);
+        market.withdraw(attackerShares);
+        uint256 attackerReceived = IERC20(Constants.USDC).balanceOf(attacker) - attackerBalBefore;
+
+        uint256 victimBalBefore = IERC20(Constants.USDC).balanceOf(victim);
+        vm.prank(victim);
+        market.withdraw(victimShares);
+        uint256 victimReceived = IERC20(Constants.USDC).balanceOf(victim) - victimBalBefore;
+
+        // Victim should not lose significant funds — most of their 5000 USDC should come back
+        assertGt(victimReceived, 4900e6, "Victim must recover most of their deposit");
+
+        // Attacker should NOT profit — they donated 10K but shouldn't extract more than deposited + donated
+        assertLe(attackerReceived, 10_001e6, "Attacker must not profit from donation");
+
+        console.log("=== Share Inflation Donation Attack: Passed ===");
+        console.log("Attacker shares: %s, Victim shares: %s", attackerShares, victimShares);
+        console.log(
+            "Attacker received: %s USDC, Victim received: %s USDC", attackerReceived / 1e6, victimReceived / 1e6
+        );
+    }
+
+    // ========== 12. Sandwich Liquidation — Slippage Protects ==========
+
+    function test_attack_sandwichLiquidation_slippageProtects() public {
+        uint256 tokenId = _createV3Position(alice, 1 ether, 2000e6);
+        uint256 positionId = _depositV3(alice, tokenId);
+        vm.roll(block.number + 2);
+
+        uint256 maxBorrow = lendingEngine.getMaxBorrow(positionId);
+        vm.prank(alice);
+        lendingEngine.borrow(positionId, (maxBorrow * 90) / 100);
+
+        // Mock price crash to make liquidatable
+        IPositionManager.Position memory pos = positionManager.getPosition(positionId);
+        uint256 originalValue = _getPositionValue(positionId);
+        _mockOraclePrice(pos.lpToken, pos.tokenId, pos.amount, pos.lpType, (originalValue * 30) / 100);
+
+        (bool canLiq, uint256 maxRepay) = liquidationEngine.isLiquidatable(positionId);
+        assertTrue(canLiq, "Position must be liquidatable");
+
+        address marketAddr = core.markets(ethUsdcMarketId);
+
+        // Liquidator sets impossibly high minAmount0 — should revert with SLIPPAGE_AMOUNT0
+        _fundUsdc(liquidator, maxRepay);
+        vm.startPrank(liquidator);
+        IERC20(Constants.USDC).approve(address(liquidationEngine), maxRepay);
+        IERC20(Constants.USDC).approve(marketAddr, maxRepay);
+        vm.expectRevert("SLIPPAGE_AMOUNT0");
+        liquidationEngine.liquidate(positionId, maxRepay, block.timestamp + 300, type(uint256).max, 0);
+        vm.stopPrank();
+
+        // Liquidator calls again with reasonable minAmounts — should succeed
+        vm.startPrank(liquidator);
+        liquidationEngine.liquidate(positionId, maxRepay, block.timestamp + 300, 0, 0);
+        vm.stopPrank();
+
+        console.log("=== Sandwich Liquidation Slippage Protects: Passed ===");
+    }
+
+    // ========== 13. Dust Position Griefing ==========
+
+    function test_attack_dustPositionGriefing() public {
+        // Fund alice with enough for 5 small V3 positions
+        _fundWeth(alice, 0.005 ether);
+        _fundUsdc(alice, 10e6);
+
+        uint256[] memory positionIds = new uint256[](5);
+
+        for (uint256 i = 0; i < 5; i++) {
+            uint256 tokenId = _createV3Position(alice, 0.001 ether, 2e6);
+            uint256 positionId = _depositV3(alice, tokenId);
+            positionIds[i] = positionId;
+        }
+
+        // Verify all 5 positions created and owned by alice
+        uint256[] memory alicePositions = positionManager.getPositionsByOwner(alice);
+        assertGe(alicePositions.length, 5, "Alice must have at least 5 positions");
+
+        // Verify each position has valid state
+        for (uint256 i = 0; i < 5; i++) {
+            IPositionManager.Position memory pos = positionManager.getPosition(positionIds[i]);
+            assertEq(uint8(pos.status), uint8(IPositionManager.PositionStatus.Active), "Position must be Active");
+            assertEq(pos.owner, alice, "Position owner must be alice");
+        }
+
+        console.log("=== Dust Position Griefing: Passed ===");
+        console.log("Created %s dust positions for alice", alicePositions.length);
+    }
+
+    // ========== 14. Interest Rate Manipulation ==========
+
+    function test_attack_interestRateManipulation() public {
+        uint256 tokenId = _createV3Position(alice, 2 ether, 4000e6);
+        uint256 positionId = _depositV3(alice, tokenId);
+        vm.roll(block.number + 2);
+
+        address marketAddr = core.markets(ethUsdcMarketId);
+        Market market = Market(marketAddr);
+
+        // Check initial utilization
+        IMarket.MarketState memory stateBefore = market.getMarketState();
+        console.log("Utilization before borrow: %s bps", stateBefore.utilization);
+
+        // Alice borrows near max to spike utilization
+        uint256 maxBorrow = lendingEngine.getMaxBorrow(positionId);
+        uint256 borrowAmount = (maxBorrow * 90) / 100;
+        vm.prank(alice);
+        lendingEngine.borrow(positionId, borrowAmount);
+
+        IMarket.MarketState memory stateAfterBorrow = market.getMarketState();
+        console.log("Utilization after borrow: %s bps", stateAfterBorrow.utilization);
+        assertGt(stateAfterBorrow.utilization, stateBefore.utilization, "Utilization must increase after borrow");
+        assertGt(stateAfterBorrow.borrowRate, 0, "Borrow rate must be > 0");
+
+        // Alice repays all immediately
+        _fundUsdc(alice, borrowAmount + 1000e6); // extra for potential interest
+        vm.startPrank(alice);
+        IERC20(Constants.USDC).approve(marketAddr, type(uint256).max);
+        lendingEngine.repay(positionId, type(uint256).max);
+        vm.stopPrank();
+
+        IMarket.MarketState memory stateAfterRepay = market.getMarketState();
+        console.log("Utilization after repay: %s bps", stateAfterRepay.utilization);
+        assertLt(stateAfterRepay.utilization, stateAfterBorrow.utilization, "Utilization must drop after repay");
+
+        // Verify no lasting damage — debt is zero
+        uint256 debtAfter = _getDebt(positionId);
+        assertEq(debtAfter, 0, "Debt must be zero after full repay");
+
+        console.log("=== Interest Rate Manipulation: Passed ===");
+    }
+
+    // ========== 15. Liquidation Deadline Expired ==========
+
+    function test_attack_liquidationDeadline_expired() public {
+        uint256 tokenId = _createV3Position(alice, 1 ether, 2000e6);
+        uint256 positionId = _depositV3(alice, tokenId);
+        vm.roll(block.number + 2);
+
+        uint256 maxBorrow = lendingEngine.getMaxBorrow(positionId);
+        vm.prank(alice);
+        lendingEngine.borrow(positionId, (maxBorrow * 90) / 100);
+
+        // Mock price crash
+        IPositionManager.Position memory pos = positionManager.getPosition(positionId);
+        uint256 originalValue = _getPositionValue(positionId);
+        _mockOraclePrice(pos.lpToken, pos.tokenId, pos.amount, pos.lpType, (originalValue * 30) / 100);
+
+        (bool canLiq, uint256 maxRepay) = liquidationEngine.isLiquidatable(positionId);
+        assertTrue(canLiq, "Position must be liquidatable");
+
+        address marketAddr = core.markets(ethUsdcMarketId);
+
+        // Liquidator calls with expired deadline — should revert with EXPIRED
+        _fundUsdc(liquidator, maxRepay);
+        vm.startPrank(liquidator);
+        IERC20(Constants.USDC).approve(address(liquidationEngine), maxRepay);
+        IERC20(Constants.USDC).approve(marketAddr, maxRepay);
+        vm.expectRevert("EXPIRED");
+        liquidationEngine.liquidate(positionId, maxRepay, block.timestamp - 1, 0, 0);
+
+        // Liquidator calls with valid deadline — should succeed
+        liquidationEngine.liquidate(positionId, maxRepay, block.timestamp + 300, 0, 0);
+        vm.stopPrank();
+
+        console.log("=== Liquidation Deadline Expired: Passed ===");
+    }
+
+    // ========== 16. Double Deposit NFT ==========
+
+    function test_attack_doubleDepositNFT() public {
+        uint256 tokenId = _createV3Position(alice, 1 ether, 2000e6);
+
+        // First deposit — should succeed
+        uint256 positionId = _depositV3(alice, tokenId);
+        IPositionManager.Position memory pos = positionManager.getPosition(positionId);
+        assertEq(pos.owner, alice, "First deposit must succeed");
+
+        // Try to deposit the same tokenId again — NFT already transferred to adapter
+        // Alice can't even approve because she no longer owns the NFT
+        vm.startPrank(alice);
+        vm.expectRevert(); // ERC721: approve caller is not owner nor approved
+        nftManager.approve(address(v3Adapter), tokenId);
+        vm.stopPrank();
+
+        // Verify only 1 position exists for alice
+        uint256[] memory alicePositions = positionManager.getPositionsByOwner(alice);
+        assertEq(alicePositions.length, 1, "Alice must have exactly 1 position");
+        assertEq(alicePositions[0], positionId, "Position ID must match");
+
+        console.log("=== Double Deposit NFT: Passed ===");
+    }
+
+    // ========== 17. Borrow From Wrong Position ==========
+
+    function test_attack_borrowFromWrongPosition() public {
+        // Alice creates and deposits position
+        uint256 tokenId = _createV3Position(alice, 1 ether, 2000e6);
+        uint256 alicePositionId = _depositV3(alice, tokenId);
+        vm.roll(block.number + 2);
+
+        // Verify alice can borrow
+        uint256 maxBorrow = lendingEngine.getMaxBorrow(alicePositionId);
+        assertGt(maxBorrow, 0, "Alice should have borrow capacity");
+
+        // Bob tries to borrow against Alice's positionId — should revert
+        vm.prank(bob);
+        vm.expectRevert("NOT_POSITION_OWNER");
+        lendingEngine.borrow(alicePositionId, 100e6);
+
+        // Verify no debt was created
+        uint256 debt = _getDebt(alicePositionId);
+        assertEq(debt, 0, "No debt should exist - Bob's borrow was rejected");
+
+        // Alice can still borrow from her own position
+        vm.prank(alice);
+        lendingEngine.borrow(alicePositionId, 100e6);
+        assertGt(_getDebt(alicePositionId), 0, "Alice should have debt after borrowing");
+
+        console.log("=== Borrow From Wrong Position: Passed ===");
+    }
 }
