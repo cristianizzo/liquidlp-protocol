@@ -76,27 +76,16 @@ jobs:
         run: forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable transmissions11/solmate --no-git
 
       - name: Run unit tests
-        id: unit
         run: forge test --match-path 'test/unit/**' -v
-        background: true
 
       - name: Run integration tests
-        id: integration
         run: forge test --match-path 'test/integration/**' -v
-        background: true
 
       - name: Run invariant tests
-        id: invariant
         run: forge test --match-path 'test/invariant/**' -v
-        background: true
 
       - name: Run security tests
-        id: security
         run: forge test --match-path 'test/security/**' -v
-        background: true
-
-      - name: Wait for all tests
-        wait-all: true
 
   test-fork:
     name: Fork + E2E Tests
@@ -125,15 +114,13 @@ jobs:
         run: forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable transmissions11/solmate --no-git
 
       - name: Start Anvil fork
-        id: anvil
         run: |
           if [ -n "${{ secrets.DRPC_KEY }}" ]; then
             ETH_RPC_URL="https://lb.drpc.org/ogrpc?network=ethereum&dkey=${{ secrets.DRPC_KEY }}"
           else
             ETH_RPC_URL="https://ethereum-rpc.publicnode.com"
           fi
-          anvil --fork-url "$ETH_RPC_URL" --block-time 12 --chain-id 1
-        background: true
+          anvil --fork-url "$ETH_RPC_URL" --block-time 12 --chain-id 1 &
 
       - name: Wait for Anvil
         run: |
@@ -148,17 +135,13 @@ jobs:
           echo "Anvil failed to start"
           exit 1
 
-      - name: Run fork tests (compiles + runs)
+      - name: Run fork tests
         run: forge test --match-path 'test/fork/**' --fork-url http://localhost:8545 -v
         timeout-minutes: 10
 
-      - name: Run E2E tests (no recompile)
+      - name: Run E2E tests
         run: forge test --match-path 'test/e2e/**' --fork-url http://localhost:8545 -v
         timeout-minutes: 15
-
-      - name: Stop Anvil
-        if: always()
-        run: pkill anvil || true
 
   lint:
     name: Lint & Format
