@@ -346,7 +346,8 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
         if (totalPoolAssets == 0) {
             state.utilization = 0;
         } else {
-            state.utilization = (state.totalBorrow * 10_000) / totalPoolAssets;
+            uint256 rawUtil = (state.totalBorrow * 10_000) / totalPoolAssets;
+            state.utilization = rawUtil > 10_000 ? 10_000 : rawUtil;
         }
         state.borrowRate = interestRateModel.getBorrowRate(state.utilization);
         // Supply rate reflects actual protocol cut from interest

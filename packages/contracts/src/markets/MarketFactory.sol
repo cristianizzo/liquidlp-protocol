@@ -35,6 +35,10 @@ contract MarketFactory {
     }
 
     /// @notice Deploy a new lending market as a UUPS proxy
+    /// @dev borrowAsset MUST be a standard ERC20 (USDC, USDT, DAI, WETH).
+    ///      Fee-on-transfer, rebasing, and ERC-777 tokens are NOT supported.
+    ///      LiquidationEngine enforces exact-balance checks on repayment —
+    ///      fee-on-transfer tokens would block all liquidations in that market.
     function createMarket(
         ILPAdapter.LPType lpType,
         address borrowAsset,
@@ -54,6 +58,8 @@ contract MarketFactory {
         address rateModel = interestRateModels[rateModelType];
         require(rateModel != address(0), "INVALID_RATE_MODEL");
         require(marketImplementation != address(0), "NO_IMPLEMENTATION");
+        require(borrowAsset != address(0), "ZERO_BORROW_ASSET");
+        require(borrowAsset.code.length > 0, "NOT_CONTRACT");
 
         IMarket.MarketConfig memory config = IMarket.MarketConfig({
             lpType: lpType,

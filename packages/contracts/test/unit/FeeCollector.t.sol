@@ -247,8 +247,14 @@ contract FeeCollectorTest is Test {
 
     function test_setLiquidationFee_revertsTooHigh() public {
         vm.prank(owner);
-        vm.expectRevert("TOO_HIGH");
+        vm.expectRevert("OUT_OF_BOUNDS");
         fc.setLiquidationFee(2100);
+    }
+
+    function test_setLiquidationFee_revertsTooLow() public {
+        vm.prank(owner);
+        vm.expectRevert("OUT_OF_BOUNDS");
+        fc.setLiquidationFee(49); // Below MIN_LIQUIDATION_FEE (50 = 0.5%)
     }
 
     function test_setManagementFee_success() public {

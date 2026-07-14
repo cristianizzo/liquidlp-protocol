@@ -40,6 +40,7 @@ contract FeeCollector is ReentrancyGuard {
     // --- Absolute Bounds ---
     uint256 public constant MIN_RESERVE_FACTOR = 500; // 5%
     uint256 public constant MAX_RESERVE_FACTOR = 5000; // 50%
+    uint256 public constant MIN_LIQUIDATION_FEE = 50; // 0.5%
     uint256 public constant MAX_LIQUIDATION_FEE = 2000; // 20%
     uint256 public constant MAX_MANAGEMENT_FEE = 100; // 1%
     uint256 public constant MAX_INSURANCE_SHARE = 5000; // 50%
@@ -188,7 +189,7 @@ contract FeeCollector is ReentrancyGuard {
 
     /// @notice Sweep tokens that were sent directly to this contract (not via collectFee)
     /// @dev Recovers balance - accumulatedFees[token] excess. Only callable by owner.
-    function sweepExcess(address token, address to) external onlyPoolAdmin {
+    function sweepExcess(address token, address to) external onlyPoolAdmin nonReentrant {
         require(token != address(0) && to != address(0), "ZERO_ADDRESS");
         uint256 balance = IERC20(token).balanceOf(address(this));
         uint256 tracked = accumulatedFees[token];
@@ -243,7 +244,7 @@ contract FeeCollector is ReentrancyGuard {
     }
 
     function setLiquidationFee(uint256 _bps) external onlyRiskAdmin {
-        require(_bps <= MAX_LIQUIDATION_FEE, "TOO_HIGH");
+        require(_bps >= MIN_LIQUIDATION_FEE && _bps <= MAX_LIQUIDATION_FEE, "OUT_OF_BOUNDS");
         emit LiquidationFeeUpdated(liquidationFeeBps, _bps);
         liquidationFeeBps = _bps;
     }

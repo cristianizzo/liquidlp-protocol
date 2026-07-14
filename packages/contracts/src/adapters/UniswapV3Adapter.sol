@@ -133,7 +133,8 @@ contract UniswapV3Adapter is ILPAdapter {
         require(liquidityToRemove > 0, "ZERO_LIQUIDITY");
         require(nftManager.ownerOf(tokenId) == address(this), "NOT_HELD");
 
-        // Decrease liquidity
+        // Decrease liquidity — adapter passes amount0Min/amount1Min = 0 to Uniswap.
+        // Slippage is checked post-unwind by LiquidationEngine (require amount0 >= minAmount0).
         nftManager.decreaseLiquidity(
             INonfungiblePositionManager.DecreaseLiquidityParams({
                 tokenId: tokenId, liquidity: liquidityToRemove, amount0Min: 0, amount1Min: 0, deadline: block.timestamp
@@ -170,7 +171,9 @@ contract UniswapV3Adapter is ILPAdapter {
         (,,,,,,, uint128 currentLiquidity,,,,) = nftManager.positions(tokenId);
 
         if (currentLiquidity > 1) {
-            // Burn 1 wei of liquidity to trigger fee accounting sync (skip if only 1 left)
+            // Burn 1 wei of liquidity to trigger fee accounting sync.
+            // Skipped when liquidity <= 1 to avoid underflow — uncollected fees from the
+            // latest swap will be synced on the next pool interaction. Negligible amounts.
             nftManager.decreaseLiquidity(
                 INonfungiblePositionManager.DecreaseLiquidityParams({
                     tokenId: tokenId, liquidity: 1, amount0Min: 0, amount1Min: 0, deadline: block.timestamp
@@ -208,11 +211,31 @@ contract UniswapV3Adapter is ILPAdapter {
         require(nftManager.ownerOf(tokenId) == address(this), "NOT_HELD");
         require(amount0 > 0 || amount1 > 0, "ZERO_AMOUNTS");
 
+        // Validate token order matches NFT (separate frame to avoid stack-too-deep)
+        _validateTokenOrder(tokenId, token0, token1);
+
+        // Increase liquidity + refund in separate frame
+        (addedLiquidity, used0, used1) = _increaseLiquidity(tokenId, token0, token1, amount0, amount1, refundTo);
+    }
+
+    function _validateTokenOrder(uint256 tokenId, address token0, address token1) internal view {
         (,, address t0, address t1,,,,,,,,) = nftManager.positions(tokenId);
         require(token0 == t0 && token1 == t1, "TOKEN_MISMATCH");
+    }
 
-        OZIERC20(t0).forceApprove(address(nftManager), amount0);
-        OZIERC20(t1).forceApprove(address(nftManager), amount1);
+    function _increaseLiquidity(
+        uint256 tokenId,
+        address token0,
+        address token1,
+        uint256 amount0,
+        uint256 amount1,
+        address refundTo
+    )
+        internal
+        returns (uint256 addedLiquidity, uint256 used0, uint256 used1)
+    {
+        OZIERC20(token0).forceApprove(address(nftManager), amount0);
+        OZIERC20(token1).forceApprove(address(nftManager), amount1);
 
         (uint128 liquidity, uint256 a0, uint256 a1) = nftManager.increaseLiquidity(
             INonfungiblePositionManager.IncreaseLiquidityParams({
@@ -231,8 +254,8 @@ contract UniswapV3Adapter is ILPAdapter {
 
         // Refund unused tokens to user
         if (refundTo != address(0)) {
-            if (amount0 > used0) OZIERC20(t0).safeTransfer(refundTo, amount0 - used0);
-            if (amount1 > used1) OZIERC20(t1).safeTransfer(refundTo, amount1 - used1);
+            if (amount0 > used0) OZIERC20(token0).safeTransfer(refundTo, amount0 - used0);
+            if (amount1 > used1) OZIERC20(token1).safeTransfer(refundTo, amount1 - used1);
         }
     }
 

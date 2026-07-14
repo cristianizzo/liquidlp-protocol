@@ -126,9 +126,7 @@ contract UniswapV2Adapter is ILPAdapter {
         address token0 = pair.token0();
         address token1 = pair.token1();
 
-        // Safe approval: reset to 0 first (USDT-style compatibility)
-        pair.approve(address(v2Router), 0);
-        require(pair.approve(address(v2Router), uint256(liquidityToRemove)), "APPROVE_FAILED");
+        OZIERC20(address(pair)).forceApprove(address(v2Router), uint256(liquidityToRemove));
 
         // Remove liquidity — tokens to caller
         (amount0, amount1) = v2Router.removeLiquidity(

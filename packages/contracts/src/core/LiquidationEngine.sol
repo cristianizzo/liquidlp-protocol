@@ -51,6 +51,9 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
     uint256 public constant MIN_LIQUIDATION_PORTION = 1000;
     uint256 public constant MAX_LIQUIDATION_PORTION_CAP = 10_000;
     uint256 public constant LIQUIDATION_THRESHOLD = 1e18;
+    /// @dev Minimum remaining collateral value (in USD, 18 decimals) to keep position alive.
+    ///      Below this threshold, remaining value is treated as 0 and bad debt is written off.
+    uint256 public constant DUST_THRESHOLD_USD = 1e18; // $1
 
     // --- Events ---
     event MaxLiquidationPortionUpdated(uint256 oldValue, uint256 newValue);
@@ -286,8 +289,9 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
             // Step 11: Bad debt writeoff — position underwater, no collateral left to seize
             // Check if position has remaining collateral value (works for both V2 and V3)
             uint256 remainingValue = positionManager.getPositionValue(positionId);
-            if (remainingValue == 0) {
-                // No collateral value left — write off remaining debt as bad debt
+            if (remainingValue <= DUST_THRESHOLD_USD) {
+                // No meaningful collateral left — write off remaining debt as bad debt.
+                // Dust threshold prevents tiny residual values from blocking writeoff.
                 lendingEngine.writeOffDebt(positionId);
                 positionManager.markLiquidated(positionId, msg.sender, repayAmount);
             }

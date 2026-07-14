@@ -42,6 +42,7 @@ contract LPCompounder {
     event CompoundFeeUpdated(uint256 oldTotal, uint256 newTotal, uint256 oldCaller, uint256 newCaller);
     event MinCompoundThresholdUpdated(uint256 oldValue, uint256 newValue);
     event TokensSwept(address indexed token, address indexed to, uint256 amount);
+    event CompoundFailed(uint256 indexed positionId, bytes reason);
 
     constructor(address _core, address _positionManager, address _feeCollector) {
         require(_core != address(0) && _positionManager != address(0) && _feeCollector != address(0), "ZERO_ADDRESS");
@@ -87,10 +88,13 @@ contract LPCompounder {
     }
 
     /// @notice Batch compound multiple positions — reward goes to msg.sender
-    /// @dev Failures silently skipped — one bad position doesn't block others.
+    /// @dev Failures skipped with CompoundFailed event — one bad position doesn't block others.
     function batchCompound(uint256[] calldata positionIds) external {
         for (uint256 i = 0; i < positionIds.length; i++) {
-            try this.compoundPosition(positionIds[i], msg.sender) {} catch {}
+            try this.compoundPosition(positionIds[i], msg.sender) {}
+            catch (bytes memory reason) {
+                emit CompoundFailed(positionIds[i], reason);
+            }
         }
     }
 

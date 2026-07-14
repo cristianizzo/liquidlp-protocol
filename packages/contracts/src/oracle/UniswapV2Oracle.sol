@@ -110,8 +110,12 @@ contract UniswapV2Oracle is ILPOracle {
     }
 
     /// @inheritdoc ILPOracle
+    /// @dev Always returns true — staleness is checked reactively inside _getChainlinkPrice()
+    ///      on every getPrice() call (reverts if feed is stale). A proactive check here would
+    ///      require on-chain Chainlink reads, adding gas to every deposit. Same pattern as Aave V3
+    ///      which has no proactive oracle health gate.
     function isHealthy() external pure returns (bool) {
-        return true; // Health checked per-call via staleness in _getChainlinkPrice
+        return true;
     }
 
     // --- Internal ---

@@ -39,6 +39,22 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     /// @dev Deprecated — was `authorized` mapping. Kept for UUPS storage layout compatibility.
     mapping(address => bool) private __deprecated_authorized;
 
+    /// @dev Params struct to avoid stack-too-deep in compoundFees → _distributeFees
+    struct CompoundParams {
+        address token0;
+        address token1;
+        address lpToken;
+        uint256 tokenId;
+        address adapterAddr;
+        uint256 fees0;
+        uint256 fees1;
+        address protocolFeeRecipient;
+        uint256 protocolFeeBps;
+        address callerRewardRecipient;
+        uint256 callerRewardBps;
+        address dustRefundTo;
+    }
+
     // --- Events ---
     event CollateralAdded(uint256 indexed positionId, uint256 addedLiquidity, uint256 used0, uint256 used1);
     event CircuitBreakerNotConfigured(uint256 indexed marketId, address pool);
@@ -316,7 +332,15 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     // --- State Updates (role-based access) ---
 
     /// @notice Update position debt (called by LendingEngine)
-    function updateDebt(uint256 positionId, uint256 newDebt) external onlyLendingEngine positionExists(positionId) {
+    function updateDebt(
+        uint256 positionId,
+        uint256 newDebt
+    )
+        external
+        onlyLendingEngine
+        nonReentrant
+        positionExists(positionId)
+    {
         Position storage pos = _positions[positionId];
         require(pos.status == PositionStatus.Active || pos.status == PositionStatus.Borrowed, "POSITION_NOT_BORROWABLE");
 
@@ -342,6 +366,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     )
         external
         onlyLiquidationEngine
+        nonReentrant
         positionExists(positionId)
     {
         Position storage pos = _positions[positionId];
@@ -359,6 +384,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     )
         external
         onlyLiquidationEngine
+        nonReentrant
         positionExists(positionId)
     {
         require(liquidator != address(0), "ZERO_LIQUIDATOR");
@@ -482,46 +508,69 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         // Step 1b: Threshold check — revert so fee collection is rolled back when not worth compounding
         require(fees0 >= minFeeThreshold || fees1 >= minFeeThreshold, "BELOW_MIN_FEE_THRESHOLD");
 
+        // Distribute fees and reinvest (separate frame to avoid stack-too-deep)
+        {
+            CompoundParams memory cp = CompoundParams({
+                token0: pos.token0,
+                token1: pos.token1,
+                lpToken: pos.lpToken,
+                tokenId: pos.tokenId,
+                adapterAddr: adapterAddr,
+                fees0: fees0,
+                fees1: fees1,
+                protocolFeeRecipient: protocolFeeRecipient,
+                protocolFeeBps: protocolFeeBps,
+                callerRewardRecipient: callerRewardRecipient,
+                callerRewardBps: callerRewardBps,
+                dustRefundTo: dustRefundTo
+            });
+            addedLiquidity = _distributeFees(adapter, cp);
+        }
+
+        emit FeesCompoundedInternal(positionId, fees0, fees1, addedLiquidity);
+    }
+
+    /// @dev Internal: distribute protocol fee + caller reward, reinvest remainder.
+    ///      Uses CompoundParams struct to avoid stack-too-deep.
+    function _distributeFees(ILPAdapter adapter, CompoundParams memory cp) internal returns (uint256 addedLiquidity) {
         uint256 totalDeducted0;
         uint256 totalDeducted1;
 
-        // Step 2: Protocol fee → FeeCollector (via collectFee so accumulatedFees is tracked)
-        if (protocolFeeBps > 0 && protocolFeeRecipient != address(0)) {
-            uint256 pFee0 = Math.mulDiv(fees0, protocolFeeBps, 10_000);
-            uint256 pFee1 = Math.mulDiv(fees1, protocolFeeBps, 10_000);
+        // Protocol fee → FeeCollector (via collectFee so accumulatedFees is tracked)
+        if (cp.protocolFeeBps > 0 && cp.protocolFeeRecipient != address(0)) {
+            uint256 pFee0 = Math.mulDiv(cp.fees0, cp.protocolFeeBps, 10_000);
+            uint256 pFee1 = Math.mulDiv(cp.fees1, cp.protocolFeeBps, 10_000);
             if (pFee0 > 0) {
-                OZIERC20(pos.token0).forceApprove(protocolFeeRecipient, pFee0);
-                FeeCollector(protocolFeeRecipient).collectFee(pos.token0, pFee0, address(this), "compound");
+                OZIERC20(cp.token0).forceApprove(cp.protocolFeeRecipient, pFee0);
+                FeeCollector(cp.protocolFeeRecipient).collectFee(cp.token0, pFee0, address(this), "compound");
             }
             if (pFee1 > 0) {
-                OZIERC20(pos.token1).forceApprove(protocolFeeRecipient, pFee1);
-                FeeCollector(protocolFeeRecipient).collectFee(pos.token1, pFee1, address(this), "compound");
+                OZIERC20(cp.token1).forceApprove(cp.protocolFeeRecipient, pFee1);
+                FeeCollector(cp.protocolFeeRecipient).collectFee(cp.token1, pFee1, address(this), "compound");
             }
             totalDeducted0 += pFee0;
             totalDeducted1 += pFee1;
         }
 
-        // Step 3: Caller reward → whoever triggered the compound
-        if (callerRewardBps > 0 && callerRewardRecipient != address(0)) {
-            uint256 cReward0 = Math.mulDiv(fees0, callerRewardBps, 10_000);
-            uint256 cReward1 = Math.mulDiv(fees1, callerRewardBps, 10_000);
-            if (cReward0 > 0) OZIERC20(pos.token0).safeTransfer(callerRewardRecipient, cReward0);
-            if (cReward1 > 0) OZIERC20(pos.token1).safeTransfer(callerRewardRecipient, cReward1);
+        // Caller reward → whoever triggered the compound
+        if (cp.callerRewardBps > 0 && cp.callerRewardRecipient != address(0)) {
+            uint256 cReward0 = Math.mulDiv(cp.fees0, cp.callerRewardBps, 10_000);
+            uint256 cReward1 = Math.mulDiv(cp.fees1, cp.callerRewardBps, 10_000);
+            if (cReward0 > 0) OZIERC20(cp.token0).safeTransfer(cp.callerRewardRecipient, cReward0);
+            if (cReward1 > 0) OZIERC20(cp.token1).safeTransfer(cp.callerRewardRecipient, cReward1);
             totalDeducted0 += cReward0;
             totalDeducted1 += cReward1;
         }
 
-        // Step 4: Reinvest remainder as liquidity
-        uint256 reinvest0 = fees0 - totalDeducted0;
-        uint256 reinvest1 = fees1 - totalDeducted1;
+        // Reinvest remainder as liquidity
+        uint256 reinvest0 = cp.fees0 - totalDeducted0;
+        uint256 reinvest1 = cp.fees1 - totalDeducted1;
 
-        if (reinvest0 > 0) OZIERC20(pos.token0).safeTransfer(adapterAddr, reinvest0);
-        if (reinvest1 > 0) OZIERC20(pos.token1).safeTransfer(adapterAddr, reinvest1);
+        if (reinvest0 > 0) OZIERC20(cp.token0).safeTransfer(cp.adapterAddr, reinvest0);
+        if (reinvest1 > 0) OZIERC20(cp.token1).safeTransfer(cp.adapterAddr, reinvest1);
 
         (addedLiquidity,,) =
-            adapter.addLiquidity(pos.lpToken, pos.tokenId, pos.token0, pos.token1, reinvest0, reinvest1, dustRefundTo);
-
-        emit FeesCompoundedInternal(positionId, fees0, fees1, addedLiquidity);
+            adapter.addLiquidity(cp.lpToken, cp.tokenId, cp.token0, cp.token1, reinvest0, reinvest1, cp.dustRefundTo);
     }
 
     // --- New state vars (appended for UUPS upgrade safety) ---

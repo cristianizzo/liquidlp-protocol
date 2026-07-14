@@ -178,6 +178,9 @@ contract PriceValidator {
 
     // --- Internal ---
 
+    /// @dev Deviation anchored to parameter `a` (asymmetric by ~0.1% at 3% threshold).
+    ///      Same approach as Chainlink deviation checks. Using max(a,b) would add gas
+    ///      for negligible precision improvement.
     function _calculateDeviation(uint256 a, uint256 b) internal pure returns (uint256) {
         if (a == 0 || b == 0) return 10_000;
         uint256 diff = a > b ? a - b : b - a;
