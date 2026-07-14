@@ -27,6 +27,9 @@ contract FlashloanLiquidator is IUniswapV3FlashCallback {
     LiquidationEngine public immutable liquidationEngine;
     ISwapRouter public immutable swapRouter;
 
+    /// @dev Active flash context — set before flash, verified in callback, cleared after
+    address private _activeFlashPool;
+
     /// @dev Packed data passed through the flash loan callback
     struct FlashCallbackData {
         uint256 positionId;
@@ -102,8 +105,14 @@ contract FlashloanLiquidator is IUniswapV3FlashCallback {
         uint256 flashAmount0 = poolToken0 == borrowAsset ? params.repayAmount : 0;
         uint256 flashAmount1 = poolToken0 == borrowAsset ? 0 : params.repayAmount;
 
+        // Set active flash context before flash (callback verifies msg.sender matches)
+        _activeFlashPool = params.flashLoanPool;
+
         // Execute flash loan — callback will handle liquidation + swaps + repayment
         IUniswapV3PoolMinimal(params.flashLoanPool).flash(address(this), flashAmount0, flashAmount1, abi.encode(cbData));
+
+        // Clear active flash context
+        _activeFlashPool = address(0);
 
         // Transfer profit to caller (balance delta avoids sweeping pre-existing tokens)
         uint256 balanceAfter = IERC20(borrowAsset).balanceOf(address(this));
@@ -118,8 +127,8 @@ contract FlashloanLiquidator is IUniswapV3FlashCallback {
     function uniswapV3FlashCallback(uint256 fee0, uint256 fee1, bytes calldata data) external override {
         FlashCallbackData memory cb = abi.decode(data, (FlashCallbackData));
 
-        // Security: only the flash loan pool can call this
-        require(msg.sender == cb.flashLoanPool, "NOT_FLASH_POOL");
+        // Security: verify caller is the flash pool set by liquidate() — not from calldata
+        require(msg.sender == _activeFlashPool, "NOT_FLASH_POOL");
 
         uint256 flashFee = fee0 > 0 ? fee0 : fee1;
 
