@@ -137,8 +137,8 @@ jobs:
 
       - name: Run fork + E2E tests
         run: |
-          forge test --match-path 'test/fork/**' --fork-url http://localhost:8545 -v --threads 20 &&
-          forge test --match-path 'test/e2e/**' --fork-url http://localhost:8545 -v --threads 20
+          forge test --match-path 'test/fork/**' --fork-url http://localhost:8545 -v --threads 8 &&
+          forge test --match-path 'test/e2e/**' --fork-url http://localhost:8545 -v --threads 8
         timeout-minutes: 15
 
   lint:
