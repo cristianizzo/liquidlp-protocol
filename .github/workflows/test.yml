@@ -18,6 +18,8 @@ jobs:
         working-directory: packages/contracts
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
@@ -32,12 +34,15 @@ jobs:
 
   test-unit:
     name: Unit Tests
+    needs: build
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: packages/contracts
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
@@ -61,6 +66,7 @@ jobs:
 
   test-fork:
     name: Fork + E2E Tests
+    needs: build
     runs-on: ubuntu-latest
     environment: E2E
     defaults:
@@ -68,6 +74,8 @@ jobs:
         working-directory: packages/contracts
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
@@ -111,6 +119,8 @@ jobs:
         working-directory: packages/contracts
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
