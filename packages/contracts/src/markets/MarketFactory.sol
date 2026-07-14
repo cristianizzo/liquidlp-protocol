@@ -91,6 +91,8 @@ contract MarketFactory {
     }
 
     function setInterestRateModel(string calldata modelType, address model) external onlyPoolAdmin {
+        require(model != address(0), "ZERO_ADDRESS");
+        require(model.code.length > 0, "NOT_CONTRACT");
         interestRateModels[modelType] = model;
     }
 }

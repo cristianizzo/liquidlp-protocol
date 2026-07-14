@@ -19,6 +19,7 @@ contract InterestRateModel {
 
     constructor(uint256 baseRateAnnualBps, uint256 slope1AnnualBps, uint256 slope2AnnualBps, uint256 _kink) {
         require(_kink > 0 && _kink < BPS, "INVALID_KINK");
+        require(slope2AnnualBps >= slope1AnnualBps, "SLOPE2_MUST_BE_GTE_SLOPE1");
         baseRatePerSecond = (baseRateAnnualBps * 1e18) / (BPS * SECONDS_PER_YEAR);
         slope1PerSecond = (slope1AnnualBps * 1e18) / (BPS * SECONDS_PER_YEAR);
         slope2PerSecond = (slope2AnnualBps * 1e18) / (BPS * SECONDS_PER_YEAR);

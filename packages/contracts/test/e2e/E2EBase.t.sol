@@ -52,11 +52,9 @@ abstract contract E2EBase is ForkTestBase {
         super.setUp();
         nftManager = INonfungiblePositionManager(Constants.UNI_V3_NFT_MANAGER);
 
-        // Fork may have stale Chainlink data — increase oracle staleness tolerance
+        // Fork may have stale Chainlink data — increase registry staleness tolerance
         vm.startPrank(deployer);
-        v3Oracle.setMaxStaleness(86_400); // 24h for fork testing
-        v2Oracle.setMaxStaleness(86_400);
-        priceFeedRegistry.setMaxStaleness(86_400);
+        priceFeedRegistry.setMaxStaleness(86_400); // 24h for fork testing
         vm.stopPrank();
 
         // Fund test accounts
@@ -244,15 +242,15 @@ abstract contract E2EBase is ForkTestBase {
         ISwapRouterSingle(Constants.UNI_V3_SWAP_ROUTER)
             .exactInputSingle(
                 ISwapRouterSingle.ExactInputSingleParams({
-                tokenIn: Constants.WETH,
-                tokenOut: Constants.USDC,
-                fee: 3000,
-                recipient: whale,
-                deadline: block.timestamp + 300,
-                amountIn: dumpAmountEth,
-                amountOutMinimum: 0,
-                sqrtPriceLimitX96: 0
-            })
+                    tokenIn: Constants.WETH,
+                    tokenOut: Constants.USDC,
+                    fee: 3000,
+                    recipient: whale,
+                    deadline: block.timestamp + 300,
+                    amountIn: dumpAmountEth,
+                    amountOutMinimum: 0,
+                    sqrtPriceLimitX96: 0
+                })
             );
         vm.stopPrank();
 

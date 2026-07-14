@@ -730,7 +730,7 @@ contract PositionManagerTest is Test {
         MockMarket market6 = new MockMarket(address(usdc6), address(irm6));
         vm.startPrank(owner);
         uint256 marketId6 = core.registerMarket(address(market6));
-        pm.setPriceFeedRegistry(address(registry));
+        core.setPriceFeedRegistry(address(registry));
         vm.stopPrank();
 
         oracle.setPrice(10_000e18); // $10K collateral
@@ -761,7 +761,7 @@ contract PositionManagerTest is Test {
         MockMarket market8 = new MockMarket(address(wbtc), address(irm8));
         vm.startPrank(owner);
         uint256 marketId8 = core.registerMarket(address(market8));
-        pm.setPriceFeedRegistry(address(registry));
+        core.setPriceFeedRegistry(address(registry));
         vm.stopPrank();
 
         oracle.setPrice(100_000e18); // $100K collateral
@@ -803,7 +803,7 @@ contract PositionManagerTest is Test {
     function test_setPriceFeedRegistry_onlyPoolAdmin() public {
         vm.prank(alice);
         vm.expectRevert("NOT_POOL_ADMIN");
-        pm.setPriceFeedRegistry(makeAddr("registry"));
+        core.setPriceFeedRegistry(makeAddr("registry"));
     }
 
     function test_setPriceFeedRegistry_allowsZero() public {
@@ -812,12 +812,12 @@ contract PositionManagerTest is Test {
         registry.setPrice(address(0x1), 1e18);
 
         vm.prank(owner);
-        pm.setPriceFeedRegistry(address(registry));
-        assertEq(address(pm.priceFeedRegistry()), address(registry));
+        core.setPriceFeedRegistry(address(registry));
+        assertEq(core.priceFeedRegistryAddr(), address(registry));
 
         // Unset → fallback mode
         vm.prank(owner);
-        pm.setPriceFeedRegistry(address(0));
-        assertEq(address(pm.priceFeedRegistry()), address(0));
+        core.setPriceFeedRegistry(address(0));
+        assertEq(core.priceFeedRegistryAddr(), address(0));
     }
 }

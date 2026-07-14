@@ -82,8 +82,7 @@ contract RiskManagerIntegrationTest is Test {
         core.whitelistPool(lpToken);
         marketId = core.registerMarket(address(market));
         pm.setLendingEngine(address(le));
-        le.setRiskManager(address(rm));
-        pm.setRiskManager(address(rm));
+        core.setRiskManager(address(rm));
         vm.stopPrank();
 
         usdc.mint(address(market), 200_000_000e18);
@@ -270,8 +269,7 @@ contract RiskManagerIntegrationTest is Test {
 
     function test_worksWithoutRiskManager() public {
         vm.startPrank(owner);
-        le.setRiskManager(address(0));
-        pm.setRiskManager(address(0));
+        core.setRiskManager(address(0));
         vm.stopPrank();
 
         oracle.setPrice(50_000e18);
@@ -289,7 +287,7 @@ contract RiskManagerIntegrationTest is Test {
     function test_setRiskManager_onlyPoolAdmin() public {
         vm.prank(alice);
         vm.expectRevert("NOT_POOL_ADMIN");
-        le.setRiskManager(makeAddr("rm"));
+        core.setRiskManager(makeAddr("rm"));
     }
 
     function test_setGlobalBorrowCap_revertsZero() public {

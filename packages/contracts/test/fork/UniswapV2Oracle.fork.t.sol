@@ -5,6 +5,7 @@ import "forge-std/Test.sol";
 import {ACLManager} from "../../src/core/ACLManager.sol";
 import {ProtocolCore} from "../../src/core/ProtocolCore.sol";
 import {UniswapV2Oracle} from "../../src/oracle/UniswapV2Oracle.sol";
+import {PriceFeedRegistry} from "../../src/oracle/PriceFeedRegistry.sol";
 import {IUniswapV2Pair} from "../../src/interfaces/external/IUniswapV2.sol";
 import {IERC20} from "../../src/interfaces/IERC20.sol";
 import {ILPOracleHub} from "../../src/interfaces/ILPOracleHub.sol";
@@ -24,6 +25,7 @@ contract UniswapV2OracleForkTest is Test {
 
     ACLManager public aclManager;
     ProtocolCore public core;
+    PriceFeedRegistry public priceFeedRegistry;
     UniswapV2Oracle public oracle;
 
     address public owner = makeAddr("owner");
@@ -35,13 +37,14 @@ contract UniswapV2OracleForkTest is Test {
         vm.startPrank(owner);
         aclManager = new ACLManager(owner);
         core = new ProtocolCore(owner, address(aclManager));
-        oracle = new UniswapV2Oracle(address(core));
-
-        oracle.setPriceFeed(WETH, CL_ETH_USD);
-        oracle.setPriceFeed(USDC, CL_USDC_USD);
+        priceFeedRegistry = new PriceFeedRegistry(address(core));
+        priceFeedRegistry.setPriceFeed(WETH, CL_ETH_USD);
+        priceFeedRegistry.setPriceFeed(USDC, CL_USDC_USD);
         // Fork may have stale Chainlink data — increase tolerance for testing
-        oracle.setMaxStaleness(86_400); // 24h for fork tests
+        priceFeedRegistry.setMaxStaleness(86_400); // 24h for fork tests
         vm.stopPrank();
+
+        oracle = new UniswapV2Oracle(address(core), address(priceFeedRegistry));
     }
 
     // ========== Basic Pricing ==========
@@ -118,7 +121,7 @@ contract UniswapV2OracleForkTest is Test {
     function test_staleFeed_reverts() public {
         // Set tight staleness, then warp past it
         vm.prank(owner);
-        oracle.setMaxStaleness(300); // 5 min
+        priceFeedRegistry.setMaxStaleness(300); // 5 min
         vm.warp(block.timestamp + 1 hours);
 
         IUniswapV2Pair pair = IUniswapV2Pair(UNI_V2_WETH_USDC);
@@ -131,9 +134,10 @@ contract UniswapV2OracleForkTest is Test {
     // ========== Missing Feed ==========
 
     function test_missingFeed_reverts() public {
-        // Deploy oracle without feeds
+        // Deploy oracle with empty registry (no feeds registered)
         vm.prank(owner);
-        UniswapV2Oracle oracle2 = new UniswapV2Oracle(address(core));
+        PriceFeedRegistry emptyRegistry = new PriceFeedRegistry(address(core));
+        UniswapV2Oracle oracle2 = new UniswapV2Oracle(address(core), address(emptyRegistry));
 
         IUniswapV2Pair pair = IUniswapV2Pair(UNI_V2_WETH_USDC);
         uint256 amount = pair.totalSupply() / 100;
@@ -146,8 +150,8 @@ contract UniswapV2OracleForkTest is Test {
 
     function test_setStaleness() public {
         vm.prank(owner);
-        oracle.setMaxStaleness(7200); // 2 hours
-        assertEq(oracle.maxStaleness(), 7200);
+        priceFeedRegistry.setMaxStaleness(7200); // 2 hours
+        assertEq(priceFeedRegistry.maxStaleness(), 7200);
     }
 
     // ========== Proportional Pricing ==========

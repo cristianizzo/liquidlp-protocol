@@ -43,7 +43,7 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
 
     uint256 internal constant RAY = 1e27;
 
-    uint256 public constant DEAD_SHARES = 1000;
+    uint256 public constant DEAD_SHARES = 1_000_000;
     address internal constant DEAD_ADDRESS = address(0xdead);
 
     /// @notice Maximum liquidation bonus in bps (15% — aligned with Aave V3 upper bound)

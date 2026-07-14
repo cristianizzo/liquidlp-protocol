@@ -4,7 +4,8 @@ pragma solidity ^0.8.26;
 import "forge-std/Test.sol";
 import {ProtocolCore} from "../../src/core/ProtocolCore.sol";
 import {ACLManager} from "../../src/core/ACLManager.sol";
-import {UniswapV3Oracle, IAggregatorV3, TickMathLib, LiquidityAmountsLib} from "../../src/oracle/UniswapV3Oracle.sol";
+import {UniswapV3Oracle, TickMathLib, LiquidityAmountsLib} from "../../src/oracle/UniswapV3Oracle.sol";
+import {PriceFeedRegistry, IAggregatorV3} from "../../src/oracle/PriceFeedRegistry.sol";
 import {ILPOracleHub} from "../../src/interfaces/ILPOracleHub.sol";
 import {
     INonfungiblePositionManager,
@@ -38,6 +39,7 @@ contract UniswapV3OracleForkTest is Test {
 
     ProtocolCore public core;
     UniswapV3Oracle public oracle;
+    PriceFeedRegistry public priceFeedRegistry;
     INonfungiblePositionManager public nftManager;
 
     address public owner = makeAddr("owner");
@@ -48,18 +50,20 @@ contract UniswapV3OracleForkTest is Test {
 
         ACLManager aclManager = new ACLManager(owner);
         core = new ProtocolCore(owner, address(aclManager));
-        oracle = new UniswapV3Oracle(address(core), UNI_V3_NFT_MANAGER);
-        nftManager = INonfungiblePositionManager(UNI_V3_NFT_MANAGER);
 
-        // Register Chainlink feeds
+        // Deploy PriceFeedRegistry and register Chainlink feeds
         vm.startPrank(owner);
-        oracle.setPriceFeed(WETH, CL_ETH_USD);
-        oracle.setPriceFeed(USDC, CL_USDC_USD);
-        oracle.setPriceFeed(WBTC, CL_BTC_USD);
-        oracle.setPriceFeed(DAI, CL_DAI_USD);
+        priceFeedRegistry = new PriceFeedRegistry(address(core));
+        priceFeedRegistry.setPriceFeed(WETH, CL_ETH_USD);
+        priceFeedRegistry.setPriceFeed(USDC, CL_USDC_USD);
+        priceFeedRegistry.setPriceFeed(WBTC, CL_BTC_USD);
+        priceFeedRegistry.setPriceFeed(DAI, CL_DAI_USD);
         // Use generous staleness for fork testing (node may not be fully synced)
-        oracle.setMaxStaleness(86_400); // 24 hours
+        priceFeedRegistry.setMaxStaleness(86_400); // 24 hours
         vm.stopPrank();
+
+        oracle = new UniswapV3Oracle(address(core), UNI_V3_NFT_MANAGER, address(priceFeedRegistry));
+        nftManager = INonfungiblePositionManager(UNI_V3_NFT_MANAGER);
     }
 
     // ========================================================
@@ -355,7 +359,7 @@ contract UniswapV3OracleForkTest is Test {
 
         // Set staleness to minimum (300 seconds), then warp far into the future
         vm.prank(owner);
-        oracle.setMaxStaleness(300);
+        priceFeedRegistry.setMaxStaleness(300);
 
         // Jump 1 year ahead - any Chainlink feed will be stale
         vm.warp(block.timestamp + 365 days);
@@ -397,9 +401,6 @@ contract UniswapV3OracleForkTest is Test {
 
         oracle.setMaxDeviation(500);
         assertEq(oracle.maxDeviationBps(), 500);
-
-        oracle.setMaxStaleness(7200);
-        assertEq(oracle.maxStaleness(), 7200);
 
         vm.stopPrank();
     }

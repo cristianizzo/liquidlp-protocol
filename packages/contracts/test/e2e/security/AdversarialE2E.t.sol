@@ -445,9 +445,8 @@ contract AdversarialE2E is E2EBase {
     // ========== 10. Stale Oracle Price — Deposit Blocked ==========
 
     function test_attack_staleOraclePrice_depositBlocked() public {
-        // Set oracle staleness to minimum allowed (300s)
+        // Set registry staleness to minimum allowed (300s)
         vm.startPrank(deployer);
-        v3Oracle.setMaxStaleness(300);
         priceFeedRegistry.setMaxStaleness(300);
         vm.stopPrank();
 

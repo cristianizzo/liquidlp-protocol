@@ -5,6 +5,7 @@ import "forge-std/Test.sol";
 import {ProtocolCore} from "../../src/core/ProtocolCore.sol";
 import {ACLManager} from "../../src/core/ACLManager.sol";
 import {UniswapV3Oracle} from "../../src/oracle/UniswapV3Oracle.sol";
+import {PriceFeedRegistry} from "../../src/oracle/PriceFeedRegistry.sol";
 import {ILPOracleHub} from "../../src/interfaces/ILPOracleHub.sol";
 import {IUniswapV3Pool} from "../../src/interfaces/external/IUniswapV3.sol";
 
@@ -101,6 +102,7 @@ contract MockV3Factory {
 contract TwapCardinalityTest is Test {
     ProtocolCore public core;
     ACLManager public aclManager;
+    PriceFeedRegistry public priceFeedRegistry;
     UniswapV3OracleHarness public oracle;
     MockV3Pool public mockPool;
 
@@ -110,9 +112,12 @@ contract TwapCardinalityTest is Test {
         aclManager = new ACLManager(owner);
         core = new ProtocolCore(owner, address(aclManager));
 
+        vm.prank(owner);
+        priceFeedRegistry = new PriceFeedRegistry(address(core));
+
         // Mock NFT manager — constructor calls positionManager.factory()
         MockNFTManager nftMgr = new MockNFTManager();
-        oracle = new UniswapV3OracleHarness(address(core), address(nftMgr));
+        oracle = new UniswapV3OracleHarness(address(core), address(nftMgr), address(priceFeedRegistry));
         mockPool = new MockV3Pool();
     }
 
@@ -217,7 +222,13 @@ contract TwapCardinalityTest is Test {
 
 /// @notice Harness to expose internal _getTwapTick for testing
 contract UniswapV3OracleHarness is UniswapV3Oracle {
-    constructor(address _core, address _nftManager) UniswapV3Oracle(_core, _nftManager) {}
+    constructor(
+        address _core,
+        address _nftManager,
+        address _priceFeedRegistry
+    )
+        UniswapV3Oracle(_core, _nftManager, _priceFeedRegistry)
+    {}
 
     function exposed_getTwapTick(address pool) external view returns (int24) {
         return _getTwapTick(pool);

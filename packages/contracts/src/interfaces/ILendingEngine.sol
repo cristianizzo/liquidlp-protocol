@@ -34,4 +34,13 @@ interface ILendingEngine {
     /// @notice Accrue interest for a market
     /// @param marketId The market to accrue interest for
     function accrueInterest(uint256 marketId) external;
+
+    /// @notice Repay debt on behalf of a borrower (used by LiquidationEngine)
+    function repayOnBehalf(uint256 positionId, uint256 repayAmount) external;
+
+    /// @notice Write off bad debt from an underwater position (called by LiquidationEngine)
+    function writeOffDebt(uint256 positionId) external;
+
+    /// @notice Set borrow cooldown (blocks after deposit before borrowing allowed)
+    function setBorrowCooldown(uint256 _blocks) external;
 }

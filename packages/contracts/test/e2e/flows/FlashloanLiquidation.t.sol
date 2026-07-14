@@ -381,8 +381,6 @@ contract FlashloanLiquidation is E2EBase {
         // Clear mocks for next scenario
         vm.clearMockedCalls();
         vm.startPrank(deployer);
-        v3Oracle.setMaxStaleness(86_400);
-        v2Oracle.setMaxStaleness(86_400);
         priceFeedRegistry.setMaxStaleness(86_400);
         vm.stopPrank();
     }

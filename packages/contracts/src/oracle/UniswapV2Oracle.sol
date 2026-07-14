@@ -8,15 +8,7 @@ import {IERC20} from "../interfaces/IERC20.sol";
 import {ProtocolCore} from "../core/ProtocolCore.sol";
 import {ACLManager} from "../core/ACLManager.sol";
 import {LPMath} from "../libraries/LPMath.sol";
-
-/// @notice Chainlink AggregatorV3 minimal interface
-interface IAggregatorV3 {
-    function latestRoundData()
-        external
-        view
-        returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound);
-    function decimals() external view returns (uint8);
-}
+import {PriceFeedRegistry} from "./PriceFeedRegistry.sol";
 
 /// @title UniswapV2Oracle
 /// @notice Prices Uniswap V2 LP tokens using sqrt(k) fair pricing + Chainlink
@@ -31,40 +23,19 @@ interface IAggregatorV3 {
 ///      Result is in 18-decimal USD.
 contract UniswapV2Oracle is ILPOracle {
     ProtocolCore public immutable core;
-
-    mapping(address => address) public priceFeeds; // token → Chainlink feed
-
-    // --- Configurable Parameters ---
-    uint256 public maxStaleness = 3600; // 1 hour
-
-    // --- Events ---
-    event MaxStalenessUpdated(uint256 oldValue, uint256 newValue);
-    event PriceFeedUpdated(address indexed token, address indexed feed);
+    PriceFeedRegistry public immutable priceFeedRegistry;
 
     modifier onlyPoolAdmin() {
         require(core.aclManager().isPoolAdmin(msg.sender), "NOT_POOL_ADMIN");
         _;
     }
 
-    constructor(address _core) {
+    constructor(address _core, address _priceFeedRegistry) {
         require(_core != address(0), "ZERO_CORE");
         require(_core.code.length > 0, "NOT_CONTRACT");
+        require(_priceFeedRegistry != address(0), "ZERO_REGISTRY");
         core = ProtocolCore(_core);
-    }
-
-    // --- Admin ---
-
-    function setMaxStaleness(uint256 _maxStaleness) external onlyPoolAdmin {
-        require(_maxStaleness >= 300 && _maxStaleness <= 86_400, "OUT_OF_BOUNDS");
-        emit MaxStalenessUpdated(maxStaleness, _maxStaleness);
-        maxStaleness = _maxStaleness;
-    }
-
-    function setPriceFeed(address token, address feed) external onlyPoolAdmin {
-        require(token != address(0) && feed != address(0), "ZERO_ADDRESS");
-        require(feed.code.length > 0, "NOT_CONTRACT");
-        emit PriceFeedUpdated(token, feed);
-        priceFeeds[token] = feed;
+        priceFeedRegistry = PriceFeedRegistry(_priceFeedRegistry);
     }
 
     // --- ILPOracle Implementation ---
@@ -98,7 +69,7 @@ contract UniswapV2Oracle is ILPOracle {
     }
 
     /// @inheritdoc ILPOracle
-    /// @dev Always returns true — staleness is checked reactively inside _getChainlinkPrice()
+    /// @dev Always returns true — staleness is checked reactively inside priceFeedRegistry.getPrice()
     ///      on every getPrice() call (reverts if feed is stale). A proactive check here would
     ///      require on-chain Chainlink reads, adding gas to every deposit. Same pattern as Aave V3
     ///      which has no proactive oracle health gate.
@@ -129,33 +100,12 @@ contract UniswapV2Oracle is ILPOracle {
         uint256 reserve0 = _normalizeTo18(uint256(reserve0Raw), dec0);
         uint256 reserve1 = _normalizeTo18(uint256(reserve1Raw), dec1);
 
-        // Get Chainlink prices (18-decimal USD)
-        uint256 price0 = _getChainlinkPrice(token0);
-        uint256 price1 = _getChainlinkPrice(token1);
+        // Get prices from PriceFeedRegistry (18-decimal USD)
+        uint256 price0 = priceFeedRegistry.getPrice(token0);
+        uint256 price1 = priceFeedRegistry.getPrice(token1);
 
         // Fair LP value via sqrt(k) formula
         return LPMath.fairLPValueV2(reserve0, reserve1, totalSupply, price0, price1, amount);
-    }
-
-    /// @notice Get token price from Chainlink (18 decimals)
-    function _getChainlinkPrice(address token) internal view returns (uint256) {
-        address feed = priceFeeds[token];
-        require(feed != address(0), "NO_PRICE_FEED");
-
-        (uint80 roundId, int256 answer,, uint256 updatedAt, uint80 answeredInRound) =
-            IAggregatorV3(feed).latestRoundData();
-        require(answer > 0, "INVALID_PRICE");
-        require(updatedAt > 0 && answeredInRound >= roundId, "STALE_ROUND");
-        require(block.timestamp >= updatedAt && block.timestamp - updatedAt <= maxStaleness, "STALE_PRICE");
-
-        uint8 feedDecimals = IAggregatorV3(feed).decimals();
-        require(feedDecimals <= 36, "INVALID_FEED_DECIMALS");
-        if (feedDecimals < 18) {
-            return uint256(answer) * (10 ** (18 - feedDecimals));
-        } else if (feedDecimals > 18) {
-            return uint256(answer) / (10 ** (feedDecimals - 18));
-        }
-        return uint256(answer);
     }
 
     /// @notice Normalize token amount to 18 decimals

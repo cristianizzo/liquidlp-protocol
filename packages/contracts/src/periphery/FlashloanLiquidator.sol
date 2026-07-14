@@ -145,6 +145,8 @@ contract FlashloanLiquidator is IUniswapV3FlashCallback {
         liquidationEngine.liquidate(cb.positionId, cb.repayAmount, block.timestamp, 0, 0);
 
         // Step 2: Swap received tokens back to borrow asset
+        // amountOutMinimum is 0 — slippage protection is via minProfit in liquidate().
+        // Callers SHOULD set minProfit > 0 to prevent sandwich attacks.
         // Skip swap if token is already the borrow asset
         if (cb.token0 != cb.borrowAsset) {
             uint256 balance0 = IERC20(cb.token0).balanceOf(address(this));

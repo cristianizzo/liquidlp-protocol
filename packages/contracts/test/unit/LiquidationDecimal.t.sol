@@ -112,7 +112,7 @@ contract LiquidationDecimalTest is Test {
 
         vm.startPrank(owner);
         uint256 marketId = core.registerMarket(address(market6));
-        pm.setPriceFeedRegistry(address(registry));
+        core.setPriceFeedRegistry(address(registry));
         vm.stopPrank();
 
         // Fund: market + adapter
@@ -238,7 +238,7 @@ contract LiquidationDecimalTest is Test {
 
         vm.startPrank(owner);
         uint256 marketId = core.registerMarket(address(marketBtc));
-        pm.setPriceFeedRegistry(address(registry));
+        core.setPriceFeedRegistry(address(registry));
         vm.stopPrank();
 
         wbtc.mint(address(marketBtc), 100e8); // 100 BTC
@@ -300,7 +300,7 @@ contract LiquidationDecimalTest is Test {
 
         vm.startPrank(owner);
         uint256 marketId = core.registerMarket(address(market6));
-        pm.setPriceFeedRegistry(address(registry));
+        core.setPriceFeedRegistry(address(registry));
         vm.stopPrank();
 
         usdc6.mint(address(market6), 10_000_000e6);
@@ -352,7 +352,7 @@ contract LiquidationDecimalTest is Test {
 
         vm.startPrank(owner);
         uint256 marketId = core.registerMarket(address(market6));
-        pm.setPriceFeedRegistry(address(registry));
+        core.setPriceFeedRegistry(address(registry));
         vm.stopPrank();
 
         usdc6.mint(address(market6), 10_000_000e6);
@@ -389,7 +389,7 @@ contract LiquidationDecimalTest is Test {
 
         vm.startPrank(owner);
         uint256 marketId = core.registerMarket(address(marketBtc));
-        pm.setPriceFeedRegistry(address(registry));
+        core.setPriceFeedRegistry(address(registry));
         vm.stopPrank();
 
         wbtc.mint(address(marketBtc), 1000e8);

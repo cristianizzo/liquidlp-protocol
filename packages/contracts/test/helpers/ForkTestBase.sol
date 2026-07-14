@@ -150,14 +150,8 @@ abstract contract ForkTestBase is Test {
         }
 
         // 8. Oracles
-        v3Oracle = new UniswapV3Oracle(address(core), Constants.UNI_V3_NFT_MANAGER);
-        v2Oracle = new UniswapV2Oracle(address(core));
-
-        // Set Chainlink price feeds
-        v3Oracle.setPriceFeed(Constants.WETH, Constants.CL_ETH_USD);
-        v3Oracle.setPriceFeed(Constants.USDC, Constants.CL_USDC_USD);
-        v2Oracle.setPriceFeed(Constants.WETH, Constants.CL_ETH_USD);
-        v2Oracle.setPriceFeed(Constants.USDC, Constants.CL_USDC_USD);
+        v3Oracle = new UniswapV3Oracle(address(core), Constants.UNI_V3_NFT_MANAGER, address(priceFeedRegistry));
+        v2Oracle = new UniswapV2Oracle(address(core), address(priceFeedRegistry));
 
         // Register oracles in hub
         oracleHub.registerOracle(ILPAdapter.LPType.UniswapV3, address(v3Oracle));
@@ -208,11 +202,10 @@ abstract contract ForkTestBase is Test {
         aclManager.addPositionManager(address(positionManager));
         positionManager.setLendingEngine(address(lendingEngine));
 
-        // 14. Wire RiskManager + PriceFeedRegistry
-        lendingEngine.setRiskManager(address(riskManager));
-        positionManager.setRiskManager(address(riskManager));
+        // 14. Wire RiskManager + PriceFeedRegistry (via ProtocolCore)
+        core.setRiskManager(address(riskManager));
+        core.setPriceFeedRegistry(address(priceFeedRegistry));
         positionManager.setCircuitBreaker(address(circuitBreaker));
-        positionManager.setPriceFeedRegistry(address(priceFeedRegistry));
 
         // 15. Grant KEEPER to PriceValidator (so it can call CircuitBreaker.pausePool)
         aclManager.addKeeper(address(priceValidator));

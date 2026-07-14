@@ -47,4 +47,13 @@ interface ILiquidationEngine {
     /// @param positionId The position to check
     /// @return bonus Liquidation bonus in basis points
     function getLiquidationBonus(uint256 positionId) external view returns (uint256 bonus);
+
+    /// @notice Set the maximum liquidation portion
+    function setMaxLiquidationPortion(uint256 _maxLiquidationPortion) external;
+
+    /// @notice Set the FeeCollector address
+    function setFeeCollector(address _feeCollector) external;
+
+    /// @notice Rescue tokens stuck in this contract
+    function rescueTokens(address token, address to, uint256 amount) external;
 }

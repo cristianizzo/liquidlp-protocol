@@ -128,12 +128,10 @@ contract RiskManager {
     // --- Deposit Validation (called by PositionManager) ---
 
     /// @notice Validate a deposit against risk limits
-    /// @param depositor User address
     /// @param positionValue Position value in 18-dec USD
     /// @param marketId Market ID for supply cap
     /// @param userPositionCount Current number of positions the user has
     function validateDeposit(
-        address depositor,
         uint256 positionValue,
         uint256 marketId,
         uint256 userPositionCount
@@ -167,10 +165,16 @@ contract RiskManager {
         emit DepositRecorded(valueUsd, marketId, marketCurrentSupply[marketId]);
     }
 
+    event SupplyTrackingDrift(uint256 tracked, uint256 withdrawn, uint256 indexed marketId);
+
     /// @notice Record a withdrawal for supply cap tracking (18-dec USD)
     function recordWithdraw(uint256 valueUsd, uint256 marketId) external onlyPositionManager {
-        marketCurrentSupply[marketId] =
-            valueUsd > marketCurrentSupply[marketId] ? 0 : marketCurrentSupply[marketId] - valueUsd;
+        if (valueUsd > marketCurrentSupply[marketId]) {
+            emit SupplyTrackingDrift(marketCurrentSupply[marketId], valueUsd, marketId);
+            marketCurrentSupply[marketId] = 0;
+        } else {
+            marketCurrentSupply[marketId] -= valueUsd;
+        }
         emit WithdrawRecorded(valueUsd, marketId, marketCurrentSupply[marketId]);
     }
 

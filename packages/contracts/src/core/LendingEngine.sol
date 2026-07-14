@@ -13,7 +13,6 @@ import {ProtocolCore} from "./ProtocolCore.sol";
 import {ACLManager} from "./ACLManager.sol";
 import {PriceFeedRegistry} from "../oracle/PriceFeedRegistry.sol";
 import {PositionManager} from "./PositionManager.sol";
-import {Market} from "../markets/Market.sol";
 import {RiskManager} from "../security/RiskManager.sol";
 import {CircuitBreaker} from "../security/CircuitBreaker.sol";
 import {TokenUtils} from "../libraries/TokenUtils.sol";
@@ -46,10 +45,10 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
     uint256 public constant MIN_COOLDOWN = 1;
     uint256 public constant MAX_COOLDOWN = 50;
 
-    RiskManager public riskManager;
+    /// @dev Deprecated — riskManager moved to ProtocolCore. Kept for UUPS storage layout.
+    address private __deprecated_riskManager;
 
     event BorrowCooldownUpdated(uint256 oldValue, uint256 newValue);
-    event RiskManagerUpdated(address indexed oldManager, address indexed newManager);
 
     // --- ACL Helpers ---
     function _acl() internal view returns (ACLManager) {
@@ -92,12 +91,6 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
         borrowCooldownBlocks = _blocks;
     }
 
-    function setRiskManager(address _riskManager) external onlyPoolAdmin {
-        require(_riskManager == address(0) || _riskManager.code.length > 0, "NOT_CONTRACT");
-        emit RiskManagerUpdated(address(riskManager), _riskManager);
-        riskManager = RiskManager(_riskManager);
-    }
-
     // --- Core Logic ---
 
     /// @inheritdoc ILendingEngine
@@ -122,7 +115,7 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
         require(block.number > pos.depositBlock + borrowCooldownBlocks, "BORROW_COOLDOWN");
 
         address marketAddr = _getMarketAddr(pos.marketId);
-        Market market = Market(marketAddr);
+        IMarket market = IMarket(marketAddr);
         market.accrueInterest();
 
         uint256 currentDebt = _getCurrentDebt(positionId, market);
@@ -131,13 +124,16 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
         require(newTotalDebt <= maxBorrow, "EXCEEDS_MAX_LTV");
 
         // RiskManager: validate caps (all in 18-dec USD)
-        if (address(riskManager) != address(0)) {
-            uint256 positionValue = positionManager.getPositionValue(positionId);
-            IMarket.MarketConfig memory config = IMarket(marketAddr).getConfig();
-            uint256 amountUsd = _toUsd(amount, config.borrowAsset);
-            (bool valid, string memory reason) =
-                riskManager.validateAndRecordBorrow(amountUsd, positionValue, pos.lpType);
-            require(valid, reason);
+        {
+            address rmAddr = core.riskManagerAddr();
+            if (rmAddr != address(0)) {
+                uint256 positionValue = positionManager.getPositionValue(positionId);
+                IMarket.MarketConfig memory config = IMarket(marketAddr).getConfig();
+                uint256 amountUsd = _toUsd(amount, config.borrowAsset);
+                (bool valid, string memory reason) =
+                    RiskManager(rmAddr).validateAndRecordBorrow(amountUsd, positionValue, pos.lpType);
+                require(valid, reason);
+            }
         }
 
         uint256 currentBorrowIndex = market.borrowIndex();
@@ -173,9 +169,10 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
 
     /// @inheritdoc ILendingEngine
     function getDebt(uint256 positionId) external view returns (uint256) {
+        if (debtInfo[positionId].principal == 0) return 0;
         PositionManager.Position memory pos = positionManager.getPosition(positionId);
         address marketAddr = _getMarketAddr(pos.marketId);
-        return _getCurrentDebt(positionId, Market(marketAddr));
+        return _getCurrentDebt(positionId, IMarket(marketAddr));
     }
 
     /// @inheritdoc ILendingEngine
@@ -188,7 +185,7 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
     /// @inheritdoc ILendingEngine
     function accrueInterest(uint256 marketId) public {
         address marketAddr = _getMarketAddr(marketId);
-        Market(marketAddr).accrueInterest();
+        IMarket(marketAddr).accrueInterest();
     }
 
     // --- Internal ---
@@ -197,7 +194,7 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
         PositionManager.Position memory pos = positionManager.getPosition(positionId);
 
         address marketAddr = _getMarketAddr(pos.marketId);
-        Market market = Market(marketAddr);
+        IMarket market = IMarket(marketAddr);
         market.accrueInterest();
 
         uint256 currentDebt = _getCurrentDebt(positionId, market);
@@ -216,23 +213,26 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
         market.transferIn(payer, repayAmount);
 
         // RiskManager: track repayment (18-dec USD)
-        if (address(riskManager) != address(0)) {
-            IMarket.MarketConfig memory config = IMarket(marketAddr).getConfig();
-            uint256 repayUsd = _toUsd(repayAmount, config.borrowAsset);
-            riskManager.recordRepay(repayUsd, pos.lpType);
+        {
+            address rmAddr = core.riskManagerAddr();
+            if (rmAddr != address(0)) {
+                IMarket.MarketConfig memory config = IMarket(marketAddr).getConfig();
+                uint256 repayUsd = _toUsd(repayAmount, config.borrowAsset);
+                RiskManager(rmAddr).recordRepay(repayUsd, pos.lpType);
+            }
         }
 
         emit Repaid(positionId, payer, repayAmount, remainingDebt);
     }
 
-    function _getCurrentDebt(uint256 positionId, Market market) internal view returns (uint256) {
+    function _getCurrentDebt(uint256 positionId, IMarket market) internal view returns (uint256) {
         DebtInfo memory info = debtInfo[positionId];
         if (info.principal == 0) return 0;
 
         uint256 currentIndex = market.borrowIndex();
         require(currentIndex > 0 && info.borrowIndex > 0, "INDEX_ZERO");
 
-        return (info.principal * currentIndex) / info.borrowIndex;
+        return Math.mulDiv(info.principal, currentIndex, info.borrowIndex);
     }
 
     /// @notice Calculate max borrow in borrow asset decimals
@@ -243,7 +243,7 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
 
         uint8 borrowDecimals = TokenUtils.safeDecimals(config.borrowAsset);
 
-        PriceFeedRegistry registry = positionManager.priceFeedRegistry();
+        PriceFeedRegistry registry = PriceFeedRegistry(core.priceFeedRegistryAddr());
         if (address(registry) != address(0)) {
             uint256 borrowAssetPrice = registry.getPrice(config.borrowAsset);
             require(borrowAssetPrice > 0, "ZERO_PRICE");
@@ -260,7 +260,7 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
     /// @notice Convert borrow asset amount to 18-dec USD
     function _toUsd(uint256 amount, address borrowAsset) internal view returns (uint256) {
         uint8 dec = TokenUtils.safeDecimals(borrowAsset);
-        PriceFeedRegistry registry = positionManager.priceFeedRegistry();
+        PriceFeedRegistry registry = PriceFeedRegistry(core.priceFeedRegistryAddr());
         if (address(registry) != address(0)) {
             return registry.getUsdValue(borrowAsset, amount, dec);
         }
@@ -281,7 +281,7 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
     function writeOffDebt(uint256 positionId) external whenNotPaused onlyLiquidationEngine nonReentrant {
         PositionManager.Position memory pos = positionManager.getPosition(positionId);
         address marketAddr = _getMarketAddr(pos.marketId);
-        Market market = Market(marketAddr);
+        IMarket market = IMarket(marketAddr);
 
         // Accrue interest to ensure borrowIndex is current before reading debt
         market.accrueInterest();
@@ -297,14 +297,17 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
         market.recordDeficit(currentDebt);
 
         // Update RiskManager to prevent ghost debt from blocking new borrows
-        if (address(riskManager) != address(0)) {
-            IMarket.MarketConfig memory config = IMarket(marketAddr).getConfig();
-            uint256 debtUsd = _toUsd(currentDebt, config.borrowAsset);
-            riskManager.recordRepay(debtUsd, pos.lpType);
+        {
+            address rmAddr = core.riskManagerAddr();
+            if (rmAddr != address(0)) {
+                IMarket.MarketConfig memory config = IMarket(marketAddr).getConfig();
+                uint256 debtUsd = _toUsd(currentDebt, config.borrowAsset);
+                RiskManager(rmAddr).recordRepay(debtUsd, pos.lpType);
+            }
         }
     }
 
     // --- Storage Gap ---
-    // Reduced from 50 to 49 after adding riskManager.
+    // 49 slots: layout unchanged (deprecated riskManager slot preserved for UUPS compatibility).
     uint256[49] private __gap;
 }

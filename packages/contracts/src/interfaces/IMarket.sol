@@ -44,4 +44,49 @@ interface IMarket {
 
     /// @notice Get market configuration
     function getConfig() external view returns (MarketConfig memory);
+
+    /// @notice Accrue interest on the market
+    function accrueInterest() external;
+
+    /// @notice Transfer borrow asset out (called by LendingEngine)
+    function transferOut(address to, uint256 amount) external;
+
+    /// @notice Transfer borrow asset in (called by LendingEngine)
+    function transferIn(address from, uint256 amount) external;
+
+    /// @notice Cumulative borrow interest index (RAY = 1e27 precision)
+    function borrowIndex() external view returns (uint256);
+
+    /// @notice Record bad debt from underwater liquidation (called by LendingEngine)
+    function recordDeficit(uint256 amount) external;
+
+    /// @notice Cover deficit using protocol reserves (callable by RiskAdmin)
+    function eliminateDeficit() external;
+
+    /// @notice Distribute accumulated protocol reserves to FeeCollector
+    function distributeReserves() external;
+
+    /// @notice Update market risk parameters
+    function updateConfig(
+        uint256 _maxLtv,
+        uint256 _liquidationThreshold,
+        uint256 _liquidationBonus,
+        uint256 _borrowCap
+    )
+        external;
+
+    /// @notice Set reserve factor (% of interest kept by protocol)
+    function setReserveFactor(uint256 _bps) external;
+
+    /// @notice Set the FeeCollector address
+    function setFeeCollector(address _feeCollector) external;
+
+    /// @notice Set the interest rate model
+    function setInterestRateModel(address _newModel) external;
+
+    /// @notice Accumulated protocol reserves (in borrow asset decimals)
+    function protocolReserves() external view returns (uint256);
+
+    /// @notice Reserve factor in basis points
+    function reserveFactorBps() external view returns (uint256);
 }

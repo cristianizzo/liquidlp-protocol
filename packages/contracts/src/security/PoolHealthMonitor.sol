@@ -43,6 +43,7 @@ contract PoolHealthMonitor {
     }
 
     constructor(address _core, address _circuitBreaker) {
+        require(_core != address(0) && _circuitBreaker != address(0), "ZERO_ADDRESS");
         core = ProtocolCore(_core);
         circuitBreaker = CircuitBreaker(_circuitBreaker);
     }
