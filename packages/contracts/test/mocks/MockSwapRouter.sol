@@ -50,4 +50,22 @@ contract MockSwapRouter is ISwapRouter {
         require(amountOut >= amountOutMin, "SLIPPAGE");
         IERC20(outputToken).transfer(msg.sender, amountOut);
     }
+
+    function exactInput(ExactInputParams calldata params) external payable override returns (uint256 amountOut) {
+        require(!shouldRevert, "SWAP_FAILED");
+
+        // Decode first token from path (first 20 bytes of packed encoding)
+        address tokenIn = address(bytes20(params.path[:20]));
+
+        // Pull tokenIn from caller
+        IERC20(tokenIn).transferFrom(msg.sender, address(this), params.amountIn);
+
+        // Apply exchange rate
+        uint256 rate = exchangeRate[tokenIn];
+        if (rate == 0) rate = defaultRate;
+        amountOut = (params.amountIn * rate) / 1e18;
+
+        require(amountOut >= params.amountOutMinimum, "SLIPPAGE");
+        IERC20(outputToken).transfer(params.recipient, amountOut);
+    }
 }

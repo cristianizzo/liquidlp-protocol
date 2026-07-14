@@ -110,6 +110,13 @@ interface IUniswapV3Pool {
     function token1() external view returns (address);
     function fee() external view returns (uint24);
     function liquidity() external view returns (uint128);
+
+    function flash(address recipient, uint256 amount0, uint256 amount1, bytes calldata data) external;
+}
+
+/// @notice Callback interface for Uniswap V3 flash loans
+interface IUniswapV3FlashCallback {
+    function uniswapV3FlashCallback(uint256 fee0, uint256 fee1, bytes calldata data) external;
 }
 
 /// @notice Minimal interface for Uniswap V3 Factory

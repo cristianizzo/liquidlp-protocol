@@ -19,4 +19,16 @@ interface ISwapRouter {
     )
         external
         returns (uint256 amountOut);
+
+    /// @notice Swap exact input along a multi-hop path
+    /// @dev Matches Uniswap V3 SwapRouter.exactInput signature
+    struct ExactInputParams {
+        bytes path;
+        address recipient;
+        uint256 deadline;
+        uint256 amountIn;
+        uint256 amountOutMinimum;
+    }
+
+    function exactInput(ExactInputParams calldata params) external payable returns (uint256 amountOut);
 }
