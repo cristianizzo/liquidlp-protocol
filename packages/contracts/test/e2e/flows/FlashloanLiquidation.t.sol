@@ -415,7 +415,7 @@ contract FlashloanLiquidation is E2EBase {
     }
 
     // ========================================================================
-    // 7. CONSERVATIVE BORROW — 95% LTV, moderate dump
+    // 7. AGGRESSIVE BORROW — 95% LTV, moderate dump
     // ========================================================================
 
     function test_scenario_conservativeBorrow() public {

@@ -27,7 +27,8 @@ contract FlashloanLiquidator is IUniswapV3FlashCallback {
     LiquidationEngine public immutable liquidationEngine;
     ISwapRouter public immutable swapRouter;
 
-    /// @dev Active flash context — set before flash, verified in callback, cleared after
+    /// @dev Active flash context — set before flash, verified in callback, cleared after.
+    ///      Also serves as reentrancy guard (non-zero = flash in progress).
     address private _activeFlashPool;
 
     /// @dev Packed data passed through the flash loan callback
@@ -74,6 +75,9 @@ contract FlashloanLiquidator is IUniswapV3FlashCallback {
     /// @param params Liquidation parameters including position, flash pool, swap paths, and min profit
     /// @return profit Amount of borrow asset profit sent to caller
     function liquidate(LiquidateParams calldata params) external returns (uint256 profit) {
+        // Reentrancy guard — _activeFlashPool is non-zero during a flash
+        require(_activeFlashPool == address(0), "FLASH_IN_PROGRESS");
+
         // Read position and market info
         IPositionManager.Position memory pos = positionManager.getPosition(params.positionId);
         require(pos.owner != address(0), "POSITION_NOT_FOUND");
@@ -117,6 +121,7 @@ contract FlashloanLiquidator is IUniswapV3FlashCallback {
         // Transfer profit to caller (balance delta avoids sweeping pre-existing tokens)
         uint256 balanceAfter = IERC20(borrowAsset).balanceOf(address(this));
         profit = balanceAfter > balanceBefore ? balanceAfter - balanceBefore : 0;
+        require(profit >= params.minProfit, "INSUFFICIENT_PROFIT");
         if (profit > 0) {
             IERC20(borrowAsset).safeTransfer(msg.sender, profit);
         }
@@ -179,11 +184,9 @@ contract FlashloanLiquidator is IUniswapV3FlashCallback {
         // Repay to the flash loan pool
         IERC20(cb.borrowAsset).safeTransfer(cb.flashLoanPool, totalOwed);
 
-        // Step 4: Profit check
-        uint256 profit = IERC20(cb.borrowAsset).balanceOf(address(this));
-        require(profit >= cb.minProfit, "INSUFFICIENT_PROFIT");
-
-        emit FlashLiquidation(cb.positionId, cb.caller, cb.borrowAsset, cb.repayAmount, profit);
+        // Profit check is in liquidate() via balance delta — not here
+        // (callback balance includes pre-existing tokens which distorts absolute check)
+        emit FlashLiquidation(cb.positionId, cb.caller, cb.borrowAsset, cb.repayAmount, 0);
     }
 }
 
