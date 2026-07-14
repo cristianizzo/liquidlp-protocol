@@ -91,13 +91,20 @@ contract FlashloanLiquidation is E2EBase {
         uint256 debtAfter = _getDebt(positionId);
         assertLt(debtAfter, borrowAmount, "Debt must decrease after flash liquidation");
 
-        // Verify caller received profit (or at least did not lose money)
-        uint256 totalReceived = callerUsdcAfter - callerUsdcBefore + profit;
-        assertGe(totalReceived, 0, "Caller must not lose funds");
+        // Verify caller profited — balance increased after flash liquidation
+        assertGt(callerUsdcAfter, callerUsdcBefore, "Caller must profit from flash liquidation");
+        uint256 actualProfit = callerUsdcAfter - callerUsdcBefore;
+        assertGt(actualProfit, 0, "Profit must be > 0");
 
-        console.log("Flash liquidation profit: %s USDC", (callerUsdcAfter - callerUsdcBefore) / 1e6);
-        console.log("Debt before: %s, after: %s", borrowAmount / 1e6, debtAfter / 1e6);
+        // The key: liquidator did NOT need to spend their own USDC
+        // The flash loan provided the capital, profit comes from liquidation bonus
+        // Verify the profit is reasonable (liquidation bonus ~5% of seized collateral)
+
         console.log("=== Flash Liquidation V3 Full Flow Passed ===");
+        console.log("Liquidator balance before: %s USDC", callerUsdcBefore / 1e6);
+        console.log("Liquidator balance after:  %s USDC", callerUsdcAfter / 1e6);
+        console.log("Profit: %s USDC", actualProfit / 1e6);
+        console.log("Debt before: %s, after: %s USDC", borrowAmount / 1e6, debtAfter / 1e6);
     }
 
     // ========================================================================
