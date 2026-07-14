@@ -94,7 +94,6 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
         require(_config.liquidationThreshold <= 9800, "THRESHOLD_TOO_HIGH");
         require(_config.maxLtv < _config.liquidationThreshold, "LTV_MUST_BE_BELOW_LIQ_THRESHOLD");
         require(_config.liquidationBonus <= MAX_LIQUIDATION_BONUS, "BONUS_TOO_HIGH");
-        require(_config.haircut <= 5000, "HAIRCUT_TOO_HIGH");
         config = _config;
         interestRateModel = InterestRateModel(_interestRateModel);
         core = ProtocolCore(_core);
@@ -175,7 +174,6 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
         uint256 _maxLtv,
         uint256 _liquidationThreshold,
         uint256 _liquidationBonus,
-        uint256 _haircut,
         uint256 _borrowCap
     )
         external
@@ -185,7 +183,6 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
         require(_liquidationThreshold <= 9800, "THRESHOLD_TOO_HIGH");
         require(_maxLtv < _liquidationThreshold, "LTV_MUST_BE_BELOW_LIQ_THRESHOLD");
         require(_liquidationBonus <= MAX_LIQUIDATION_BONUS, "BONUS_TOO_HIGH");
-        require(_haircut <= 5000, "HAIRCUT_TOO_HIGH");
 
         if (_maxLtv != config.maxLtv) emit MarketConfigUpdated("maxLtv", config.maxLtv, _maxLtv);
         if (_liquidationThreshold != config.liquidationThreshold) {
@@ -194,13 +191,11 @@ contract Market is IMarket, Initializable, UUPSUpgradeable, ReentrancyGuardTrans
         if (_liquidationBonus != config.liquidationBonus) {
             emit MarketConfigUpdated("liquidationBonus", config.liquidationBonus, _liquidationBonus);
         }
-        if (_haircut != config.haircut) emit MarketConfigUpdated("haircut", config.haircut, _haircut);
         if (_borrowCap != config.borrowCap) emit MarketConfigUpdated("borrowCap", config.borrowCap, _borrowCap);
 
         config.maxLtv = _maxLtv;
         config.liquidationThreshold = _liquidationThreshold;
         config.liquidationBonus = _liquidationBonus;
-        config.haircut = _haircut;
         config.borrowCap = _borrowCap;
     }
 

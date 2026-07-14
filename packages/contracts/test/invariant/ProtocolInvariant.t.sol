@@ -74,7 +74,6 @@ contract ProtocolInvariantTest is Test {
             maxLtv: 6500,
             liquidationThreshold: 7500,
             liquidationBonus: 500,
-            haircut: 700,
             borrowCap: 100_000_000e18,
             minPoolTvl: 0,
             minPoolAge: 0

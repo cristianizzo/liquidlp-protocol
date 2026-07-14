@@ -11,7 +11,7 @@ interface ILPOracle {
     /// @param lpToken LP token or NFT manager address
     /// @param tokenId NFT token ID (0 for ERC-20)
     /// @param amount LP token amount (0 for NFT)
-    /// @return result Full price result with haircut applied
+    /// @return result Full price result
     function getPrice(
         address lpToken,
         uint256 tokenId,
@@ -21,7 +21,7 @@ interface ILPOracle {
         view
         returns (ILPOracleHub.PriceResult memory result);
 
-    /// @notice Get raw price without haircut
+    /// @notice Get raw price
     function getRawPrice(address lpToken, uint256 tokenId, uint256 amount) external view returns (uint256 value);
 
     /// @notice Check if the oracle is returning fresh, valid data

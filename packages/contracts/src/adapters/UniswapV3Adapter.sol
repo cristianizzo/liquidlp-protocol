@@ -143,7 +143,7 @@ contract UniswapV3Adapter is ILPAdapter {
 
         // Collect decreased liquidity + accumulated fees.
         // Fees are intentionally included — they are part of the collateral value
-        // (priced by oracle at 50% discount + 20% cap + haircut).
+        // (priced by oracle at 50% discount + 20% cap).
         // This matches Aave/Revert where the entire NFT is liquidatable collateral.
         (amount0, amount1) = nftManager.collect(
             INonfungiblePositionManager.CollectParams({

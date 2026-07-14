@@ -41,7 +41,6 @@ contract DeployEthMainnet is DeployBase {
             maxLtv: 6500,
             liquidationThreshold: 7500,
             liquidationBonus: 500,
-            haircut: 700,
             borrowCap: 10_000_000e6, // $10M (6-dec USDC)
             // Governance — multisig required for mainnet (no fallback to deployer)
             multisig: vm.envAddress("MULTISIG_ADDRESS"),

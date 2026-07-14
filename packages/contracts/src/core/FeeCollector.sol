@@ -34,14 +34,18 @@ contract FeeCollector is ReentrancyGuard {
     uint256 public defaultReserveFactorBps = 2000; // 20%
 
     // --- Other Fee Rates ---
-    uint256 public liquidationFeeBps = 1000; // 10% of liquidation penalty
+    /// @notice Protocol's share of the liquidation bonus (bps).
+    ///         e.g., 7000 = protocol takes 70% of bonus, liquidator keeps 30%.
+    ///         With 5% liquidation bonus on $20K debt: bonus = $1K,
+    ///         protocol gets $700, liquidator gets $300.
+    uint256 public liquidationFeeBps = 7000; // 70% of bonus → protocol
     uint256 public managementFeeBps = 10; // 0.1% annual on collateral value
 
     // --- Absolute Bounds ---
     uint256 public constant MIN_RESERVE_FACTOR = 500; // 5%
     uint256 public constant MAX_RESERVE_FACTOR = 5000; // 50%
-    uint256 public constant MIN_LIQUIDATION_FEE = 50; // 0.5%
-    uint256 public constant MAX_LIQUIDATION_FEE = 2000; // 20%
+    uint256 public constant MIN_PROTOCOL_BONUS_SHARE = 50; // 0.5% of bonus
+    uint256 public constant MAX_PROTOCOL_BONUS_SHARE = 9000; // 90% of bonus
     uint256 public constant MAX_MANAGEMENT_FEE = 100; // 1%
     uint256 public constant MAX_INSURANCE_SHARE = 5000; // 50%
 
@@ -244,7 +248,7 @@ contract FeeCollector is ReentrancyGuard {
     }
 
     function setLiquidationFee(uint256 _bps) external onlyRiskAdmin {
-        require(_bps >= MIN_LIQUIDATION_FEE && _bps <= MAX_LIQUIDATION_FEE, "OUT_OF_BOUNDS");
+        require(_bps >= MIN_PROTOCOL_BONUS_SHARE && _bps <= MAX_PROTOCOL_BONUS_SHARE, "OUT_OF_BOUNDS");
         emit LiquidationFeeUpdated(liquidationFeeBps, _bps);
         liquidationFeeBps = _bps;
     }

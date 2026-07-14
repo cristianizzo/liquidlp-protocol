@@ -37,15 +37,6 @@ contract LendingInvariantTest is Test {
         assertLe(supplyRate, borrowRate, "Supply rate must be <= borrow rate");
     }
 
-    /// @notice Haircut must always reduce value, never increase it
-    function testFuzz_haircutAlwaysReduces(uint256 value, uint256 haircutBps) public pure {
-        value = bound(value, 0, type(uint128).max);
-        haircutBps = bound(haircutBps, 0, 10_000);
-
-        uint256 result = LPMath.applyHaircut(value, haircutBps);
-        assertLe(result, value, "Haircut must reduce value");
-    }
-
     /// @notice Deviation of equal values must be 0
     function testFuzz_deviationZeroForEqual(uint256 a) public pure {
         a = bound(a, 1, type(uint128).max);

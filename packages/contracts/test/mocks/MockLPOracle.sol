@@ -22,7 +22,6 @@ contract MockLPOracle is ILPOracle {
             totalValue: mockPrice,
             principalValue: mockPrice,
             feeValue: 0,
-            haircut: 700,
             confidence: 10_000,
             timestamp: block.timestamp
         });

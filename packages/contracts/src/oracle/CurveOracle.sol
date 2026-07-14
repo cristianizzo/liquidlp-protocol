@@ -15,20 +15,16 @@ contract CurveOracle is ILPOracle {
     mapping(address => address) public priceFeeds;
 
     // --- Configurable Parameters ---
-    uint256 public defaultHaircutBps = 300; // 3%
     uint256 public maxVirtualPriceDeviationBps = 100; // 1%
 
     mapping(address => uint256) public lastVirtualPrice;
 
     // --- Absolute Bounds ---
-    uint256 public constant MIN_HAIRCUT_BPS = 50;
-    uint256 public constant MAX_HAIRCUT_BPS = 1500;
     uint256 public constant MIN_VP_DEVIATION_BPS = 50;
     uint256 public constant MAX_VP_DEVIATION_BPS = 500;
 
     uint256 public lastUpdateTimestamp;
 
-    event HaircutUpdated(uint256 oldValue, uint256 newValue);
     event VPDeviationUpdated(uint256 oldValue, uint256 newValue);
     event PriceFeedUpdated(address indexed token, address indexed feed);
 
@@ -40,12 +36,6 @@ contract CurveOracle is ILPOracle {
     constructor(address _core) {
         core = ProtocolCore(_core);
         lastUpdateTimestamp = block.timestamp;
-    }
-
-    function setDefaultHaircut(uint256 _haircutBps) external onlyPoolAdmin {
-        require(_haircutBps >= MIN_HAIRCUT_BPS && _haircutBps <= MAX_HAIRCUT_BPS, "OUT_OF_BOUNDS");
-        emit HaircutUpdated(defaultHaircutBps, _haircutBps);
-        defaultHaircutBps = _haircutBps;
     }
 
     function setMaxVirtualPriceDeviation(uint256 _deviationBps) external onlyPoolAdmin {
@@ -63,12 +53,7 @@ contract CurveOracle is ILPOracle {
     /// @inheritdoc ILPOracle
     function getPrice(address, uint256, uint256) external view returns (ILPOracleHub.PriceResult memory result) {
         result = ILPOracleHub.PriceResult({
-            totalValue: 0,
-            principalValue: 0,
-            feeValue: 0,
-            haircut: defaultHaircutBps,
-            confidence: 10_000,
-            timestamp: block.timestamp
+            totalValue: 0, principalValue: 0, feeValue: 0, confidence: 10_000, timestamp: block.timestamp
         });
     }
 

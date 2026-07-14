@@ -51,7 +51,7 @@ contract FeeCollectorTest is Test {
         assertEq(fc.treasury(), treasury);
         assertEq(fc.insuranceFund(), insurance);
         assertEq(fc.defaultReserveFactorBps(), 2000);
-        assertEq(fc.liquidationFeeBps(), 1000);
+        assertEq(fc.liquidationFeeBps(), 7000);
         assertEq(fc.managementFeeBps(), 10);
         assertEq(fc.insuranceFundShareBps(), 1000);
     }
@@ -197,11 +197,11 @@ contract FeeCollectorTest is Test {
 
     // ========== calculateLiquidationFee ==========
 
-    function test_calculateLiquidationFee_defaultTenPercent() public view {
-        // Default liquidation fee = 10%
+    function test_calculateLiquidationFee_default70Percent() public view {
+        // Default liquidation fee = 70% of bonus to protocol
         (uint256 protocolFee, uint256 liquidatorNet) = fc.calculateLiquidationFee(5000e18);
-        assertEq(protocolFee, 500e18); // 10%
-        assertEq(liquidatorNet, 4500e18); // 90%
+        assertEq(protocolFee, 3500e18); // 70%
+        assertEq(liquidatorNet, 1500e18); // 30%
     }
 
     function test_calculateLiquidationFee_sumEqualsInput() public view {
@@ -248,13 +248,13 @@ contract FeeCollectorTest is Test {
     function test_setLiquidationFee_revertsTooHigh() public {
         vm.prank(owner);
         vm.expectRevert("OUT_OF_BOUNDS");
-        fc.setLiquidationFee(2100);
+        fc.setLiquidationFee(9001); // Above MAX (9000)
     }
 
     function test_setLiquidationFee_revertsTooLow() public {
         vm.prank(owner);
         vm.expectRevert("OUT_OF_BOUNDS");
-        fc.setLiquidationFee(49); // Below MIN_LIQUIDATION_FEE (50 = 0.5%)
+        fc.setLiquidationFee(49); // Below MIN_PROTOCOL_BONUS_SHARE (50 = 0.5%)
     }
 
     function test_setManagementFee_success() public {

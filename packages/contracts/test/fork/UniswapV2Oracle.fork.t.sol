@@ -62,28 +62,21 @@ contract UniswapV2OracleForkTest is Test {
         assertLt(rawPrice, 10_000_000e18, "Price too high");
     }
 
-    function test_getPriceAppliesHaircut() public view {
+    function test_getPriceReturnsRawValue() public view {
         IUniswapV2Pair pair = IUniswapV2Pair(UNI_V2_WETH_USDC);
         uint256 amount = pair.totalSupply() / 100;
 
         uint256 rawPrice = oracle.getRawPrice(UNI_V2_WETH_USDC, 0, amount);
         ILPOracleHub.PriceResult memory result = oracle.getPrice(UNI_V2_WETH_USDC, 0, amount);
 
-        // totalValue should be less than rawPrice (haircut applied)
-        assertLt(result.totalValue, rawPrice, "Haircut not applied");
+        // totalValue should equal rawPrice (no haircut)
+        assertEq(result.totalValue, rawPrice, "totalValue should equal raw");
 
         // principalValue should equal raw
         assertEq(result.principalValue, rawPrice, "Principal should equal raw");
 
         // feeValue should be 0 (V2 auto-compounds)
         assertEq(result.feeValue, 0, "V2 fees should be 0");
-
-        // haircut should be 500 (5%)
-        assertEq(result.haircut, 500);
-
-        // totalValue should be ~95% of raw
-        uint256 expected = (rawPrice * 9500) / 10_000;
-        assertApproxEqAbs(result.totalValue, expected, 1);
     }
 
     // ========== Edge Cases ==========
@@ -150,18 +143,6 @@ contract UniswapV2OracleForkTest is Test {
     }
 
     // ========== Admin ==========
-
-    function test_setHaircut() public {
-        vm.prank(owner);
-        oracle.setDefaultHaircut(1000); // 10%
-        assertEq(oracle.defaultHaircutBps(), 1000);
-    }
-
-    function test_setHaircut_revertsOutOfBounds() public {
-        vm.prank(owner);
-        vm.expectRevert("OUT_OF_BOUNDS");
-        oracle.setDefaultHaircut(50); // Below min 100
-    }
 
     function test_setStaleness() public {
         vm.prank(owner);

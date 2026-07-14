@@ -55,7 +55,6 @@ contract EdgeCasesTest is Test {
             maxLtv: 6500,
             liquidationThreshold: 7500,
             liquidationBonus: 500,
-            haircut: 700,
             borrowCap: 10_000_000_000e18, // Very high cap
             minPoolTvl: 0,
             minPoolAge: 0
@@ -235,7 +234,6 @@ contract EdgeCasesTest is Test {
             maxLtv: 6500,
             liquidationThreshold: 7500,
             liquidationBonus: 500,
-            haircut: 700,
             borrowCap: 100_000_000_000e18,
             minPoolTvl: 0,
             minPoolAge: 0
