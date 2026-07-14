@@ -157,7 +157,8 @@ jobs:
         timeout-minutes: 15
 
       - name: Stop Anvil
-        cancel: anvil
+        if: always()
+        run: pkill anvil || true
 
   lint:
     name: Lint & Format
