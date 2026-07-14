@@ -135,13 +135,11 @@ jobs:
           echo "Anvil failed to start"
           exit 1
 
-      - name: Run fork tests
-        run: forge test --match-path 'test/fork/**' --fork-url http://localhost:8545 -v
-        timeout-minutes: 10
-
-      - name: Run E2E tests
-        run: forge test --match-path 'test/e2e/**' --fork-url http://localhost:8545 -v
-        timeout-minutes: 10
+      - name: Run fork + E2E tests
+        run: |
+          forge test --match-path 'test/fork/**' --fork-url http://localhost:8545 -v --threads 20 &&
+          forge test --match-path 'test/e2e/**' --fork-url http://localhost:8545 -v --threads 20
+        timeout-minutes: 15
 
   lint:
     name: Lint & Format
