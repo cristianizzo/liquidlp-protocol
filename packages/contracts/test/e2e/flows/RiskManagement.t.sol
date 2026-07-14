@@ -25,35 +25,23 @@ contract RiskManagement is E2EBase {
     function test_globalBorrowCap_enforced() public {
         // Set global borrow cap to $50K (18-dec USD)
         vm.prank(deployer);
-        riskManager.setGlobalBorrowCap(50_000e18);
+        riskManager.setGlobalBorrowCap(1000e18); // $1K cap (very low to guarantee trigger)
 
         // Alice deposits a large position
         uint256 tokenId = _createV3Position(alice, 2 ether, 4000e6);
         uint256 positionId = _depositV3(alice, tokenId);
         vm.roll(block.number + 2);
 
-        uint256 maxBorrow = lendingEngine.getMaxBorrow(positionId);
-
-        // First borrow — should succeed if within cap
-        // Borrow a small amount first
-        uint256 smallBorrow = 1000e6; // $1K USDC
+        // First borrow $500 — should succeed (within $1K cap)
+        uint256 smallBorrow = 500e6;
         vm.prank(alice);
         lendingEngine.borrow(positionId, smallBorrow);
         assertGt(_getDebt(positionId), 0, "Should have debt");
 
-        // Try to borrow an amount that would exceed the $50K global cap
-        // maxBorrow is the LTV-limited max; if it exceeds cap, it should revert
-        uint256 largeBorrow = maxBorrow > smallBorrow ? maxBorrow - smallBorrow : 0;
-        if (largeBorrow > 0) {
-            // This should revert if it pushes global borrows over $50K cap
-            // The borrow amount in USD is largeBorrow * 1e12 (USDC 6 dec -> 18 dec)
-            // If largeBorrow > ~50K USDC, it will exceed the cap
-            if (largeBorrow > 50_000e6) {
-                vm.prank(alice);
-                vm.expectRevert("GLOBAL_CAP_REACHED");
-                lendingEngine.borrow(positionId, largeBorrow);
-            }
-        }
+        // Second borrow $600 — should exceed $1K cap and revert
+        vm.prank(alice);
+        vm.expectRevert("GLOBAL_CAP_REACHED");
+        lendingEngine.borrow(positionId, 600e6);
 
         console.log("=== Global Borrow Cap Enforced ===");
     }

@@ -3,9 +3,8 @@ pragma solidity ^0.8.26;
 
 import "../E2EBase.t.sol";
 import {IPositionManager} from "../../../src/interfaces/IPositionManager.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
-/// @dev V2 mock that extends PositionManager with a new state variable, consuming one gap slot.
+/// @dev V2 mock that extends PositionManager with a new state variable appended after all storage.
 contract PositionManagerV2Mock is PositionManager {
     uint256 public newStateVar;
 
