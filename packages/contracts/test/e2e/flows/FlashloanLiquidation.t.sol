@@ -278,4 +278,140 @@ contract FlashloanLiquidation is E2EBase {
 
         console.log("=== Reverts If Healthy Passed ===");
     }
+
+    // ========================================================================
+    // HELPER: Run a full liquidation scenario and log all metrics
+    // ========================================================================
+
+    function _runScenario(string memory name, uint256 borrowPct, uint256 dumpAmountEth) internal {
+        address marketAddr = core.markets(ethUsdcMarketId);
+        uint256 protocolUsdcBefore = IERC20(Constants.USDC).balanceOf(address(feeCollector));
+        uint256 protocolWethBefore = IERC20(Constants.WETH).balanceOf(address(feeCollector));
+        uint256 marketUsdcBefore = IERC20(Constants.USDC).balanceOf(marketAddr);
+        uint256 liquidatorUsdcBefore = IERC20(Constants.USDC).balanceOf(liquidator);
+
+        // Deposit and borrow
+        uint256 tokenId = _createV3Position(alice, 1 ether, 2000e6);
+        uint256 positionId = _depositV3(alice, tokenId);
+        vm.roll(block.number + 2);
+
+        uint256 maxBorrow = lendingEngine.getMaxBorrow(positionId);
+        uint256 borrowAmount = (maxBorrow * borrowPct) / 100;
+        vm.prank(alice);
+        lendingEngine.borrow(positionId, borrowAmount);
+
+        uint256 originalValue = _getPositionValue(positionId);
+        uint256 hfBefore = _getHealthFactor(positionId);
+
+        // Real price crash: dump ETH into pool + mock Chainlink to match
+        int256 crashedEthPrice = _crashEthPrice(dumpAmountEth);
+
+        uint256 crashedValue = _getPositionValue(positionId);
+        uint256 hfAfterCrash = _getHealthFactor(positionId);
+        (bool canLiq, uint256 maxRepay) = liquidationEngine.isLiquidatable(positionId);
+        require(canLiq, "Not liquidatable - increase dumpAmountEth");
+
+        // Build swap paths
+        IPositionManager.Position memory pos = positionManager.getPosition(positionId);
+        bytes memory path0;
+        bytes memory path1;
+        if (pos.token0 == Constants.USDC) {
+            path0 = bytes("");
+            path1 = abi.encodePacked(Constants.WETH, uint24(3000), Constants.USDC);
+        } else {
+            path0 = abi.encodePacked(Constants.WETH, uint24(3000), Constants.USDC);
+            path1 = bytes("");
+        }
+
+        // Flash liquidate
+        vm.prank(liquidator);
+        flashLiquidator.liquidate(
+            FlashloanLiquidator.LiquidateParams({
+                positionId: positionId,
+                repayAmount: maxRepay,
+                flashLoanPool: flashPool,
+                swapPath0: path0,
+                swapPath1: path1,
+                minProfit: 0
+            })
+        );
+
+        // Measure results
+        uint256 debtAfter = _getDebt(positionId);
+        uint256 liquidatorUsdcAfter = IERC20(Constants.USDC).balanceOf(liquidator);
+        uint256 protocolUsdcEarned = IERC20(Constants.USDC).balanceOf(address(feeCollector)) - protocolUsdcBefore;
+        uint256 protocolWethEarned = IERC20(Constants.WETH).balanceOf(address(feeCollector)) - protocolWethBefore;
+        uint256 marketUsdcAfter = IERC20(Constants.USDC).balanceOf(marketAddr);
+        uint256 liquidatorProfit = liquidatorUsdcAfter - liquidatorUsdcBefore;
+        IPositionManager.Position memory posAfter = positionManager.getPosition(positionId);
+        string memory status = uint8(posAfter.status) == 3 ? "LIQUIDATED" : "Active (partial)";
+
+        // Log
+        console.log("");
+        console.log("=========================================================");
+        console.log("  SCENARIO: %s", name);
+        console.log("=========================================================");
+        console.log("  Borrow:              %s%% of max LTV", borrowPct);
+        console.log("  ETH dump:            %s ETH", dumpAmountEth / 1e18);
+        console.log("  Crashed ETH price:   $%s (8 dec)", uint256(crashedEthPrice));
+        console.log("");
+        console.log("  Position value:      $%s -> $%s", originalValue / 1e18, crashedValue / 1e18);
+        console.log("  Health factor:       %s -> %s", hfBefore / 1e16, hfAfterCrash / 1e16);
+        console.log("  Borrowed:            %s USDC", borrowAmount / 1e6);
+        console.log("  Max repay:           %s USDC", maxRepay / 1e6);
+        console.log("  Debt after:          %s USDC", debtAfter / 1e6);
+        console.log("  Position status:     %s", status);
+        console.log("");
+        console.log("  Protocol USDC fee:   %s", protocolUsdcEarned / 1e6);
+        console.log("  Protocol WETH fee:   %s", protocolWethEarned / 1e15);
+        console.log("  Liquidator profit:   %s USDC", liquidatorProfit / 1e6);
+        console.log("  Market USDC:         %s -> %s", marketUsdcBefore / 1e6, marketUsdcAfter / 1e6);
+        bool safe = (marketUsdcAfter + debtAfter) >= marketUsdcBefore;
+        console.log("  Lenders safe:        %s", safe ? "YES" : "NO");
+        console.log("=========================================================");
+
+        // Clear mocks for next scenario
+        vm.clearMockedCalls();
+        vm.startPrank(deployer);
+        v3Oracle.setMaxStaleness(86_400);
+        v2Oracle.setMaxStaleness(86_400);
+        priceFeedRegistry.setMaxStaleness(86_400);
+        vm.stopPrank();
+    }
+
+    // ========================================================================
+    // 4. PARTIAL LIQUIDATION — mild crash, 50% cap, position stays active
+    // ========================================================================
+
+    function test_scenario_partialLiquidation() public {
+        // 90% borrow, small ETH dump → HF drops below 1, partial liquidation
+        _runScenario("PARTIAL LIQUIDATION", 90, 4000 ether);
+    }
+
+    // ========================================================================
+    // 5. FULL LIQUIDATION — large dump, position fully liquidated
+    // ========================================================================
+
+    function test_scenario_fullLiquidation() public {
+        // 90% borrow, moderate ETH dump → underwater, full liquidation
+        _runScenario("FULL LIQUIDATION", 90, 4200 ether);
+    }
+
+    // ========================================================================
+    // 6. BIG MARKET CRASH — massive dump, severe underwater
+    // ========================================================================
+
+    function test_scenario_bigMarketCrash() public {
+        // 90% borrow, large ETH dump → severe crash
+        _runScenario("BIG MARKET CRASH", 90, 4400 ether);
+    }
+
+    // ========================================================================
+    // 7. CONSERVATIVE BORROW — 95% LTV, moderate dump
+    // ========================================================================
+
+    function test_scenario_conservativeBorrow() public {
+        // 95% borrow, small dump → barely liquidatable
+        _runScenario("AGGRESSIVE BORROW", 95, 3500 ether);
+    }
 }
