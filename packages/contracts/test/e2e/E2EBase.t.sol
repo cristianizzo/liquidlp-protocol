@@ -242,15 +242,15 @@ abstract contract E2EBase is ForkTestBase {
         ISwapRouterSingle(Constants.UNI_V3_SWAP_ROUTER)
             .exactInputSingle(
                 ISwapRouterSingle.ExactInputSingleParams({
-                    tokenIn: Constants.WETH,
-                    tokenOut: Constants.USDC,
-                    fee: 3000,
-                    recipient: whale,
-                    deadline: block.timestamp + 300,
-                    amountIn: dumpAmountEth,
-                    amountOutMinimum: 0,
-                    sqrtPriceLimitX96: 0
-                })
+                tokenIn: Constants.WETH,
+                tokenOut: Constants.USDC,
+                fee: 3000,
+                recipient: whale,
+                deadline: block.timestamp + 300,
+                amountIn: dumpAmountEth,
+                amountOutMinimum: 0,
+                sqrtPriceLimitX96: 0
+            })
             );
         vm.stopPrank();
 
