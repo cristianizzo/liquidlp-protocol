@@ -381,4 +381,54 @@ contract MarketTest is Test {
         uint256 received = market.withdraw(aliceShares);
         assertLe(amount - received, DEAD_SHARES);
     }
+
+    // ========== Interest Accrual — totalSupply == 0 with outstanding borrows ==========
+
+    function test_accrueInterest_highUtilization_interestStillAccrues() public {
+        // Test interest accrual works even at extreme utilization
+        // This validates the fix: old code skipped accrual when totalSupply==0,
+        // new code only skips when totalBorrow==0
+
+        // 1. Alice supplies minimum liquidity
+        _fundAndApprove(alice, 10_000e6);
+        vm.prank(alice);
+        market.supply(10_000e6);
+
+        // 2. Borrow nearly everything
+        uint256 available = usdc.balanceOf(address(market));
+        uint256 borrowAmt = available - 1; // leave 1 wei
+        vm.prank(le);
+        market.transferOut(makeAddr("borrower"), borrowAmt);
+
+        IMarket.MarketState memory stateBefore = market.getMarketState();
+        uint256 totalBorrowBefore = stateBefore.totalBorrow;
+        uint256 reservesBefore = market.protocolReserves();
+        assertGt(totalBorrowBefore, 0, "Must have borrows");
+
+        // 3. Advance time — interest must accrue at high utilization
+        vm.warp(block.timestamp + 30 days);
+        market.accrueInterest();
+
+        IMarket.MarketState memory stateAfter = market.getMarketState();
+
+        // Interest must have accrued (not skipped)
+        assertGt(stateAfter.totalBorrow, totalBorrowBefore, "Interest must accrue at high utilization");
+        assertGt(market.borrowIndex(), 1e27, "BorrowIndex must grow");
+        // Utilization should be capped at 10000 bps
+        assertLe(stateAfter.utilization, 10_000, "Utilization must be capped at 100%");
+    }
+
+    function test_accrueInterest_zeroBorrow_skips() public {
+        // No borrows — accrual should skip harmlessly
+        _fundAndApprove(alice, 10_000e6);
+        vm.prank(alice);
+        market.supply(10_000e6);
+
+        uint256 indexBefore = market.borrowIndex();
+        vm.warp(block.timestamp + 30 days);
+        market.accrueInterest();
+
+        // BorrowIndex should not change (no borrows to accrue on)
+        assertEq(market.borrowIndex(), indexBefore, "BorrowIndex must not change with zero borrows");
+    }
 }
