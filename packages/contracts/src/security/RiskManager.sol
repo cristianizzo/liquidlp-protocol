@@ -69,15 +69,19 @@ contract RiskManager {
 
     /// @notice Validate a borrow request against risk caps
     /// @param borrowAmountUsd Borrow amount in 18-dec USD
+    /// @notice Validate borrow caps AND atomically record the borrow.
+    ///         Prevents TOCTOU: two borrows in the same block cannot both pass
+    ///         validation before either records, since validation + recording is atomic.
+    /// @param borrowAmountUsd Borrow amount in 18-dec USD
     /// @param positionValue Position value in 18-dec USD
     /// @param lpType LP type for per-type cap check
-    function validateBorrow(
+    function validateAndRecordBorrow(
         uint256 borrowAmountUsd,
         uint256 positionValue,
         ILPAdapter.LPType lpType
     )
         external
-        view
+        onlyLendingEngine
         returns (bool valid, string memory reason)
     {
         // Check 1: Position value cap
@@ -96,14 +100,12 @@ contract RiskManager {
             return (false, "LP_TYPE_CAP_REACHED");
         }
 
-        return (true, "");
-    }
+        // Atomically record the borrow (no gap between validate and record)
+        currentGlobalBorrows += borrowAmountUsd;
+        lpTypeCurrentBorrows[lpType] += borrowAmountUsd;
+        emit BorrowRecorded(borrowAmountUsd, currentGlobalBorrows);
 
-    /// @notice Record a borrow for cap tracking (18-dec USD)
-    function recordBorrow(uint256 amountUsd, ILPAdapter.LPType lpType) external onlyLendingEngine {
-        currentGlobalBorrows += amountUsd;
-        lpTypeCurrentBorrows[lpType] += amountUsd;
-        emit BorrowRecorded(amountUsd, currentGlobalBorrows);
+        return (true, "");
     }
 
     /// @notice Record a repayment for cap tracking (18-dec USD)
@@ -127,12 +129,10 @@ contract RiskManager {
     // --- Deposit Validation (called by PositionManager) ---
 
     /// @notice Validate a deposit against risk limits
-    /// @param depositor User address
     /// @param positionValue Position value in 18-dec USD
     /// @param marketId Market ID for supply cap
     /// @param userPositionCount Current number of positions the user has
     function validateDeposit(
-        address depositor,
         uint256 positionValue,
         uint256 marketId,
         uint256 userPositionCount
@@ -166,10 +166,16 @@ contract RiskManager {
         emit DepositRecorded(valueUsd, marketId, marketCurrentSupply[marketId]);
     }
 
+    event SupplyTrackingDrift(uint256 tracked, uint256 withdrawn, uint256 indexed marketId);
+
     /// @notice Record a withdrawal for supply cap tracking (18-dec USD)
     function recordWithdraw(uint256 valueUsd, uint256 marketId) external onlyPositionManager {
-        marketCurrentSupply[marketId] =
-            valueUsd > marketCurrentSupply[marketId] ? 0 : marketCurrentSupply[marketId] - valueUsd;
+        if (valueUsd > marketCurrentSupply[marketId]) {
+            emit SupplyTrackingDrift(marketCurrentSupply[marketId], valueUsd, marketId);
+            marketCurrentSupply[marketId] = 0;
+        } else {
+            marketCurrentSupply[marketId] -= valueUsd;
+        }
         emit WithdrawRecorded(valueUsd, marketId, marketCurrentSupply[marketId]);
     }
 

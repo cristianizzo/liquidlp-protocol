@@ -52,7 +52,7 @@ contract FeeCollectorTest is Test {
         assertEq(fc.insuranceFund(), insurance);
         assertEq(fc.defaultReserveFactorBps(), 2000);
         assertEq(fc.liquidationFeeBps(), 7000);
-        assertEq(fc.managementFeeBps(), 10);
+        // managementFeeBps deprecated — removed from public API
         assertEq(fc.insuranceFundShareBps(), 1000);
     }
 
@@ -257,16 +257,10 @@ contract FeeCollectorTest is Test {
         fc.setLiquidationFee(49); // Below MIN_PROTOCOL_BONUS_SHARE (50 = 0.5%)
     }
 
-    function test_setManagementFee_success() public {
+    function test_setManagementFee_deprecated() public {
         vm.prank(owner);
+        vm.expectRevert("DEPRECATED");
         fc.setManagementFee(50);
-        assertEq(fc.managementFeeBps(), 50);
-    }
-
-    function test_setManagementFee_revertsTooHigh() public {
-        vm.prank(owner);
-        vm.expectRevert("TOO_HIGH");
-        fc.setManagementFee(101);
     }
 
     function test_setInsuranceFundShare_success() public {

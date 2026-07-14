@@ -75,4 +75,48 @@ interface IPositionManager {
     function getPositionValue(uint256 positionId) external view returns (uint256);
 
     function getHealthFactor(uint256 positionId) external view returns (uint256);
+
+    /// @notice Update position debt (called by LendingEngine)
+    function updateDebt(uint256 positionId, uint256 newDebt) external;
+
+    /// @notice Reduce position amount after partial liquidation (called by LiquidationEngine)
+    function reducePositionAmount(uint256 positionId, uint256 amountRemoved) external;
+
+    /// @notice Mark position as liquidated (called by LiquidationEngine)
+    function markLiquidated(uint256 positionId, address liquidator, uint256 debtRepaid) external;
+
+    /// @notice Collect fees and reinvest as liquidity (called by LPCompounder)
+    function compoundFees(
+        uint256 positionId,
+        address protocolFeeRecipient,
+        uint256 protocolFeeBps,
+        address callerRewardRecipient,
+        uint256 callerRewardBps,
+        uint256 minFeeThreshold,
+        address dustRefundTo,
+        uint256 maxSlippageBps
+    )
+        external
+        returns (uint256, uint256, uint256);
+
+    /// @notice Get the block number at which a position was deposited
+    function getDepositBlock(uint256 positionId) external view returns (uint256);
+
+    /// @notice Set the LendingEngine reference
+    function setLendingEngine(address _lendingEngine) external;
+
+    /// @notice Set CircuitBreaker for pool-level pause enforcement
+    function setCircuitBreaker(address _circuitBreaker) external;
+
+    /// @notice Get position debt
+    function positionDebt(uint256 positionId) external view returns (uint256);
+
+    /// @notice Get active position count for an owner
+    function activePositionCount(address owner) external view returns (uint256);
+
+    /// @notice Get the next position ID
+    function nextPositionId() external view returns (uint256);
+
+    // Note: circuitBreaker() getter is on the concrete PositionManager contract
+    // (returns CircuitBreaker type, not address).
 }

@@ -7,16 +7,8 @@ import {IERC20} from "../interfaces/IERC20.sol";
 import {ProtocolCore} from "../core/ProtocolCore.sol";
 import {ACLManager} from "../core/ACLManager.sol";
 import {LPMath} from "../libraries/LPMath.sol";
+import {PriceFeedRegistry} from "./PriceFeedRegistry.sol";
 import {INonfungiblePositionManager, IUniswapV3Pool, IUniswapV3Factory} from "../interfaces/external/IUniswapV3.sol";
-
-/// @notice Chainlink AggregatorV3 minimal interface
-interface IAggregatorV3 {
-    function latestRoundData()
-        external
-        view
-        returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound);
-    function decimals() external view returns (uint8);
-}
 
 /// @title TickMathLib
 /// @notice Computes sqrt price for ticks of size 1.0001 (Uniswap V3 canonical implementation)
@@ -170,13 +162,11 @@ contract UniswapV3Oracle is ILPOracle {
     ProtocolCore public immutable core;
     INonfungiblePositionManager public immutable positionManager;
     IUniswapV3Factory public immutable factory;
-
-    mapping(address => address) public priceFeeds; // token -> Chainlink feed
+    PriceFeedRegistry public immutable priceFeedRegistry;
 
     // --- Configurable Parameters ---
     uint32 public twapPeriod = 1800; // 30 minutes
     uint256 public maxDeviationBps = 300; // 3%
-    uint256 public maxStaleness = 3600; // 1 hour Chainlink staleness
 
     // --- Absolute Bounds ---
     uint32 public constant MIN_TWAP_PERIOD = 300;
@@ -187,18 +177,24 @@ contract UniswapV3Oracle is ILPOracle {
     // --- Events ---
     event TwapPeriodUpdated(uint32 oldValue, uint32 newValue);
     event MaxDeviationUpdated(uint256 oldValue, uint256 newValue);
-    event PriceFeedUpdated(address indexed token, address indexed feed);
-    event MaxStalenessUpdated(uint256 oldValue, uint256 newValue);
 
     modifier onlyPoolAdmin() {
         require(core.aclManager().isPoolAdmin(msg.sender), "NOT_POOL_ADMIN");
         _;
     }
 
-    constructor(address _core, address _positionManager) {
+    constructor(address _core, address _positionManager, address _priceFeedRegistry) {
+        require(
+            _core != address(0) && _positionManager != address(0) && _priceFeedRegistry != address(0), "ZERO_ADDRESS"
+        );
+        require(
+            _core.code.length > 0 && _positionManager.code.length > 0 && _priceFeedRegistry.code.length > 0,
+            "NOT_CONTRACT"
+        );
         core = ProtocolCore(_core);
         positionManager = INonfungiblePositionManager(_positionManager);
         factory = IUniswapV3Factory(INonfungiblePositionManager(_positionManager).factory());
+        priceFeedRegistry = PriceFeedRegistry(_priceFeedRegistry);
     }
 
     // --- Admin ---
@@ -213,19 +209,6 @@ contract UniswapV3Oracle is ILPOracle {
         require(_maxDeviationBps >= MIN_DEVIATION_BPS && _maxDeviationBps <= MAX_DEVIATION_BPS_CAP, "OUT_OF_BOUNDS");
         emit MaxDeviationUpdated(maxDeviationBps, _maxDeviationBps);
         maxDeviationBps = _maxDeviationBps;
-    }
-
-    function setMaxStaleness(uint256 _maxStaleness) external onlyPoolAdmin {
-        require(_maxStaleness >= 300 && _maxStaleness <= 86_400, "OUT_OF_BOUNDS");
-        emit MaxStalenessUpdated(maxStaleness, _maxStaleness);
-        maxStaleness = _maxStaleness;
-    }
-
-    function setPriceFeed(address token, address feed) external onlyPoolAdmin {
-        require(token != address(0) && feed != address(0), "ZERO_ADDRESS");
-        require(feed.code.length > 0, "NOT_CONTRACT");
-        emit PriceFeedUpdated(token, feed);
-        priceFeeds[token] = feed;
     }
 
     // --- ILPOracle Implementation ---
@@ -259,7 +242,7 @@ contract UniswapV3Oracle is ILPOracle {
     }
 
     /// @inheritdoc ILPOracle
-    /// @dev Always returns true — staleness is checked reactively inside _getChainlinkPrice()
+    /// @dev Always returns true — staleness is checked reactively inside priceFeedRegistry.getPrice()
     ///      on every getPrice() call. Same rationale as V2Oracle: proactive Chainlink reads
     ///      would add gas to every deposit for no additional safety.
     function isHealthy() external pure returns (bool) {
@@ -302,8 +285,8 @@ contract UniswapV3Oracle is ILPOracle {
         // Step 4: Get token decimals and Chainlink prices (both normalized to 18 dec)
         uint8 dec0 = IERC20(token0).decimals();
         uint8 dec1 = IERC20(token1).decimals();
-        uint256 price0 = _getChainlinkPrice(token0); // 18 decimals USD
-        uint256 price1 = _getChainlinkPrice(token1); // 18 decimals USD
+        uint256 price0 = priceFeedRegistry.getPrice(token0); // 18 decimals USD
+        uint256 price1 = priceFeedRegistry.getPrice(token1); // 18 decimals USD
 
         // Step 5: Cross-validate TWAP vs Chainlink
         _validatePriceConsistency(twapTick, price0, price1, dec0, dec1);
@@ -380,29 +363,6 @@ contract UniswapV3Oracle is ILPOracle {
         } catch {
             revert("TWAP_UNAVAILABLE");
         }
-    }
-
-    // --- Internal: Chainlink ---
-
-    /// @notice Get price from Chainlink feed, normalized to 18 decimals
-    /// @dev Reverts if price is invalid, negative, or stale
-    function _getChainlinkPrice(address token) internal view returns (uint256) {
-        address feed = priceFeeds[token];
-        require(feed != address(0), "NO_PRICE_FEED");
-
-        (uint80 roundId, int256 answer,, uint256 updatedAt, uint80 answeredInRound) =
-            IAggregatorV3(feed).latestRoundData();
-        require(answer > 0, "INVALID_PRICE");
-        require(updatedAt > 0 && answeredInRound >= roundId, "STALE_ROUND");
-        require(block.timestamp >= updatedAt && block.timestamp - updatedAt <= maxStaleness, "STALE_PRICE");
-
-        uint8 feedDecimals = IAggregatorV3(feed).decimals();
-        if (feedDecimals < 18) {
-            return uint256(answer) * (10 ** (18 - feedDecimals));
-        } else if (feedDecimals > 18) {
-            return uint256(answer) / (10 ** (feedDecimals - 18));
-        }
-        return uint256(answer);
     }
 
     // --- Internal: Cross-Validation ---

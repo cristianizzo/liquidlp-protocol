@@ -82,8 +82,7 @@ contract RiskManagerIntegrationTest is Test {
         core.whitelistPool(lpToken);
         marketId = core.registerMarket(address(market));
         pm.setLendingEngine(address(le));
-        le.setRiskManager(address(rm));
-        pm.setRiskManager(address(rm));
+        core.setRiskManager(address(rm));
         vm.stopPrank();
 
         usdc.mint(address(market), 200_000_000e18);
@@ -270,8 +269,7 @@ contract RiskManagerIntegrationTest is Test {
 
     function test_worksWithoutRiskManager() public {
         vm.startPrank(owner);
-        le.setRiskManager(address(0));
-        pm.setRiskManager(address(0));
+        core.setRiskManager(address(0));
         vm.stopPrank();
 
         oracle.setPrice(50_000e18);
@@ -289,7 +287,7 @@ contract RiskManagerIntegrationTest is Test {
     function test_setRiskManager_onlyPoolAdmin() public {
         vm.prank(alice);
         vm.expectRevert("NOT_POOL_ADMIN");
-        le.setRiskManager(makeAddr("rm"));
+        core.setRiskManager(makeAddr("rm"));
     }
 
     function test_setGlobalBorrowCap_revertsZero() public {
@@ -312,16 +310,16 @@ contract RiskManagerIntegrationTest is Test {
     event WithdrawRecorded(uint256 valueUsd, uint256 indexed marketId, uint256 newMarketSupply);
     event BorrowTrackingDrift(uint256 tracked, uint256 repaid, bool isGlobal);
 
-    function test_recordBorrow_emitsEvent() public {
+    function test_validateAndRecordBorrow_emitsEvent() public {
         vm.expectEmit(false, false, false, true);
         emit BorrowRecorded(1000e18, 1000e18);
         vm.prank(address(le));
-        rm.recordBorrow(1000e18, ILPAdapter.LPType.UniswapV2);
+        rm.validateAndRecordBorrow(1000e18, 50_000e18, ILPAdapter.LPType.UniswapV2);
     }
 
     function test_recordRepay_emitsEvent() public {
         vm.prank(address(le));
-        rm.recordBorrow(1000e18, ILPAdapter.LPType.UniswapV2);
+        rm.validateAndRecordBorrow(1000e18, 50_000e18, ILPAdapter.LPType.UniswapV2);
         vm.expectEmit(false, false, false, true);
         emit RepayRecorded(500e18, 500e18);
         vm.prank(address(le));
@@ -330,7 +328,7 @@ contract RiskManagerIntegrationTest is Test {
 
     function test_recordRepay_emitsDriftOnClamp() public {
         vm.prank(address(le));
-        rm.recordBorrow(100e18, ILPAdapter.LPType.UniswapV2);
+        rm.validateAndRecordBorrow(100e18, 50_000e18, ILPAdapter.LPType.UniswapV2);
         vm.expectEmit(false, false, false, true);
         emit BorrowTrackingDrift(100e18, 200e18, true);
         vm.prank(address(le));

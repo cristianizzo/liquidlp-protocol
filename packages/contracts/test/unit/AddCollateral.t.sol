@@ -292,7 +292,7 @@ contract AddCollateralTest is Test {
         oracle.setPrice(20_000_000e18); // $20M — above $10M cap
 
         vm.startPrank(owner);
-        pm.setRiskManager(address(riskManager));
+        core.setRiskManager(address(riskManager));
         vm.stopPrank();
 
         vm.startPrank(alice);
@@ -314,7 +314,7 @@ contract AddCollateralTest is Test {
         oracle.setPrice(5000e18);
 
         vm.startPrank(owner);
-        pm.setRiskManager(address(riskManager));
+        core.setRiskManager(address(riskManager));
         vm.stopPrank();
 
         vm.startPrank(alice);

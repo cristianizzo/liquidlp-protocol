@@ -13,10 +13,9 @@ import {IERC20} from "../interfaces/IERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ProtocolCore} from "./ProtocolCore.sol";
 import {ACLManager} from "./ACLManager.sol";
-import {PositionManager} from "./PositionManager.sol";
 import {IPositionManager} from "../interfaces/IPositionManager.sol";
+import {ILendingEngine} from "../interfaces/ILendingEngine.sol";
 import {TokenUtils} from "../libraries/TokenUtils.sol";
-import {LendingEngine} from "./LendingEngine.sol";
 import {FeeCollector} from "./FeeCollector.sol";
 import {PriceFeedRegistry} from "../oracle/PriceFeedRegistry.sol";
 
@@ -35,8 +34,8 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
     using SafeERC20 for OZIERC20;
 
     ProtocolCore public core;
-    PositionManager public positionManager;
-    LendingEngine public lendingEngine;
+    IPositionManager public positionManager;
+    ILendingEngine public lendingEngine;
 
     /// @dev Deprecated — swap removed from liquidation flow. Kept for UUPS storage layout.
     address private __deprecated_swapRouter;
@@ -88,8 +87,8 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
     function initialize(address _core, address _positionManager, address _lendingEngine) external initializer {
         require(_core != address(0) && _positionManager != address(0) && _lendingEngine != address(0), "ZERO_ADDRESS");
         core = ProtocolCore(_core);
-        positionManager = PositionManager(_positionManager);
-        lendingEngine = LendingEngine(_lendingEngine);
+        positionManager = IPositionManager(_positionManager);
+        lendingEngine = ILendingEngine(_lendingEngine);
 
         // Set defaults (state variable initializers don't run in proxy context)
         maxLiquidationPortion = 5000;
@@ -131,7 +130,7 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
         require(block.timestamp <= deadline, "EXPIRED");
 
         // Step 1: Accrue interest BEFORE health factor check
-        PositionManager.Position memory pos = positionManager.getPosition(positionId);
+        IPositionManager.Position memory pos = positionManager.getPosition(positionId);
         require(
             pos.status == IPositionManager.PositionStatus.Active
                 || pos.status == IPositionManager.PositionStatus.Borrowed,
@@ -269,7 +268,7 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
         // Step 10: Handle full debt repayment — return remaining LP to borrower
         uint256 remainingDebt = lendingEngine.getDebt(positionId);
         if (remainingDebt == 0) {
-            PositionManager.Position memory freshPos = positionManager.getPosition(positionId);
+            IPositionManager.Position memory freshPos = positionManager.getPosition(positionId);
 
             // Return remaining LP to borrower (V2: LP tokens, V3: NFT even if empty)
             uint128 remainingLiquidity = adapter.getLiquidity(freshPos.lpToken, freshPos.tokenId, freshPos.amount);
@@ -335,7 +334,7 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
 
     /// @inheritdoc ILiquidationEngine
     function getLiquidationBonus(uint256 positionId) public view returns (uint256) {
-        PositionManager.Position memory pos = positionManager.getPosition(positionId);
+        IPositionManager.Position memory pos = positionManager.getPosition(positionId);
         address marketAddr = core.markets(pos.marketId);
         return IMarket(marketAddr).getConfig().liquidationBonus;
     }
@@ -359,7 +358,7 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
     ///      Non-stablecoin borrow assets MUST have PriceFeedRegistry configured.
     function _getRepayValueUsd(address borrowAsset, uint256 amount, uint8 decimals) internal view returns (uint256) {
         require(decimals <= 36, "INVALID_DECIMALS");
-        PriceFeedRegistry registry = positionManager.priceFeedRegistry();
+        PriceFeedRegistry registry = PriceFeedRegistry(core.priceFeedRegistryAddr());
         if (address(registry) != address(0)) {
             return registry.getUsdValue(borrowAsset, amount, decimals);
         }

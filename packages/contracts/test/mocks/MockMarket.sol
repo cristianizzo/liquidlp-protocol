@@ -74,4 +74,41 @@ contract MockMarket is IMarket {
     function getConfig() external view returns (MarketConfig memory) {
         return _config;
     }
+
+    function recordDeficit(uint256 amount) external {
+        uint256 burn = amount > _state.totalBorrow ? _state.totalBorrow : amount;
+        _state.totalBorrow -= burn;
+    }
+
+    function eliminateDeficit() external {}
+
+    function distributeReserves() external {}
+
+    function updateConfig(
+        uint256 _maxLtv,
+        uint256 _liquidationThreshold,
+        uint256 _liquidationBonus,
+        uint256 _borrowCap
+    )
+        external
+    {
+        _config.maxLtv = _maxLtv;
+        _config.liquidationThreshold = _liquidationThreshold;
+        _config.liquidationBonus = _liquidationBonus;
+        _config.borrowCap = _borrowCap;
+    }
+
+    function setReserveFactor(uint256) external {}
+
+    function setFeeCollector(address) external {}
+
+    function setInterestRateModel(address) external {}
+
+    function protocolReserves() external pure returns (uint256) {
+        return 0;
+    }
+
+    function reserveFactorBps() external pure returns (uint256) {
+        return 0;
+    }
 }

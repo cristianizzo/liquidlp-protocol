@@ -52,11 +52,9 @@ abstract contract E2EBase is ForkTestBase {
         super.setUp();
         nftManager = INonfungiblePositionManager(Constants.UNI_V3_NFT_MANAGER);
 
-        // Fork may have stale Chainlink data — increase oracle staleness tolerance
+        // Fork may have stale Chainlink data — increase registry staleness tolerance
         vm.startPrank(deployer);
-        v3Oracle.setMaxStaleness(86_400); // 24h for fork testing
-        v2Oracle.setMaxStaleness(86_400);
-        priceFeedRegistry.setMaxStaleness(86_400);
+        priceFeedRegistry.setMaxStaleness(86_400); // 24h for fork testing
         vm.stopPrank();
 
         // Fund test accounts

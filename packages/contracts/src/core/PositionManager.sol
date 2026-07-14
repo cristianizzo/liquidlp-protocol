@@ -61,8 +61,6 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     event CircuitBreakerNotConfigured(uint256 indexed marketId, address pool);
     event PositionAmountReduced(uint256 indexed positionId, uint256 amountRemoved, uint256 newAmount);
     event LendingEngineUpdated(address indexed oldEngine, address indexed newEngine);
-    event PriceFeedRegistryUpdated(address indexed oldRegistry, address indexed newRegistry);
-    event RiskManagerUpdated(address indexed oldManager, address indexed newManager);
     event CircuitBreakerUpdated(address indexed oldBreaker, address indexed newBreaker);
 
     // --- ACL Helpers ---
@@ -124,21 +122,6 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         lendingEngine = ILendingEngine(_lendingEngine);
     }
 
-    /// @notice Set the PriceFeedRegistry (needed for debt → USD conversion in health factor)
-    /// @dev Set to address(0) to revert to fallback decimal normalization mode
-    function setPriceFeedRegistry(address _registry) external onlyPoolAdmin {
-        require(_registry == address(0) || _registry.code.length > 0, "NOT_CONTRACT");
-        emit PriceFeedRegistryUpdated(address(priceFeedRegistry), _registry);
-        priceFeedRegistry = PriceFeedRegistry(_registry);
-    }
-
-    /// @notice Set RiskManager for position/borrow cap enforcement
-    function setRiskManager(address _riskManager) external onlyPoolAdmin {
-        require(_riskManager == address(0) || _riskManager.code.length > 0, "NOT_CONTRACT");
-        emit RiskManagerUpdated(address(riskManager), _riskManager);
-        riskManager = RiskManager(_riskManager);
-    }
-
     /// @notice Set CircuitBreaker for pool-level pause enforcement
     function setCircuitBreaker(address _circuitBreaker) external onlyPoolAdmin {
         require(_circuitBreaker == address(0) || _circuitBreaker.code.length > 0, "NOT_CONTRACT");
@@ -197,11 +180,15 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         require(price.totalValue > 0, "ZERO_VALUE");
 
         // RiskManager: validate deposit caps
-        if (address(riskManager) != address(0)) {
-            (bool valid, string memory reason) =
-                riskManager.validateDeposit(msg.sender, price.totalValue, marketId, activePositionCount[msg.sender]);
-            require(valid, reason);
-            riskManager.recordDeposit(price.totalValue, marketId);
+        {
+            address rmAddr = core.riskManagerAddr();
+            if (rmAddr != address(0)) {
+                RiskManager rm = RiskManager(rmAddr);
+                (bool valid, string memory reason) =
+                    rm.validateDeposit(price.totalValue, marketId, activePositionCount[msg.sender]);
+                require(valid, reason);
+                rm.recordDeposit(price.totalValue, marketId);
+            }
         }
 
         // Create position
@@ -244,9 +231,12 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         require(adapterAddr != address(0), "ADAPTER_NOT_FOUND");
 
         // RiskManager: track withdrawal for supply cap
-        if (address(riskManager) != address(0)) {
-            uint256 posValue = getPositionValue(positionId);
-            riskManager.recordWithdraw(posValue, pos.marketId);
+        {
+            address rmAddr = core.riskManagerAddr();
+            if (rmAddr != address(0)) {
+                uint256 posValue = getPositionValue(positionId);
+                RiskManager(rmAddr).recordWithdraw(posValue, pos.marketId);
+            }
         }
 
         // CEI: update state BEFORE external call
@@ -322,12 +312,16 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
 
         // RiskManager: enforce position value cap and track supply delta
         // Note: skip maxPositionsPerUser check (not creating a new position)
-        if (address(riskManager) != address(0)) {
-            uint256 valueAfter = getPositionValue(positionId);
-            require(valueAfter <= riskManager.maxPositionValue(), "POSITION_TOO_LARGE");
-            uint256 delta = valueAfter > valueBefore ? valueAfter - valueBefore : 0;
-            if (delta > 0) {
-                riskManager.recordDeposit(delta, pos.marketId);
+        {
+            address rmAddr = core.riskManagerAddr();
+            if (rmAddr != address(0)) {
+                RiskManager rm = RiskManager(rmAddr);
+                uint256 valueAfter = getPositionValue(positionId);
+                require(valueAfter <= rm.maxPositionValue(), "POSITION_TOO_LARGE");
+                uint256 delta = valueAfter > valueBefore ? valueAfter - valueBefore : 0;
+                if (delta > 0) {
+                    rm.recordDeposit(delta, pos.marketId);
+                }
             }
         }
 
@@ -439,8 +433,9 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         // Convert debt from borrow asset decimals to 18-dec USD value (Aave-style)
         uint256 debtUsd;
         uint8 borrowDecimals = TokenUtils.safeDecimals(config.borrowAsset);
-        if (address(priceFeedRegistry) != address(0)) {
-            debtUsd = priceFeedRegistry.getUsdValue(config.borrowAsset, debt, borrowDecimals);
+        address registryAddr = core.priceFeedRegistryAddr();
+        if (registryAddr != address(0)) {
+            debtUsd = PriceFeedRegistry(registryAddr).getUsdValue(config.borrowAsset, debt, borrowDecimals);
         } else {
             if (borrowDecimals < 18) {
                 debtUsd = Math.mulDiv(debt, 10 ** (18 - borrowDecimals), 1);
@@ -499,6 +494,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
 
         // Validate inputs
         require(protocolFeeBps + callerRewardBps <= 5000, "FEES_TOO_HIGH"); // max 50% total
+        require(protocolFeeBps == 0 || protocolFeeRecipient != address(0), "ZERO_FEE_RECIPIENT");
         require(dustRefundTo != address(0), "ZERO_REFUND_ADDRESS");
 
         Position storage pos = _positions[positionId];
@@ -596,13 +592,15 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     }
 
     // --- New state vars (appended for UUPS upgrade safety) ---
-    PriceFeedRegistry public priceFeedRegistry;
-    RiskManager public riskManager;
+    /// @dev Deprecated — priceFeedRegistry moved to ProtocolCore. Kept for UUPS storage layout.
+    address private __deprecated_priceFeedRegistry;
+    /// @dev Deprecated — riskManager moved to ProtocolCore. Kept for UUPS storage layout.
+    address private __deprecated_riskManager;
     mapping(address => uint256) public activePositionCount;
     CircuitBreaker public circuitBreaker;
 
     // --- Storage Gap ---
-    // Reduced from 50 to 46 after adding priceFeedRegistry + riskManager + activePositionCount + circuitBreaker.
+    // 46 slots: layout unchanged (deprecated slots preserved for UUPS compatibility).
     uint256[46] private __gap;
 
     // --- Internal ---

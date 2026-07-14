@@ -164,19 +164,13 @@ abstract contract DeployBase is Script {
     function _deployOracles(ChainConfig memory cfg) internal {
         // V3 Oracle
         if (cfg.v3NftManager != address(0)) {
-            UniswapV3Oracle v3Oracle = new UniswapV3Oracle(address(core), cfg.v3NftManager);
-            v3Oracle.setPriceFeed(cfg.weth, cfg.clNativeUsd);
-            v3Oracle.setPriceFeed(cfg.stablecoin, cfg.clStablecoinUsd);
-            v3Oracle.setMaxStaleness(3600);
+            UniswapV3Oracle v3Oracle = new UniswapV3Oracle(address(core), cfg.v3NftManager, address(priceFeedRegistry));
             oracleHub.registerOracle(ILPAdapter.LPType.UniswapV3, address(v3Oracle));
         }
 
         // V2 Oracle
         if (cfg.v2Factory != address(0)) {
-            UniswapV2Oracle v2Oracle = new UniswapV2Oracle(address(core));
-            v2Oracle.setPriceFeed(cfg.weth, cfg.clNativeUsd);
-            v2Oracle.setPriceFeed(cfg.stablecoin, cfg.clStablecoinUsd);
-            v2Oracle.setMaxStaleness(3600);
+            UniswapV2Oracle v2Oracle = new UniswapV2Oracle(address(core), address(priceFeedRegistry));
             oracleHub.registerOracle(ILPAdapter.LPType.UniswapV2, address(v2Oracle));
         }
 
@@ -227,10 +221,9 @@ abstract contract DeployBase is Script {
 
         // Wire references
         positionManager.setLendingEngine(address(lendingEngine));
-        positionManager.setPriceFeedRegistry(address(priceFeedRegistry));
-        positionManager.setRiskManager(address(riskManager));
         positionManager.setCircuitBreaker(address(circuitBreaker));
-        lendingEngine.setRiskManager(address(riskManager));
+        core.setPriceFeedRegistry(address(priceFeedRegistry));
+        core.setRiskManager(address(riskManager));
 
         // No swap router needed — liquidation sends underlying tokens directly to liquidator.
         // FlashloanLiquidator (periphery) handles swaps outside the core protocol.

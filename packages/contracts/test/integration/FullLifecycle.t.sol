@@ -659,7 +659,7 @@ contract FullLifecycleTest is Test {
     function test_shareInflationAttack_blocked() public {
         // First depositor seeds with minimal amount
         address attacker = makeAddr("attacker");
-        _supplyToMarket(attacker, 1001); // Just above DEAD_SHARES
+        _supplyToMarket(attacker, market.DEAD_SHARES() + 1);
 
         // Attacker donates tokens directly to market
         usdc.mint(address(market), 1_000_000e18);

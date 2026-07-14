@@ -39,14 +39,16 @@ contract FeeCollector is ReentrancyGuard {
     ///         With 5% liquidation bonus on $20K debt: bonus = $1K,
     ///         protocol gets $700, liquidator gets $300.
     uint256 public liquidationFeeBps = 7000; // 70% of bonus → protocol
-    uint256 public managementFeeBps = 10; // 0.1% annual on collateral value
+    /// @dev Deprecated — management fee not implemented. Kept for storage layout.
+    uint256 private __deprecated_managementFeeBps;
 
     // --- Absolute Bounds ---
     uint256 public constant MIN_RESERVE_FACTOR = 500; // 5%
     uint256 public constant MAX_RESERVE_FACTOR = 5000; // 50%
     uint256 public constant MIN_PROTOCOL_BONUS_SHARE = 50; // 0.5% of bonus
     uint256 public constant MAX_PROTOCOL_BONUS_SHARE = 9000; // 90% of bonus
-    uint256 public constant MAX_MANAGEMENT_FEE = 100; // 1%
+    /// @dev Deprecated — management fee not implemented
+    uint256 private constant __DEPRECATED_MAX_MANAGEMENT_FEE = 100;
     uint256 public constant MAX_INSURANCE_SHARE = 5000; // 50%
 
     // --- Fee Recipients ---
@@ -253,10 +255,9 @@ contract FeeCollector is ReentrancyGuard {
         liquidationFeeBps = _bps;
     }
 
-    function setManagementFee(uint256 _bps) external onlyRiskAdmin {
-        require(_bps <= MAX_MANAGEMENT_FEE, "TOO_HIGH");
-        emit ManagementFeeUpdated(managementFeeBps, _bps);
-        managementFeeBps = _bps;
+    /// @dev Deprecated — management fee not implemented
+    function setManagementFee(uint256) external pure {
+        revert("DEPRECATED");
     }
 
     function setInsuranceFundShare(uint256 _bps) external onlyRiskAdmin {

@@ -25,7 +25,7 @@ contract MarketTest is Test {
     address public bob = makeAddr("bob");
     address public attacker = makeAddr("attacker");
 
-    uint256 constant DEAD_SHARES = 1000;
+    uint256 constant DEAD_SHARES = 1_000_000;
 
     function setUp() public {
         usdc = new MockERC20("USDC", "USDC", 6);

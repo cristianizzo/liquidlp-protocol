@@ -34,11 +34,14 @@ contract LPOracleHub is ILPOracleHub, Initializable, UUPSUpgradeable {
 
     function _authorizeUpgrade(address) internal override onlyPoolAdmin {}
 
+    event OracleRegistered(ILPAdapter.LPType indexed lpType, address indexed oracle);
+
     /// @inheritdoc ILPOracleHub
     function registerOracle(ILPAdapter.LPType lpType, address oracle) external onlyPoolAdmin {
         require(oracle != address(0), "ZERO_ADDRESS");
         require(oracle.code.length > 0, "NOT_CONTRACT");
         oracles[lpType] = oracle;
+        emit OracleRegistered(lpType, oracle);
     }
 
     /// @inheritdoc ILPOracleHub

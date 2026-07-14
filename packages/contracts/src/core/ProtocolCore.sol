@@ -32,7 +32,13 @@ contract ProtocolCore {
     mapping(address => bool) public supportedPools;
     mapping(address => uint256) public poolAddedAt;
 
+    // --- Shared Registry Addresses ---
+    address public priceFeedRegistryAddr;
+    address public riskManagerAddr;
+
     // --- Events ---
+    event PriceFeedRegistryUpdated(address indexed oldRegistry, address indexed newRegistry);
+    event RiskManagerUpdated(address indexed oldManager, address indexed newManager);
     event AdapterRegistered(ILPAdapter.LPType indexed lpType, address indexed adapter);
     event OracleRegistered(ILPAdapter.LPType indexed lpType, address indexed oracle);
     event MarketRegistered(uint256 indexed marketId, address indexed market);
@@ -177,6 +183,20 @@ contract ProtocolCore {
         emit OwnershipTransferred(owner, pendingOwner);
         owner = pendingOwner;
         pendingOwner = address(0);
+    }
+
+    // --- Shared Registry Management ---
+
+    function setPriceFeedRegistry(address _registry) external onlyPoolAdmin {
+        require(_registry == address(0) || _registry.code.length > 0, "NOT_CONTRACT");
+        emit PriceFeedRegistryUpdated(priceFeedRegistryAddr, _registry);
+        priceFeedRegistryAddr = _registry;
+    }
+
+    function setRiskManager(address _riskManager) external onlyPoolAdmin {
+        require(_riskManager == address(0) || _riskManager.code.length > 0, "NOT_CONTRACT");
+        emit RiskManagerUpdated(riskManagerAddr, _riskManager);
+        riskManagerAddr = _riskManager;
     }
 
     // --- View ---
