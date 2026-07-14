@@ -382,11 +382,12 @@ contract MarketTest is Test {
         assertLe(amount - received, DEAD_SHARES);
     }
 
-    // ========== Interest Accrual — totalSupply == 0 with outstanding borrows ==========
+    // ========== Interest Accrual — borrows always accrue ==========
 
-    function test_accrueInterest_totalSupplyZero_interestStillAccrues() public {
-        // Simulate: totalSupply=0, totalBorrow>0 (all lenders withdrew, borrower still owes)
-        // Old code would skip accrual — new code accrues with 100% to reserves
+    function test_accrueInterest_withBorrows_alwaysAccrues() public {
+        // Verify interest accrues whenever totalBorrow > 0.
+        // The code fix changed `if (totalBorrow == 0 || totalSupply == 0)` to
+        // `if (totalBorrow == 0)` — only skipping when there are no borrows.
 
         // 1. Set reserve factor so protocol gets a share of interest
         vm.prank(owner);

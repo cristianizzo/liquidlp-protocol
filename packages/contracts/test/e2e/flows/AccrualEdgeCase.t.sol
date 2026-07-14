@@ -12,9 +12,9 @@ contract AccrualEdgeCaseE2E is E2EBase {
         super.setUp();
     }
 
-    /// @notice Verify interest accrues when market is at ~100% utilization
-    /// @dev Simulates: deposit LP → borrow max → advance time → verify debt grew
-    ///      This validates the fix for M-5: old code skipped accrual when totalSupply==0.
+    /// @notice Verify interest accrues correctly with active borrows
+    /// @dev Simulates: deposit LP → borrow → advance time → verify debt grew.
+    ///      Validates the core fix: accrueInterest only skips when totalBorrow==0.
     function test_interestAccrues_atMaxUtilization() public {
         // 1. Alice creates V3 position and deposits
         uint256 tokenId = _createV3Position(alice, 1 ether, 2000e6);
