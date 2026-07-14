@@ -113,7 +113,6 @@ contract FullLifecycleTest is Test {
             maxLtv: 6500,
             liquidationThreshold: 7500,
             liquidationBonus: 500,
-            haircut: 700,
             borrowCap: 10_000_000e18,
             minPoolTvl: 5_000_000e18,
             minPoolAge: 0
@@ -706,7 +705,7 @@ contract FullLifecycleTest is Test {
         // Random user can't update market config
         vm.prank(bob);
         vm.expectRevert("NOT_RISK_ADMIN");
-        market.updateConfig(7000, 8000, 600, 800, 20_000_000e18);
+        market.updateConfig(7000, 8000, 600, 20_000_000e18);
     }
 
     // ========================================================

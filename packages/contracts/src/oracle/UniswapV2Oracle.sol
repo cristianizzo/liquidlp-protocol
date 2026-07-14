@@ -35,15 +35,9 @@ contract UniswapV2Oracle is ILPOracle {
     mapping(address => address) public priceFeeds; // token → Chainlink feed
 
     // --- Configurable Parameters ---
-    uint256 public defaultHaircutBps = 500; // 5%
     uint256 public maxStaleness = 3600; // 1 hour
 
-    // --- Absolute Bounds ---
-    uint256 public constant MIN_HAIRCUT_BPS = 100;
-    uint256 public constant MAX_HAIRCUT_BPS = 2000;
-
     // --- Events ---
-    event HaircutUpdated(uint256 oldValue, uint256 newValue);
     event MaxStalenessUpdated(uint256 oldValue, uint256 newValue);
     event PriceFeedUpdated(address indexed token, address indexed feed);
 
@@ -59,12 +53,6 @@ contract UniswapV2Oracle is ILPOracle {
     }
 
     // --- Admin ---
-
-    function setDefaultHaircut(uint256 _haircutBps) external onlyPoolAdmin {
-        require(_haircutBps >= MIN_HAIRCUT_BPS && _haircutBps <= MAX_HAIRCUT_BPS, "OUT_OF_BOUNDS");
-        emit HaircutUpdated(defaultHaircutBps, _haircutBps);
-        defaultHaircutBps = _haircutBps;
-    }
 
     function setMaxStaleness(uint256 _maxStaleness) external onlyPoolAdmin {
         require(_maxStaleness >= 300 && _maxStaleness <= 86_400, "OUT_OF_BOUNDS");
@@ -94,11 +82,11 @@ contract UniswapV2Oracle is ILPOracle {
     {
         uint256 rawValue = _computePrice(lpToken, amount);
 
+        // Return real market value (matches Aave/Revert approach)
         result = ILPOracleHub.PriceResult({
-            totalValue: LPMath.applyHaircut(rawValue, defaultHaircutBps),
+            totalValue: rawValue,
             principalValue: rawValue,
             feeValue: 0, // V2 fees auto-compound into reserves
-            haircut: defaultHaircutBps,
             confidence: 10_000,
             timestamp: block.timestamp
         });

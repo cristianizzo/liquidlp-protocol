@@ -25,7 +25,6 @@ contract MockMarket is IMarket {
             maxLtv: 6500,
             liquidationThreshold: 7500,
             liquidationBonus: 500,
-            haircut: 700,
             borrowCap: 10_000_000e18,
             minPoolTvl: 5_000_000e18,
             minPoolAge: 0

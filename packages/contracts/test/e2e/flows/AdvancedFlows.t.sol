@@ -17,7 +17,7 @@ contract AdvancedFlows is E2EBase {
         // Create V2 market for liquidation tests (V2 has pos.amount > 0)
         vm.startPrank(deployer);
         (v2MarketId,) = marketFactory.createMarket(
-            ILPAdapter.LPType.UniswapV2, Constants.USDC, 6500, 7500, 500, 700, 10_000_000e6, 0, 0, "volatile"
+            ILPAdapter.LPType.UniswapV2, Constants.USDC, 6500, 7500, 500, 10_000_000e6, 0, 0, "volatile"
         );
         // Set reserve factor for fee tests
         Market(core.markets(ethUsdcMarketId)).setReserveFactor(2000); // 20%

@@ -259,7 +259,7 @@ contract AdversarialE2E is E2EBase {
         // Create V2 market
         vm.startPrank(deployer);
         (uint256 v2MarketId,) = marketFactory.createMarket(
-            ILPAdapter.LPType.UniswapV2, Constants.USDC, 6500, 7500, 500, 700, 10_000_000e6, 0, 0, "volatile"
+            ILPAdapter.LPType.UniswapV2, Constants.USDC, 6500, 7500, 500, 10_000_000e6, 0, 0, "volatile"
         );
         vm.stopPrank();
 

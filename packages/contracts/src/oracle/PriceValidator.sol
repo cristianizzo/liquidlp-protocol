@@ -116,11 +116,11 @@ contract PriceValidator {
     )
         external
         onlyKeeper
-        returns (bool valid, uint256 adjustedHaircutBps)
+        returns (bool valid, uint256 adjustedRiskBps)
     {
         require(!circuitBreaker.poolPaused(pool), "POOL_CIRCUIT_BREAKER");
 
-        adjustedHaircutBps = 0;
+        adjustedRiskBps = 0;
 
         // Check 1: TWAP vs Chainlink deviation
         uint256 deviation = _calculateDeviation(twapPrice, chainlinkPrice);
@@ -150,14 +150,14 @@ contract PriceValidator {
         // Check 4: Volatility check
         uint256 volatility = _checkVolatility(pool, twapPrice);
         if (volatility > maxVolatilityBps) {
-            adjustedHaircutBps = 500; // +5% haircut during high volatility
+            adjustedRiskBps = 500; // +5% risk premium during high volatility
         }
 
         // Check 5: Staleness check
         if (lastPriceTimestamp[pool] > 0) {
             uint256 elapsed = block.timestamp - lastPriceTimestamp[pool];
             if (elapsed > stalePriceThreshold) {
-                adjustedHaircutBps += 200; // +2% haircut for stale prices
+                adjustedRiskBps += 200; // +2% risk premium for stale prices
             }
         }
 
@@ -172,8 +172,8 @@ contract PriceValidator {
             priceHistoryIndex[pool] = (idx + 1) % 100;
         }
 
-        emit PriceValidated(pool, twapPrice, 10_000 - adjustedHaircutBps);
-        return (true, adjustedHaircutBps);
+        emit PriceValidated(pool, twapPrice, 10_000 - adjustedRiskBps);
+        return (true, adjustedRiskBps);
     }
 
     // --- Internal ---

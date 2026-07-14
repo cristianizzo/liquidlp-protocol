@@ -45,7 +45,6 @@ contract MarketFactory {
         uint256 maxLtv,
         uint256 liquidationThreshold,
         uint256 liquidationBonus,
-        uint256 haircut,
         uint256 borrowCap,
         uint256 minPoolTvl,
         uint256 minPoolAge,
@@ -67,7 +66,6 @@ contract MarketFactory {
             maxLtv: maxLtv,
             liquidationThreshold: liquidationThreshold,
             liquidationBonus: liquidationBonus,
-            haircut: haircut,
             borrowCap: borrowCap,
             minPoolTvl: minPoolTvl,
             minPoolAge: minPoolAge

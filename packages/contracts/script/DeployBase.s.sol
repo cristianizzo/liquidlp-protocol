@@ -56,7 +56,6 @@ abstract contract DeployBase is Script {
         uint256 maxLtv; // bps (e.g., 6500 = 65%)
         uint256 liquidationThreshold; // bps
         uint256 liquidationBonus; // bps
-        uint256 haircut; // bps
         uint256 borrowCap; // in stablecoin decimals
         // Governance
         address multisig; // proposer/executor for timelock (deployer on testnet)
@@ -264,7 +263,6 @@ abstract contract DeployBase is Script {
             cfg.maxLtv,
             cfg.liquidationThreshold,
             cfg.liquidationBonus,
-            cfg.haircut,
             cfg.borrowCap,
             0, // minPoolTvl (0 for testnet)
             0, // minPoolAge (0 for testnet)

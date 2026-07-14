@@ -58,15 +58,6 @@ library LPMath {
         value = Math.mulDiv(scaled, 2, 1e18);
     }
 
-    /// @notice Apply haircut (safety discount) to a value
-    /// @param value Original value
-    /// @param haircutBps Haircut in basis points (max 10_000)
-    /// @return Discounted value
-    function applyHaircut(uint256 value, uint256 haircutBps) internal pure returns (uint256) {
-        require(haircutBps <= 10_000, "HAIRCUT_TOO_LARGE");
-        return Math.mulDiv(value, 10_000 - haircutBps, 10_000);
-    }
-
     /// @notice Calculate absolute deviation between two values in basis points
     /// @dev Anchored to first parameter (a): deviation = |a - b| / a * 10000
     ///      Returns 10_000 (100%) if either value is 0.

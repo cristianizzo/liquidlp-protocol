@@ -27,7 +27,7 @@ contract FlashloanLiquidation is E2EBase {
         // Wire FeeCollector to LiquidationEngine so protocol earns liquidation fees
         vm.startPrank(deployer);
         liquidationEngine.setFeeCollector(address(feeCollector));
-        feeCollector.setLiquidationFee(500); // 5% of liquidator bonus goes to protocol
+        // Default liquidationFeeBps = 7000 (70% of bonus → protocol, 30% → liquidator)
         vm.stopPrank();
     }
 
@@ -362,9 +362,17 @@ contract FlashloanLiquidation is E2EBase {
         console.log("  Debt after:          %s USDC", debtAfter / 1e6);
         console.log("  Position status:     %s", status);
         console.log("");
-        console.log("  Protocol USDC fee:   %s", protocolUsdcEarned / 1e6);
-        console.log("  Protocol WETH fee:   %s", protocolWethEarned / 1e15);
+        uint256 protocolWethUsd = (protocolWethEarned * uint256(crashedEthPrice)) / 1e8 / 1e18;
+        uint256 protocolTotalUsd = protocolUsdcEarned / 1e6 + protocolWethUsd;
+        console.log("  Protocol USDC fee:   %s USDC", protocolUsdcEarned / 1e6);
+        console.log("  Protocol WETH fee:   0.%s ETH (~$%s)", protocolWethEarned / 1e14, protocolWethUsd);
+        console.log("  Protocol total:      ~$%s", protocolTotalUsd);
         console.log("  Liquidator profit:   %s USDC", liquidatorProfit / 1e6);
+        if (protocolTotalUsd + liquidatorProfit / 1e6 > 0) {
+            uint256 totalBonus = protocolTotalUsd + liquidatorProfit / 1e6;
+            console.log("  Protocol share:      %s%% of bonus", (protocolTotalUsd * 100) / totalBonus);
+            console.log("  Liquidator share:    %s%% of bonus", (liquidatorProfit / 1e6 * 100) / totalBonus);
+        }
         console.log("  Market USDC:         %s -> %s", marketUsdcBefore / 1e6, marketUsdcAfter / 1e6);
         bool safe = (marketUsdcAfter + debtAfter) >= marketUsdcBefore;
         console.log("  Lenders safe:        %s", safe ? "YES" : "NO");
@@ -403,7 +411,7 @@ contract FlashloanLiquidation is E2EBase {
 
     function test_scenario_bigMarketCrash() public {
         // 90% borrow, large ETH dump → severe crash
-        _runScenario("BIG MARKET CRASH", 90, 4400 ether);
+        _runScenario("BIG MARKET CRASH", 90, 4250 ether);
     }
 
     // ========================================================================
@@ -412,6 +420,6 @@ contract FlashloanLiquidation is E2EBase {
 
     function test_scenario_conservativeBorrow() public {
         // 95% borrow, small dump → barely liquidatable
-        _runScenario("AGGRESSIVE BORROW", 95, 3500 ether);
+        _runScenario("AGGRESSIVE BORROW", 95, 4100 ether);
     }
 }

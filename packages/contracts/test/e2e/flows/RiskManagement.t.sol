@@ -151,7 +151,7 @@ contract RiskManagement is E2EBase {
         // Create a V2 market for liquidation (V2 uses amount-based positions)
         vm.startPrank(deployer);
         (uint256 v2MarketId,) = marketFactory.createMarket(
-            ILPAdapter.LPType.UniswapV2, Constants.USDC, 6500, 7500, 500, 700, 10_000_000e6, 0, 0, "volatile"
+            ILPAdapter.LPType.UniswapV2, Constants.USDC, 6500, 7500, 500, 10_000_000e6, 0, 0, "volatile"
         );
         Market(core.markets(v2MarketId)).setReserveFactor(2000);
         Market(core.markets(v2MarketId)).setFeeCollector(address(feeCollector));

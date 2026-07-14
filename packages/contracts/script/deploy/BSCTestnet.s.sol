@@ -34,7 +34,6 @@ contract DeployBSCTestnet is DeployBase {
             maxLtv: 6500,
             liquidationThreshold: 7500,
             liquidationBonus: 500,
-            haircut: 700,
             borrowCap: 100_000e18, // $100K (18-dec BUSD)
             multisig: deployer,
             timelockDelay: 60 // 1 minute for testnet

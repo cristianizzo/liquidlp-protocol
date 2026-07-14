@@ -10,17 +10,16 @@ interface ILPOracleHub {
         uint256 totalValue; // USD value (18 decimals)
         uint256 principalValue; // Value of underlying tokens
         uint256 feeValue; // Value of unclaimed fees
-        uint256 haircut; // Applied safety discount (basis points)
         uint256 confidence; // Oracle confidence (0-10000 bps)
         uint256 timestamp; // Price timestamp
     }
 
-    /// @notice Get the safe (haircut-adjusted) price of an LP position
+    /// @notice Get the price of an LP position
     /// @param lpToken Address of LP token or NFT manager
     /// @param tokenId NFT token ID (0 for ERC-20)
     /// @param amount Amount of LP tokens (0 for NFT)
     /// @param lpType Type of LP position
-    /// @return result Full price result with haircut applied
+    /// @return result Full price result
     function getPrice(
         address lpToken,
         uint256 tokenId,
@@ -31,7 +30,7 @@ interface ILPOracleHub {
         view
         returns (PriceResult memory result);
 
-    /// @notice Get raw price without haircut (for display only)
+    /// @notice Get raw price (for display only)
     function getRawPrice(
         address lpToken,
         uint256 tokenId,

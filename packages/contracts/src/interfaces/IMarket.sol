@@ -12,7 +12,6 @@ interface IMarket {
         uint256 maxLtv; // Maximum LTV in basis points (e.g., 6500 = 65%)
         uint256 liquidationThreshold; // Liquidation trigger in bps
         uint256 liquidationBonus; // Bonus for liquidators in bps
-        uint256 haircut; // Oracle safety discount in bps
         uint256 borrowCap; // Max total borrows
         uint256 minPoolTvl; // Min underlying pool TVL required
         uint256 minPoolAge; // Min pool age in seconds

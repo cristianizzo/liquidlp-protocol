@@ -20,10 +20,6 @@ contract LPMathWrapper {
     {
         return LPMath.fairLPValueV2(r0, r1, ts, p0, p1, amt);
     }
-
-    function applyHaircut(uint256 value, uint256 bps) external pure returns (uint256) {
-        return LPMath.applyHaircut(value, bps);
-    }
 }
 
 contract LPMathTest is Test {
@@ -49,22 +45,6 @@ contract LPMathTest is Test {
         assertEq(LPMath.sqrt(2), 1);
         // sqrt(8) ≈ 2.828... → should return 2
         assertEq(LPMath.sqrt(8), 2);
-    }
-
-    function test_applyHaircut() public pure {
-        uint256 value = 10_000e18;
-
-        // 5% haircut
-        uint256 result = LPMath.applyHaircut(value, 500);
-        assertEq(result, 9500e18);
-
-        // 10% haircut
-        result = LPMath.applyHaircut(value, 1000);
-        assertEq(result, 9000e18);
-
-        // 0% haircut
-        result = LPMath.applyHaircut(value, 0);
-        assertEq(result, 10_000e18);
     }
 
     function test_deviationBps() public pure {
@@ -102,22 +82,5 @@ contract LPMathTest is Test {
     function test_fairLPValueV2_revertsZeroTotalSupply() public {
         vm.expectRevert("ZERO_TOTAL_SUPPLY");
         wrapper.fairLPValueV2(1000e18, 1000e6, 0, 2000e18, 1e18, 100e18);
-    }
-
-    function test_applyHaircut_revertsExceedsMax() public {
-        vm.expectRevert("HAIRCUT_TOO_LARGE");
-        wrapper.applyHaircut(1000e18, 10_001);
-    }
-
-    function test_applyHaircut_maxHaircutReturnsZero() public pure {
-        uint256 result = LPMath.applyHaircut(1000e18, 10_000);
-        assertEq(result, 0);
-    }
-
-    function testFuzz_haircutNeverExceedsValue(uint256 value, uint256 haircutBps) public pure {
-        value = bound(value, 0, type(uint128).max);
-        haircutBps = bound(haircutBps, 0, 10_000);
-        uint256 result = LPMath.applyHaircut(value, haircutBps);
-        assertLe(result, value);
     }
 }

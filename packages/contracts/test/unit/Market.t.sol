@@ -39,7 +39,6 @@ contract MarketTest is Test {
             maxLtv: 6500,
             liquidationThreshold: 7500,
             liquidationBonus: 500,
-            haircut: 700,
             borrowCap: 10_000_000e6,
             minPoolTvl: 5_000_000e18,
             minPoolAge: 0
@@ -299,7 +298,7 @@ contract MarketTest is Test {
 
     function test_updateConfig_success() public {
         vm.prank(owner);
-        market.updateConfig(7000, 8000, 600, 800, 20_000_000e6);
+        market.updateConfig(7000, 8000, 600, 20_000_000e6);
 
         IMarket.MarketConfig memory config = market.getConfig();
         assertEq(config.maxLtv, 7000);
@@ -308,13 +307,13 @@ contract MarketTest is Test {
     function test_updateConfig_revertsNotRiskAdmin() public {
         vm.prank(alice);
         vm.expectRevert("NOT_RISK_ADMIN");
-        market.updateConfig(7000, 8000, 600, 800, 20_000_000e6);
+        market.updateConfig(7000, 8000, 600, 20_000_000e6);
     }
 
     function test_updateConfig_revertsLtvTooHigh() public {
         vm.prank(owner);
         vm.expectRevert("LTV_TOO_HIGH");
-        market.updateConfig(9600, 8000, 600, 800, 20_000_000e6);
+        market.updateConfig(9600, 8000, 600, 20_000_000e6);
     }
 
     function test_initialize_revertsBonusTooHigh() public {
@@ -324,7 +323,6 @@ contract MarketTest is Test {
             maxLtv: 6500,
             liquidationThreshold: 7500,
             liquidationBonus: market.MAX_LIQUIDATION_BONUS() + 1,
-            haircut: 700,
             borrowCap: 10_000_000e6,
             minPoolTvl: 5_000_000e18,
             minPoolAge: 0
@@ -339,13 +337,13 @@ contract MarketTest is Test {
         uint256 maxBonus = market.MAX_LIQUIDATION_BONUS();
         vm.prank(owner);
         vm.expectRevert("BONUS_TOO_HIGH");
-        market.updateConfig(7000, 8000, maxBonus + 1, 800, 20_000_000e6);
+        market.updateConfig(7000, 8000, maxBonus + 1, 20_000_000e6);
     }
 
     function test_updateConfig_bonusAtMax() public {
         uint256 maxBonus = market.MAX_LIQUIDATION_BONUS();
         vm.prank(owner);
-        market.updateConfig(7000, 8000, maxBonus, 800, 20_000_000e6);
+        market.updateConfig(7000, 8000, maxBonus, 20_000_000e6);
 
         IMarket.MarketConfig memory cfg = market.getConfig();
         assertEq(cfg.liquidationBonus, maxBonus);

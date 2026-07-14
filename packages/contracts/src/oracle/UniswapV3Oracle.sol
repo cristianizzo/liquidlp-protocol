@@ -154,7 +154,7 @@ library LiquidityAmountsLib {
 /// Fork-tested against real mainnet data (see test/fork/UniswapV3Oracle.fork.t.sol):
 ///   - ETH/USDC V3 position pricing (6/18 decimals)
 ///   - TWAP vs Chainlink cross-validation
-///   - Decimal normalization, haircut selection, staleness checks
+///   - Decimal normalization, staleness checks
 ///   - Observation cardinality validated before pool.observe()
 ///   - Fee value capped at 20% of principal (anti-manipulation)
 ///
@@ -165,8 +165,7 @@ library LiquidityAmountsLib {
 ///   4. Normalize token amounts to 18 decimals (handles 6/8/18 dec tokens)
 ///   5. Price tokens via Chainlink feeds (also normalized to 18 dec)
 ///   6. Cross-validate TWAP vs Chainlink (revert if deviation exceeds threshold)
-///   7. Apply position-specific haircut (range width, in/out of range)
-///   8. Return safe (haircut-adjusted) value
+///   7. Return real market value (safety comes from LTV + liquidation threshold gap)
 contract UniswapV3Oracle is ILPOracle {
     ProtocolCore public immutable core;
     INonfungiblePositionManager public immutable positionManager;
@@ -177,24 +176,17 @@ contract UniswapV3Oracle is ILPOracle {
     // --- Configurable Parameters ---
     uint32 public twapPeriod = 1800; // 30 minutes
     uint256 public maxDeviationBps = 300; // 3%
-    uint256 public defaultHaircutBps = 700; // 7%
-    uint256 public narrowRangeHaircutBps = 1000; // 10%
-    uint256 public outOfRangeHaircutBps = 1200; // 12%
-    uint256 public volatilityHaircutBps = 500; // +5% (additive, for future PriceValidator integration)
     uint256 public maxStaleness = 3600; // 1 hour Chainlink staleness
 
     // --- Absolute Bounds ---
     uint32 public constant MIN_TWAP_PERIOD = 300;
     uint32 public constant MAX_TWAP_PERIOD = 7200;
-    uint256 public constant MIN_HAIRCUT_BPS = 200;
-    uint256 public constant MAX_HAIRCUT_BPS = 3000;
     uint256 public constant MIN_DEVIATION_BPS = 100;
     uint256 public constant MAX_DEVIATION_BPS_CAP = 1000;
 
     // --- Events ---
     event TwapPeriodUpdated(uint32 oldValue, uint32 newValue);
     event MaxDeviationUpdated(uint256 oldValue, uint256 newValue);
-    event HaircutUpdated(string haircutType, uint256 oldValue, uint256 newValue);
     event PriceFeedUpdated(address indexed token, address indexed feed);
     event MaxStalenessUpdated(uint256 oldValue, uint256 newValue);
 
@@ -221,30 +213,6 @@ contract UniswapV3Oracle is ILPOracle {
         require(_maxDeviationBps >= MIN_DEVIATION_BPS && _maxDeviationBps <= MAX_DEVIATION_BPS_CAP, "OUT_OF_BOUNDS");
         emit MaxDeviationUpdated(maxDeviationBps, _maxDeviationBps);
         maxDeviationBps = _maxDeviationBps;
-    }
-
-    function setDefaultHaircut(uint256 _bps) external onlyPoolAdmin {
-        require(_bps >= MIN_HAIRCUT_BPS && _bps <= MAX_HAIRCUT_BPS, "OUT_OF_BOUNDS");
-        emit HaircutUpdated("default", defaultHaircutBps, _bps);
-        defaultHaircutBps = _bps;
-    }
-
-    function setNarrowRangeHaircut(uint256 _bps) external onlyPoolAdmin {
-        require(_bps >= MIN_HAIRCUT_BPS && _bps <= MAX_HAIRCUT_BPS, "OUT_OF_BOUNDS");
-        emit HaircutUpdated("narrowRange", narrowRangeHaircutBps, _bps);
-        narrowRangeHaircutBps = _bps;
-    }
-
-    function setOutOfRangeHaircut(uint256 _bps) external onlyPoolAdmin {
-        require(_bps >= MIN_HAIRCUT_BPS && _bps <= MAX_HAIRCUT_BPS, "OUT_OF_BOUNDS");
-        emit HaircutUpdated("outOfRange", outOfRangeHaircutBps, _bps);
-        outOfRangeHaircutBps = _bps;
-    }
-
-    function setVolatilityHaircut(uint256 _bps) external onlyPoolAdmin {
-        require(_bps >= MIN_HAIRCUT_BPS / 2 && _bps <= MAX_HAIRCUT_BPS, "OUT_OF_BOUNDS");
-        emit HaircutUpdated("volatility", volatilityHaircutBps, _bps);
-        volatilityHaircutBps = _bps;
     }
 
     function setMaxStaleness(uint256 _maxStaleness) external onlyPoolAdmin {
@@ -286,7 +254,7 @@ contract UniswapV3Oracle is ILPOracle {
         returns (uint256)
     {
         ILPOracleHub.PriceResult memory result = _computePrice(tokenId);
-        // Raw value = principal + fees (before haircut)
+        // Raw value = principal + fees
         return result.principalValue + result.feeValue;
     }
 
@@ -358,15 +326,15 @@ contract UniswapV3Oracle is ILPOracle {
         // Skip cap when principalValue == 0 (fee-only positions — fees ARE the value).
         // @dev Accepted tradeoff: capping when principal=0 would value fee-only positions
         //      at $0, blocking liquidation and creating unrecoverable bad debt.
-        //      Protection: 50% fee discount + haircut + pool whitelist with min TVL.
+        //      Protection: 50% fee discount + LTV gap + pool whitelist with min TVL.
         if (principalValue > 0) {
             uint256 maxFee = principalValue / 5;
             if (feeValue > maxFee) feeValue = maxFee;
         }
 
-        // Step 8: Apply haircut based on position characteristics
-        uint256 haircut = _computeHaircut(tickLower, tickUpper, twapTick);
-        uint256 totalValue = LPMath.applyHaircut(principalValue + feeValue, haircut);
+        // Step 8: Return real market value (matches Aave/Revert approach).
+        // Safety comes from LTV + liquidation threshold gap.
+        uint256 totalValue = principalValue + feeValue;
 
         // Step 9: Compute confidence score
         uint256 confidence = _computeConfidence(tickLower, tickUpper, twapTick);
@@ -375,7 +343,6 @@ contract UniswapV3Oracle is ILPOracle {
             totalValue: totalValue,
             principalValue: principalValue,
             feeValue: feeValue,
-            haircut: haircut,
             confidence: confidence,
             timestamp: block.timestamp
         });
@@ -489,21 +456,7 @@ contract UniswapV3Oracle is ILPOracle {
         require(deviation <= maxDeviationBps, "ORACLE_DEVIATION");
     }
 
-    // --- Internal: Haircut & Confidence ---
-
-    /// @notice Determine haircut based on position characteristics
-    function _computeHaircut(int24 tickLower, int24 tickUpper, int24 currentTick) internal view returns (uint256) {
-        // Out of range — position is 100% one token, higher risk
-        if (currentTick < tickLower || currentTick >= tickUpper) {
-            return outOfRangeHaircutBps;
-        }
-        // Narrow range (< 200 ticks) — higher IL risk
-        int24 rangeWidth = tickUpper - tickLower;
-        if (rangeWidth < 200) {
-            return narrowRangeHaircutBps;
-        }
-        return defaultHaircutBps;
-    }
+    // --- Internal: Confidence ---
 
     /// @notice Compute oracle confidence based on position state (0-10000 bps)
     function _computeConfidence(int24 tickLower, int24 tickUpper, int24 currentTick) internal pure returns (uint256) {

@@ -193,7 +193,6 @@ abstract contract ForkTestBase is Test {
             6500, // 65% max LTV
             7500, // 75% liquidation threshold
             500, // 5% liquidation bonus
-            700, // 7% haircut
             10_000_000e6, // $10M borrow cap
             5_000_000e18, // $5M min pool TVL
             0, // 0 min pool age (for testing)

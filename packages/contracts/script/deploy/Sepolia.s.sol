@@ -34,7 +34,6 @@ contract DeploySepolia is DeployBase {
             maxLtv: 6500, // 65%
             liquidationThreshold: 7500, // 75%
             liquidationBonus: 500, // 5%
-            haircut: 700, // 7%
             borrowCap: 100_000e6, // $100K (6-dec USDC)
             // Governance — deployer as multisig on testnet, short delay
             multisig: deployer,

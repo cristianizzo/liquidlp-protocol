@@ -196,7 +196,6 @@ abstract contract E2EBase is ForkTestBase {
                     totalValue: valueUsd,
                     principalValue: valueUsd,
                     feeValue: 0,
-                    haircut: 700,
                     confidence: 9500,
                     timestamp: block.timestamp
                 })

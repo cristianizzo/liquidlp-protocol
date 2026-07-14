@@ -251,14 +251,12 @@ contract UniswapV3OracleForkTest is Test {
         emit log_named_uint("totalValue (USD, 18 dec)", result.totalValue);
         emit log_named_uint("principalValue", result.principalValue);
         emit log_named_uint("feeValue", result.feeValue);
-        emit log_named_uint("haircut (bps)", result.haircut);
         emit log_named_uint("confidence (bps)", result.confidence);
 
         // Basic sanity checks
         assertGt(result.totalValue, 0, "Position must have value");
         assertGt(result.principalValue, 0, "Principal must be positive");
         assertGe(result.confidence, 7000, "Confidence must be >= 70%");
-        assertLe(result.haircut, 1200, "Haircut must be <= 12%");
 
         // Value should be reasonable -not astronomically high or absurdly low
         // A real V3 position with liquidity should be at least $1 and less than $100M
@@ -321,49 +319,10 @@ contract UniswapV3OracleForkTest is Test {
     }
 
     // ========================================================
-    // TEST 8: Haircut selection -in-range vs out-of-range
+    // TEST 8: getRawPrice returns same value as getPrice (no haircut)
     // ========================================================
 
-    function test_oracle_haircutSelection() public {
-        (uint256 tokenId, bool found) = _findPositionWithLiquidity(USDC, WETH, 500);
-        if (!found) {
-            (tokenId, found) = _findPositionWithLiquidity(USDC, WETH, 3000);
-        }
-        if (!found) {
-            emit log("Skipping -no position found");
-            return;
-        }
-
-        ILPOracleHub.PriceResult memory result = oracle.getPrice(UNI_V3_NFT_MANAGER, tokenId, 0);
-
-        // Read position to check range
-        (,,,, uint24 fee, int24 tickLower, int24 tickUpper, uint128 liq,,,,) = nftManager.positions(tokenId);
-        address pool = IUniswapV3Factory(UNI_V3_FACTORY).getPool(USDC, WETH, fee);
-        (, int24 currentTick,,,,,) = IUniswapV3Pool(pool).slot0();
-
-        emit log_named_int("tickLower", int256(tickLower));
-        emit log_named_int("tickUpper", int256(tickUpper));
-        emit log_named_int("currentTick", int256(currentTick));
-        emit log_named_uint("haircut applied (bps)", result.haircut);
-
-        if (currentTick < tickLower || currentTick >= tickUpper) {
-            // Out of range → should use outOfRangeHaircutBps (1200)
-            assertEq(result.haircut, oracle.outOfRangeHaircutBps(), "Out-of-range position should use OOR haircut");
-        } else {
-            int24 rangeWidth = tickUpper - tickLower;
-            if (rangeWidth < 200) {
-                assertEq(result.haircut, oracle.narrowRangeHaircutBps(), "Narrow range should use narrow haircut");
-            } else {
-                assertEq(result.haircut, oracle.defaultHaircutBps(), "Wide in-range should use default haircut");
-            }
-        }
-    }
-
-    // ========================================================
-    // TEST 9: getRawPrice returns value without haircut
-    // ========================================================
-
-    function test_oracle_getRawPrice_noHaircut() public {
+    function test_oracle_getRawPrice_equalsTotal() public {
         (uint256 tokenId, bool found) = _findPositionWithLiquidity(USDC, WETH, 500);
         if (!found) {
             (tokenId, found) = _findPositionWithLiquidity(USDC, WETH, 3000);
@@ -376,12 +335,8 @@ contract UniswapV3OracleForkTest is Test {
         ILPOracleHub.PriceResult memory result = oracle.getPrice(UNI_V3_NFT_MANAGER, tokenId, 0);
         uint256 rawPrice = oracle.getRawPrice(UNI_V3_NFT_MANAGER, tokenId, 0);
 
-        // Raw price should be > total value (since total value has haircut applied)
-        assertGt(rawPrice, result.totalValue, "Raw price must be > haircut-adjusted value");
-
-        // Verify the math: rawPrice = totalValue * 10000 / (10000 - haircut)
-        uint256 expectedRaw = (result.totalValue * 10_000) / (10_000 - result.haircut);
-        assertApproxEqAbs(rawPrice, expectedRaw, 1, "Raw price must match reverse-haircut formula");
+        // Raw price = principal + fees = totalValue (no haircut)
+        assertEq(rawPrice, result.principalValue + result.feeValue, "Raw price must equal principal + fees");
     }
 
     // ========================================================
@@ -442,9 +397,6 @@ contract UniswapV3OracleForkTest is Test {
 
         oracle.setMaxDeviation(500);
         assertEq(oracle.maxDeviationBps(), 500);
-
-        oracle.setDefaultHaircut(800);
-        assertEq(oracle.defaultHaircutBps(), 800);
 
         oracle.setMaxStaleness(7200);
         assertEq(oracle.maxStaleness(), 7200);
