@@ -44,8 +44,8 @@ contract FeeCollector is ReentrancyGuard {
     // --- Absolute Bounds ---
     uint256 public constant MIN_RESERVE_FACTOR = 500; // 5%
     uint256 public constant MAX_RESERVE_FACTOR = 5000; // 50%
-    uint256 public constant MIN_LIQUIDATION_FEE = 50; // 0.5% of bonus
-    uint256 public constant MAX_LIQUIDATION_FEE = 9000; // 90% of bonus
+    uint256 public constant MIN_PROTOCOL_BONUS_SHARE = 50; // 0.5% of bonus
+    uint256 public constant MAX_PROTOCOL_BONUS_SHARE = 9000; // 90% of bonus
     uint256 public constant MAX_MANAGEMENT_FEE = 100; // 1%
     uint256 public constant MAX_INSURANCE_SHARE = 5000; // 50%
 
@@ -248,7 +248,7 @@ contract FeeCollector is ReentrancyGuard {
     }
 
     function setLiquidationFee(uint256 _bps) external onlyRiskAdmin {
-        require(_bps >= MIN_LIQUIDATION_FEE && _bps <= MAX_LIQUIDATION_FEE, "OUT_OF_BOUNDS");
+        require(_bps >= MIN_PROTOCOL_BONUS_SHARE && _bps <= MAX_PROTOCOL_BONUS_SHARE, "OUT_OF_BOUNDS");
         emit LiquidationFeeUpdated(liquidationFeeBps, _bps);
         liquidationFeeBps = _bps;
     }

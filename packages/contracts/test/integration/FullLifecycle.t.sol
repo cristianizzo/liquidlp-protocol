@@ -321,7 +321,7 @@ contract FullLifecycleTest is Test {
         vm.prank(owner);
         liq.setMaxLiquidationPortion(10_000);
 
-        // Set liquidation fee to minimum (0.5%) — cannot be 0 due to MIN_LIQUIDATION_FEE
+        // Set liquidation fee to minimum (0.5%) — cannot be 0 due to MIN_PROTOCOL_BONUS_SHARE
         vm.prank(owner);
         fc.setLiquidationFee(50);
 

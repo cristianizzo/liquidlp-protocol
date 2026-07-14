@@ -254,7 +254,7 @@ contract FeeCollectorTest is Test {
     function test_setLiquidationFee_revertsTooLow() public {
         vm.prank(owner);
         vm.expectRevert("OUT_OF_BOUNDS");
-        fc.setLiquidationFee(49); // Below MIN_LIQUIDATION_FEE (50 = 0.5%)
+        fc.setLiquidationFee(49); // Below MIN_PROTOCOL_BONUS_SHARE (50 = 0.5%)
     }
 
     function test_setManagementFee_success() public {
