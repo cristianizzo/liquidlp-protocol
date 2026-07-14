@@ -4,7 +4,8 @@ pragma solidity ^0.8.26;
 import "../E2EBase.t.sol";
 import {IPositionManager} from "../../../src/interfaces/IPositionManager.sol";
 
-/// @dev V2 mock that extends PositionManager with a new state variable appended after all storage.
+/// @dev V2 mock that extends PositionManager with a new state variable appended after the __gap.
+///      This simulates a future upgrade adding new storage — verifies existing state is preserved.
 contract PositionManagerV2Mock is PositionManager {
     uint256 public newStateVar;
 
@@ -216,7 +217,7 @@ contract UpgradeE2E is E2EBase {
     }
 
     // ================================================================
-    // 6. Storage gap — new variable does not collide with existing state
+    // 6. Upgrade with new state var — existing state preserved, new var accessible
     // ================================================================
 
     function test_upgrade_storageGap_newVarDoesNotCollide() public {

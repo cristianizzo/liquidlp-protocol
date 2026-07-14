@@ -19,11 +19,11 @@ contract RiskManagement is E2EBase {
     }
 
     // ========================================================================
-    // 1. GLOBAL BORROW CAP — set to $50K, borrow up to cap, second borrow reverts
+    // 1. GLOBAL BORROW CAP — set to $1K, borrow up to cap, second borrow reverts
     // ========================================================================
 
     function test_globalBorrowCap_enforced() public {
-        // Set global borrow cap to $50K (18-dec USD)
+        // Set global borrow cap to $1K (18-dec USD) — low value guarantees trigger
         vm.prank(deployer);
         riskManager.setGlobalBorrowCap(1000e18); // $1K cap (very low to guarantee trigger)
 
