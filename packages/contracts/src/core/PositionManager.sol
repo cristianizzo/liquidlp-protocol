@@ -582,11 +582,16 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         (addedLiquidity, used0, used1) =
             adapter.addLiquidity(cp.lpToken, cp.tokenId, cp.token0, cp.token1, reinvest0, reinvest1, cp.dustRefundTo);
 
-        // Slippage protection on reinvestment — revert if too much value lost to sandwich
-        if (cp.maxSlippageBps > 0 && (reinvest0 > 0 || reinvest1 > 0)) {
-            uint256 minUsed0 = (reinvest0 * (10_000 - cp.maxSlippageBps)) / 10_000;
-            uint256 minUsed1 = (reinvest1 * (10_000 - cp.maxSlippageBps)) / 10_000;
-            require(used0 >= minUsed0 || used1 >= minUsed1, "COMPOUND_SLIPPAGE");
+        // Slippage protection on reinvestment — revert if too much value lost to sandwich.
+        // Check each side independently (V3 positions may only use one token at range edges).
+        if (cp.maxSlippageBps > 0) {
+            require(cp.maxSlippageBps <= 10_000, "SLIPPAGE_BPS_OVERFLOW");
+            if (reinvest0 > 0) {
+                require(used0 >= (reinvest0 * (10_000 - cp.maxSlippageBps)) / 10_000, "COMPOUND_SLIPPAGE_0");
+            }
+            if (reinvest1 > 0) {
+                require(used1 >= (reinvest1 * (10_000 - cp.maxSlippageBps)) / 10_000, "COMPOUND_SLIPPAGE_1");
+            }
         }
     }
 

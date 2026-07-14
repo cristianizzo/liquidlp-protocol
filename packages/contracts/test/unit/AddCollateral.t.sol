@@ -18,7 +18,7 @@ import {MockERC20} from "../mocks/MockERC20.sol";
 import {InterestRateModel} from "../../src/markets/InterestRateModel.sol";
 
 /// @title AddCollateralTest
-/// @notice Unit tests for PositionManager.addCollateral(, 0, 0)
+/// @notice Unit tests for PositionManager.addCollateral()
 contract AddCollateralTest is Test {
     ProtocolCore public core;
     ACLManager public aclManager;
