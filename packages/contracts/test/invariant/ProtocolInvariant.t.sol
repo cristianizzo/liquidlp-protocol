@@ -15,6 +15,7 @@ import {ILPAdapter} from "../../src/interfaces/ILPAdapter.sol";
 import {IMarket} from "../../src/interfaces/IMarket.sol";
 import {MockLPAdapter} from "../mocks/MockLPAdapter.sol";
 import {MockLPOracle} from "../mocks/MockLPOracle.sol";
+import {FeeCollector} from "../../src/core/FeeCollector.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
 
 /// @title ProtocolInvariantTest
@@ -27,6 +28,7 @@ contract ProtocolInvariantTest is Test {
     LendingEngine public le;
     Market public market;
     LPOracleHub public oracleHub;
+    FeeCollector public fc;
     MockLPAdapter public adapter;
     MockLPOracle public oracle;
     MockERC20 public usdc;
@@ -84,6 +86,10 @@ contract ProtocolInvariantTest is Test {
                 )
             )
         );
+
+        address treasury = makeAddr("treasury");
+        address insurance = makeAddr("insurance");
+        fc = new FeeCollector(address(core), treasury, insurance);
 
         adapter = new MockLPAdapter(ILPAdapter.LPType.UniswapV3);
         adapter.setSupportedToken(lpToken, true);
@@ -358,5 +364,122 @@ contract ProtocolInvariantTest is Test {
         // INVARIANT: closed position has zero debt
         assertEq(le.getDebt(posId), 0, "Closed position must have zero debt");
         assertEq(uint8(pm.getPosition(posId).status), uint8(IPositionManager.PositionStatus.Closed));
+    }
+
+    // ================================================================
+    // INVARIANT 9: FeeCollector.accumulatedFees <= token balance
+    // ================================================================
+
+    function testFuzz_feeCollectorAccountingSound(uint256 feeAmount) public {
+        feeAmount = bound(feeAmount, 1e18, 1_000_000e18);
+
+        // Mint tokens and approve FeeCollector
+        address feePayer = makeAddr("feePayer");
+        usdc.mint(feePayer, feeAmount);
+        vm.prank(feePayer);
+        usdc.approve(address(fc), feeAmount);
+
+        // Collect fee (need authorized caller)
+        vm.prank(owner);
+        aclManager.addKeeper(address(this));
+        fc.collectFee(address(usdc), feeAmount, feePayer, "test");
+
+        // INVARIANT: tracked fees <= actual balance
+        uint256 tracked = fc.accumulatedFees(address(usdc));
+        uint256 balance = usdc.balanceOf(address(fc));
+        assertLe(tracked, balance, "accumulatedFees must not exceed actual balance");
+        assertEq(tracked, feeAmount, "accumulatedFees must match collected amount");
+    }
+
+    // ================================================================
+    // INVARIANT 10: activePositionCount tracks Active/Borrowed positions
+    // ================================================================
+
+    function testFuzz_activePositionCountConsistent(uint256 numPositions) public {
+        numPositions = bound(numPositions, 1, 5);
+        oracle.setPrice(100_000e18);
+
+        address user = makeAddr("multiUser");
+
+        // Deposit multiple positions
+        uint256 firstPosId;
+        for (uint256 i = 0; i < numPositions; i++) {
+            vm.prank(user);
+            uint256 posId = pm.deposit(lpToken, i + 1, 100e18, marketId);
+            if (i == 0) firstPosId = posId;
+        }
+
+        assertEq(pm.activePositionCount(user), numPositions, "activePositionCount must match deposits");
+
+        // Withdraw first position
+        vm.prank(user);
+        pm.withdraw(firstPosId);
+
+        assertEq(pm.activePositionCount(user), numPositions - 1, "activePositionCount must decrement on withdraw");
+    }
+
+    // ================================================================
+    // INVARIANT 11: Position status must be consistent with debt
+    //   - debt > 0 → Borrowed
+    //   - debt == 0 → Active (if position has collateral)
+    // ================================================================
+
+    function testFuzz_statusConsistentWithDebt(uint256 borrowAmt) public {
+        oracle.setPrice(100_000e18);
+        borrowAmt = bound(borrowAmt, 1e18, 65_000e18);
+
+        address user = makeAddr("user");
+        vm.prank(user);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+        vm.roll(block.number + 2);
+
+        // After deposit: Active, zero debt
+        assertEq(uint8(pm.getPosition(posId).status), uint8(IPositionManager.PositionStatus.Active));
+        assertEq(pm.positionDebt(posId), 0);
+
+        // After borrow: Borrowed, debt > 0
+        vm.prank(user);
+        le.borrow(posId, borrowAmt);
+        assertEq(uint8(pm.getPosition(posId).status), uint8(IPositionManager.PositionStatus.Borrowed));
+        assertGt(pm.positionDebt(posId), 0, "Borrowed status must have debt > 0");
+
+        // After full repay: Active, zero debt
+        usdc.mint(user, borrowAmt);
+        vm.prank(user);
+        usdc.approve(address(market), borrowAmt);
+        vm.prank(user);
+        le.repay(posId, type(uint256).max);
+        assertEq(uint8(pm.getPosition(posId).status), uint8(IPositionManager.PositionStatus.Active));
+        assertEq(pm.positionDebt(posId), 0, "Active status must have zero debt");
+    }
+
+    // ================================================================
+    // INVARIANT 12: Market balance >= totalSupply - totalBorrow
+    //   (actual tokens in market >= what lenders can withdraw)
+    // ================================================================
+
+    function testFuzz_marketSolvency(uint256 borrowAmt, uint256 timeElapsed) public {
+        oracle.setPrice(100_000e18);
+        borrowAmt = bound(borrowAmt, 1e18, 65_000e18);
+
+        address user = makeAddr("user");
+        vm.prank(user);
+        uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
+        vm.roll(block.number + 2);
+        vm.prank(user);
+        le.borrow(posId, borrowAmt);
+
+        timeElapsed = bound(timeElapsed, 0, 365 days);
+        vm.warp(block.timestamp + timeElapsed);
+        market.accrueInterest();
+
+        IMarket.MarketState memory s = market.getMarketState();
+        uint256 marketBalance = usdc.balanceOf(address(market));
+
+        // Available liquidity = balance in market
+        // Must be >= 0 (market can't owe more tokens than it holds minus what's borrowed)
+        assertGe(
+            marketBalance + s.totalBorrow, s.totalSupply, "Market must remain solvent: balance + borrows >= supply"
+        );
     }
 }
