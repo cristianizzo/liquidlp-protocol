@@ -23,6 +23,12 @@ contract FlashloanLiquidation is E2EBase {
         flashLiquidator = new FlashloanLiquidator(
             address(core), address(positionManager), address(liquidationEngine), Constants.UNI_V3_SWAP_ROUTER
         );
+
+        // Wire FeeCollector to LiquidationEngine so protocol earns liquidation fees
+        vm.startPrank(deployer);
+        liquidationEngine.setFeeCollector(address(feeCollector));
+        feeCollector.setLiquidationFee(500); // 5% of liquidator bonus goes to protocol
+        vm.stopPrank();
     }
 
     // ========================================================================
@@ -30,10 +36,22 @@ contract FlashloanLiquidation is E2EBase {
     // ========================================================================
 
     function test_flashLiquidation_V3_fullFlow() public {
+        // === BEFORE STATE ===
+        uint256 aliceUsdcStart = IERC20(Constants.USDC).balanceOf(alice);
+        uint256 aliceWethStart = IERC20(Constants.WETH).balanceOf(alice);
+        uint256 liquidatorUsdcStart = IERC20(Constants.USDC).balanceOf(liquidator);
+        uint256 protocolUsdcStart = IERC20(Constants.USDC).balanceOf(address(feeCollector));
+        uint256 protocolWethStart = IERC20(Constants.WETH).balanceOf(address(feeCollector));
+        address marketAddr = core.markets(ethUsdcMarketId);
+        uint256 marketUsdcStart = IERC20(Constants.USDC).balanceOf(marketAddr);
+
         // Step 1: Alice creates a V3 WETH/USDC position and deposits it
         uint256 tokenId = _createV3Position(alice, 1 ether, 2000e6);
         uint256 positionId = _depositV3(alice, tokenId);
         vm.roll(block.number + 2);
+
+        uint256 aliceUsdcAfterDeposit = IERC20(Constants.USDC).balanceOf(alice);
+        uint256 aliceWethAfterDeposit = IERC20(Constants.WETH).balanceOf(alice);
 
         // Step 2: Alice borrows aggressively
         uint256 maxBorrow = lendingEngine.getMaxBorrow(positionId);
@@ -43,11 +61,14 @@ contract FlashloanLiquidation is E2EBase {
         vm.prank(alice);
         lendingEngine.borrow(positionId, borrowAmount);
 
+        uint256 aliceUsdcAfterBorrow = IERC20(Constants.USDC).balanceOf(alice);
+
         // Step 3: Mock price crash to make position liquidatable
         IPositionManager.Position memory pos = positionManager.getPosition(positionId);
         uint256 originalValue = _getPositionValue(positionId);
+        uint256 crashedValue = (originalValue * 40) / 100;
         // Drop to 40% of original value — deeply underwater
-        _mockOraclePrice(pos.lpToken, pos.tokenId, pos.amount, pos.lpType, (originalValue * 40) / 100);
+        _mockOraclePrice(pos.lpToken, pos.tokenId, pos.amount, pos.lpType, crashedValue);
 
         (bool canLiq, uint256 maxRepay) = liquidationEngine.isLiquidatable(positionId);
         assertTrue(canLiq, "Position must be liquidatable");
@@ -100,35 +121,56 @@ contract FlashloanLiquidation is E2EBase {
         // The flash loan provided the capital, profit comes from liquidation bonus
         // Verify the profit is reasonable (liquidation bonus ~5% of seized collateral)
 
-        // Position status after liquidation
+        // === AFTER STATE ===
         IPositionManager.Position memory posAfter = positionManager.getPosition(positionId);
         uint256 valueAfter = _getPositionValue(positionId);
+        uint256 aliceUsdcEnd = IERC20(Constants.USDC).balanceOf(alice);
+        uint256 aliceWethEnd = IERC20(Constants.WETH).balanceOf(alice);
+        uint256 protocolUsdcEnd = IERC20(Constants.USDC).balanceOf(address(feeCollector));
+        uint256 protocolWethEnd = IERC20(Constants.WETH).balanceOf(address(feeCollector));
+        uint256 marketUsdcEnd = IERC20(Constants.USDC).balanceOf(marketAddr);
 
-        console.log("=== Flash Liquidation V3 Full Flow ===");
+        console.log("=========================================================");
+        console.log("       FLASH LIQUIDATION - FULL METRICS REPORT");
+        console.log("=========================================================");
         console.log("");
-        console.log("--- Position ---");
-        console.log("  Collateral value (original): $%s", originalValue / 1e18);
-        console.log("  Collateral value (crashed):  $%s", (originalValue * 40) / 100 / 1e18);
-        console.log("  Collateral value (after liq): $%s", valueAfter / 1e18);
-        console.log("  Position status: %s", uint8(posAfter.status) == 3 ? "Liquidated" : "Active");
+        console.log("--- BORROWER (Alice) ---");
+        console.log("  WETH deposited into LP:   1.0 ETH");
+        console.log("  USDC deposited into LP:   2,000 USDC");
+        console.log("  USDC borrowed:            %s USDC", borrowAmount / 1e6);
+        console.log("  USDC balance start:       %s", aliceUsdcStart / 1e6);
+        console.log("  USDC balance after borrow:%s", aliceUsdcAfterBorrow / 1e6);
+        console.log("  USDC balance end:         %s", aliceUsdcEnd / 1e6);
+        console.log("  WETH balance start:       %s", aliceWethStart / 1e15);
+        console.log("  WETH balance end:         %s", aliceWethEnd / 1e15);
+        console.log("  Position status:          %s", uint8(posAfter.status) == 3 ? "LIQUIDATED" : "Active");
+        console.log("  Debt remaining:           %s USDC", debtAfter / 1e6);
         console.log("");
-        console.log("--- Debt ---");
-        console.log("  Borrowed:      %s USDC", borrowAmount / 1e6);
-        console.log("  Max repay:     %s USDC", maxRepay / 1e6);
-        console.log("  Debt before:   %s USDC", borrowAmount / 1e6);
-        console.log("  Debt after:    %s USDC", debtAfter / 1e6);
-        console.log("  Debt repaid:   %s USDC", (borrowAmount - debtAfter) / 1e6);
+        console.log("--- POSITION ---");
+        console.log("  Value (original):         $%s", originalValue / 1e18);
+        console.log("  Value (after crash 60%%):  $%s", crashedValue / 1e18);
+        console.log("  Value (after liquidation): $%s", valueAfter / 1e18);
+        console.log("  Health factor at crash:    < 1.0 (liquidatable)");
         console.log("");
-        console.log("--- Flash Loan ---");
-        console.log("  Flash amount:  %s USDC", maxRepay / 1e6);
-        console.log("  Flash fee:     ~0.01%%");
+        console.log("--- LIQUIDATOR (Bot/MEV) ---");
+        console.log("  Capital required:         0 (flash loan)");
+        console.log("  Flash loan amount:        %s USDC", maxRepay / 1e6);
+        console.log("  Flash loan fee:           ~0.01%%");
+        console.log("  USDC before:              %s", callerUsdcBefore / 1e6);
+        console.log("  USDC after:               %s", callerUsdcAfter / 1e6);
+        console.log("  PROFIT:                   %s USDC", actualProfit / 1e6);
         console.log("");
-        console.log("--- Liquidator P&L ---");
-        console.log("  Capital used:  0 (flash loan)");
-        console.log("  USDC before:   %s", callerUsdcBefore / 1e6);
-        console.log("  USDC after:    %s", callerUsdcAfter / 1e6);
-        console.log("  Profit:        %s USDC", actualProfit / 1e6);
-        console.log("===================================");
+        console.log("--- PROTOCOL (FeeCollector) ---");
+        console.log("  USDC fees earned:         %s", (protocolUsdcEnd - protocolUsdcStart) / 1e6);
+        console.log("  WETH fees earned:         %s", (protocolWethEnd - protocolWethStart) / 1e15);
+        console.log("");
+        console.log("--- LENDING MARKET ---");
+        console.log("  USDC in market start:     %s", marketUsdcStart / 1e6);
+        console.log("  USDC in market end:       %s", marketUsdcEnd / 1e6);
+        console.log("  Debt repaid to market:    %s USDC", (borrowAmount - debtAfter) / 1e6);
+        console.log("  Lenders made whole:       %s", marketUsdcEnd >= marketUsdcStart ? "YES" : "NO");
+        console.log("");
+        console.log("=========================================================");
     }
 
     // ========================================================================
