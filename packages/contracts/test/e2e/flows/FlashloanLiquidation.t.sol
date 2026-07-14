@@ -100,11 +100,35 @@ contract FlashloanLiquidation is E2EBase {
         // The flash loan provided the capital, profit comes from liquidation bonus
         // Verify the profit is reasonable (liquidation bonus ~5% of seized collateral)
 
-        console.log("=== Flash Liquidation V3 Full Flow Passed ===");
-        console.log("Liquidator balance before: %s USDC", callerUsdcBefore / 1e6);
-        console.log("Liquidator balance after:  %s USDC", callerUsdcAfter / 1e6);
-        console.log("Profit: %s USDC", actualProfit / 1e6);
-        console.log("Debt before: %s, after: %s USDC", borrowAmount / 1e6, debtAfter / 1e6);
+        // Position status after liquidation
+        IPositionManager.Position memory posAfter = positionManager.getPosition(positionId);
+        uint256 valueAfter = _getPositionValue(positionId);
+
+        console.log("=== Flash Liquidation V3 Full Flow ===");
+        console.log("");
+        console.log("--- Position ---");
+        console.log("  Collateral value (original): $%s", originalValue / 1e18);
+        console.log("  Collateral value (crashed):  $%s", (originalValue * 40) / 100 / 1e18);
+        console.log("  Collateral value (after liq): $%s", valueAfter / 1e18);
+        console.log("  Position status: %s", uint8(posAfter.status) == 3 ? "Liquidated" : "Active");
+        console.log("");
+        console.log("--- Debt ---");
+        console.log("  Borrowed:      %s USDC", borrowAmount / 1e6);
+        console.log("  Max repay:     %s USDC", maxRepay / 1e6);
+        console.log("  Debt before:   %s USDC", borrowAmount / 1e6);
+        console.log("  Debt after:    %s USDC", debtAfter / 1e6);
+        console.log("  Debt repaid:   %s USDC", (borrowAmount - debtAfter) / 1e6);
+        console.log("");
+        console.log("--- Flash Loan ---");
+        console.log("  Flash amount:  %s USDC", maxRepay / 1e6);
+        console.log("  Flash fee:     ~0.01%%");
+        console.log("");
+        console.log("--- Liquidator P&L ---");
+        console.log("  Capital used:  0 (flash loan)");
+        console.log("  USDC before:   %s", callerUsdcBefore / 1e6);
+        console.log("  USDC after:    %s", callerUsdcAfter / 1e6);
+        console.log("  Profit:        %s USDC", actualProfit / 1e6);
+        console.log("===================================");
     }
 
     // ========================================================================
