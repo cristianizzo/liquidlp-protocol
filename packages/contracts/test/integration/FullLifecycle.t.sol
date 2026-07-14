@@ -321,9 +321,9 @@ contract FullLifecycleTest is Test {
         vm.prank(owner);
         liq.setMaxLiquidationPortion(10_000);
 
-        // Disable liquidation fee (fee is taken from bonus portion of underlying tokens)
+        // Set liquidation fee to minimum (0.5%) — cannot be 0 due to MIN_LIQUIDATION_FEE
         vm.prank(owner);
-        fc.setLiquidationFee(0);
+        fc.setLiquidationFee(50);
 
         uint256 totalDebt = le.getDebt(posId);
         usdc.mint(liquidator, totalDebt);
