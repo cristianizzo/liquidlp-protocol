@@ -18,9 +18,8 @@ max_test_rejects = 500000
 runs = 1000
 depth = 100
 
-# CI profile: faster compilation + fewer fuzz runs
+# CI profile: fewer fuzz runs for speed
 [profile.ci]
-via_ir = false
 fuzz = { runs = 500 }
 invariant = { runs = 100, depth = 50 }
 
