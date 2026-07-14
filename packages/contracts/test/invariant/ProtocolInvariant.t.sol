@@ -16,7 +16,6 @@ import {IMarket} from "../../src/interfaces/IMarket.sol";
 import {MockLPAdapter} from "../mocks/MockLPAdapter.sol";
 import {MockLPOracle} from "../mocks/MockLPOracle.sol";
 import {FeeCollector} from "../../src/core/FeeCollector.sol";
-import {LiquidationEngine} from "../../src/core/LiquidationEngine.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
 
 /// @title ProtocolInvariantTest
@@ -30,7 +29,6 @@ contract ProtocolInvariantTest is Test {
     Market public market;
     LPOracleHub public oracleHub;
     FeeCollector public fc;
-    LiquidationEngine public liqEngine;
     MockLPAdapter public adapter;
     MockLPOracle public oracle;
     MockERC20 public usdc;
@@ -93,15 +91,6 @@ contract ProtocolInvariantTest is Test {
         address insurance = makeAddr("insurance");
         fc = new FeeCollector(address(core), treasury, insurance);
 
-        liqEngine = LiquidationEngine(
-            address(
-                new ERC1967Proxy(
-                    address(new LiquidationEngine()),
-                    abi.encodeCall(LiquidationEngine.initialize, (address(core), address(pm), address(le)))
-                )
-            )
-        );
-
         adapter = new MockLPAdapter(ILPAdapter.LPType.UniswapV3);
         adapter.setSupportedToken(lpToken, true);
         oracle = new MockLPOracle();
@@ -109,7 +98,6 @@ contract ProtocolInvariantTest is Test {
         vm.startPrank(owner);
         aclManager.addEmergencyAdmin(guardian);
         aclManager.addLendingEngine(address(le));
-        aclManager.addLiquidationEngine(address(liqEngine));
         aclManager.addPositionManager(address(pm));
         core.registerAdapter(ILPAdapter.LPType.UniswapV3, address(adapter));
         oracleHub.registerOracle(ILPAdapter.LPType.UniswapV3, address(oracle));
@@ -414,16 +402,18 @@ contract ProtocolInvariantTest is Test {
         address user = makeAddr("multiUser");
 
         // Deposit multiple positions
+        uint256 firstPosId;
         for (uint256 i = 0; i < numPositions; i++) {
             vm.prank(user);
-            pm.deposit(lpToken, i + 1, 100e18, marketId);
+            uint256 posId = pm.deposit(lpToken, i + 1, 100e18, marketId);
+            if (i == 0) firstPosId = posId;
         }
 
         assertEq(pm.activePositionCount(user), numPositions, "activePositionCount must match deposits");
 
         // Withdraw first position
         vm.prank(user);
-        pm.withdraw(0);
+        pm.withdraw(firstPosId);
 
         assertEq(pm.activePositionCount(user), numPositions - 1, "activePositionCount must decrement on withdraw");
     }
