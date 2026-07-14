@@ -581,13 +581,16 @@ contract CompoundFeesTest is Test {
 
     // ========== batchCompound error event ==========
 
+    event CompoundFailed(uint256 indexed positionId, bytes reason);
+
     function test_batchCompound_emitsCompoundFailed() public {
-        // No fees set — position 999 doesn't exist
         uint256[] memory ids = new uint256[](1);
-        ids[0] = 999;
+        ids[0] = 999; // doesn't exist
+
+        vm.expectEmit(true, false, false, false);
+        emit CompoundFailed(999, "");
 
         vm.prank(alice);
-        // Should emit CompoundFailed but not revert
         compounder.batchCompound(ids);
     }
 }
