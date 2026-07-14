@@ -148,20 +148,13 @@ jobs:
           echo "Anvil failed to start"
           exit 1
 
-      - name: Run fork tests
-        id: fork
+      - name: Run fork tests (compiles + runs)
         run: forge test --match-path 'test/fork/**' --fork-url http://localhost:8545 -v
-        background: true
         timeout-minutes: 10
 
-      - name: Run E2E tests
-        id: e2e
+      - name: Run E2E tests (no recompile)
         run: forge test --match-path 'test/e2e/**' --fork-url http://localhost:8545 -v
-        background: true
         timeout-minutes: 15
-
-      - name: Wait for all tests
-        wait-all: true
 
       - name: Stop Anvil
         cancel: anvil
