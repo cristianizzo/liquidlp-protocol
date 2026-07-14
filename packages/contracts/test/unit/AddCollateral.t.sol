@@ -327,4 +327,45 @@ contract AddCollateralTest is Test {
         PositionManager.Position memory pos = pm.getPosition(positionId);
         assertGt(pos.amount, 100e18, "V2 amount should have increased from addCollateral");
     }
+
+    // ========== Slippage Protection ==========
+
+    function test_addCollateral_slippageAmount0_reverts() public {
+        uint256 posId = _depositV3(alice);
+        token0.mint(alice, 1 ether);
+        token1.mint(alice, 2000e6);
+
+        vm.startPrank(alice);
+        token0.approve(address(pm), 1 ether);
+        token1.approve(address(pm), 2000e6);
+        // minAmount0Used = max — impossible to satisfy
+        vm.expectRevert("SLIPPAGE_AMOUNT0");
+        pm.addCollateral(posId, 1 ether, 2000e6, type(uint256).max, 0);
+        vm.stopPrank();
+    }
+
+    function test_addCollateral_slippageAmount1_reverts() public {
+        uint256 posId = _depositV3(alice);
+        token0.mint(alice, 1 ether);
+        token1.mint(alice, 2000e6);
+
+        vm.startPrank(alice);
+        token0.approve(address(pm), 1 ether);
+        token1.approve(address(pm), 2000e6);
+        vm.expectRevert("SLIPPAGE_AMOUNT1");
+        pm.addCollateral(posId, 1 ether, 2000e6, 0, type(uint256).max);
+        vm.stopPrank();
+    }
+
+    function test_addCollateral_zeroSlippage_succeeds() public {
+        uint256 posId = _depositV3(alice);
+        token0.mint(alice, 1 ether);
+        token1.mint(alice, 2000e6);
+
+        vm.startPrank(alice);
+        token0.approve(address(pm), 1 ether);
+        token1.approve(address(pm), 2000e6);
+        pm.addCollateral(posId, 1 ether, 2000e6, 0, 0);
+        vm.stopPrank();
+    }
 }

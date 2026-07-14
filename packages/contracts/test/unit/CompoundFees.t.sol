@@ -593,4 +593,28 @@ contract CompoundFeesTest is Test {
         vm.prank(alice);
         compounder.batchCompound(ids);
     }
+
+    // ========== Compound slippage ==========
+
+    function test_compoundFees_slippageBpsOverflow_reverts() public {
+        _setupFees(1e18, 2000e6);
+        vm.prank(keeper);
+        vm.expectRevert("SLIPPAGE_BPS_OVERFLOW");
+        pm.compoundFees(positionId, address(feeCollector), 200, keeper, 50, 0, alice, 10_001);
+    }
+
+    function test_compoundFees_withSlippage_succeeds() public {
+        _setupFees(10_000e18, 20_000e6);
+        // 2% max slippage — mock adapter returns used == reinvested, so no slippage
+        vm.prank(keeper);
+        (,, uint256 liq) = pm.compoundFees(positionId, address(feeCollector), 200, keeper, 50, 0, alice, 200);
+        assertGt(liq, 0);
+    }
+
+    function test_compoundFees_zeroSlippage_noCheck() public {
+        _setupFees(1e18, 2000e6);
+        // maxSlippageBps = 0 skips slippage check entirely
+        vm.prank(keeper);
+        pm.compoundFees(positionId, address(feeCollector), 200, keeper, 50, 0, alice, 0);
+    }
 }
