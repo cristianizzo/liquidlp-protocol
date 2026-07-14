@@ -135,7 +135,7 @@ contract FlashloanLiquidator is IUniswapV3FlashCallback {
         // Security: verify caller is the flash pool set by liquidate() — not from calldata
         require(msg.sender == _activeFlashPool, "NOT_FLASH_POOL");
 
-        uint256 flashFee = fee0 > 0 ? fee0 : fee1;
+        uint256 flashFee = fee0 + fee1; // Only one is non-zero (we flash a single token)
 
         // Step 1: Approve and execute liquidation
         IERC20(cb.borrowAsset).forceApprove(address(liquidationEngine), cb.repayAmount);
