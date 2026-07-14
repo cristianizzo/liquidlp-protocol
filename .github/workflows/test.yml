@@ -21,17 +21,17 @@ jobs:
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
+        with:
+          cache: true
 
       - name: Install dependencies
-        run: |
-          forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable transmissions11/solmate --no-git
+        run: forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable transmissions11/solmate --no-git
 
       - name: Build
         run: forge build --sizes
 
   test-unit:
     name: Unit Tests
-    needs: build
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -41,26 +41,26 @@ jobs:
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
+        with:
+          cache: true
 
       - name: Install dependencies
-        run: |
-          forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable transmissions11/solmate --no-git
+        run: forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable transmissions11/solmate --no-git
 
       - name: Run unit tests
-        run: forge test --match-path 'test/unit/**' -vvv
+        run: forge test --match-path 'test/unit/**' -v
 
       - name: Run integration tests
-        run: forge test --match-path 'test/integration/**' -vvv
+        run: forge test --match-path 'test/integration/**' -v
 
       - name: Run invariant tests
-        run: forge test --match-path 'test/invariant/**' -vvv
+        run: forge test --match-path 'test/invariant/**' -v
 
       - name: Run security tests
-        run: forge test --match-path 'test/security/**' -vvv
+        run: forge test --match-path 'test/security/**' -v
 
   test-fork:
     name: Fork + E2E Tests
-    needs: build
     runs-on: ubuntu-latest
     environment: E2E
     defaults:
@@ -71,10 +71,11 @@ jobs:
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
+        with:
+          cache: true
 
       - name: Install dependencies
-        run: |
-          forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable transmissions11/solmate --no-git
+        run: forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable transmissions11/solmate --no-git
 
       - name: Start Anvil fork
         run: |
@@ -95,11 +96,11 @@ jobs:
           exit 1
 
       - name: Run fork tests
-        run: forge test --match-path 'test/fork/**' --fork-url http://localhost:8545 -vvv
+        run: forge test --match-path 'test/fork/**' --fork-url http://localhost:8545 -v
         timeout-minutes: 10
 
       - name: Run E2E tests
-        run: forge test --match-path 'test/e2e/**' --fork-url http://localhost:8545 -vvv
+        run: forge test --match-path 'test/e2e/**' --fork-url http://localhost:8545 -v
         timeout-minutes: 10
 
   lint:
@@ -113,10 +114,11 @@ jobs:
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
+        with:
+          cache: true
 
       - name: Install dependencies
-        run: |
-          forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable transmissions11/solmate --no-git
+        run: forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable transmissions11/solmate --no-git
 
       - name: Check formatting
         run: forge fmt --check
