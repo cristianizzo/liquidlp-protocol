@@ -130,14 +130,14 @@ contract CompoundFeesTest is Test {
         _setupFees(1e18, 2000e6);
         vm.prank(alice);
         vm.expectRevert("NOT_AUTHORIZED");
-        pm.compoundFees(positionId, address(feeCollector), 200, alice, 50, 1000, alice);
+        pm.compoundFees(positionId, address(feeCollector), 200, alice, 50, 1000, alice, 0);
     }
 
     function test_compoundFees_keeperCanCall() public {
         _setupFees(1e18, 2000e6);
         vm.prank(keeper);
         (uint256 f0, uint256 f1, uint256 liq) =
-            pm.compoundFees(positionId, address(feeCollector), 200, keeper, 50, 0, alice);
+            pm.compoundFees(positionId, address(feeCollector), 200, keeper, 50, 0, alice, 0);
         assertGt(f0, 0);
         assertGt(f1, 0);
         assertGt(liq, 0);
@@ -146,7 +146,7 @@ contract CompoundFeesTest is Test {
     function test_compoundFees_poolAdminCanCall() public {
         _setupFees(1e18, 2000e6);
         vm.prank(owner);
-        (uint256 f0,,) = pm.compoundFees(positionId, address(feeCollector), 200, owner, 50, 0, alice);
+        (uint256 f0,,) = pm.compoundFees(positionId, address(feeCollector), 200, owner, 50, 0, alice, 0);
         assertGt(f0, 0);
     }
 
@@ -156,20 +156,20 @@ contract CompoundFeesTest is Test {
         _setupFees(1e18, 2000e6);
         vm.prank(keeper);
         vm.expectRevert("FEES_TOO_HIGH");
-        pm.compoundFees(positionId, address(feeCollector), 4000, keeper, 1001, 0, alice);
+        pm.compoundFees(positionId, address(feeCollector), 4000, keeper, 1001, 0, alice, 0);
     }
 
     function test_compoundFees_revertsZeroRefundAddress() public {
         _setupFees(1e18, 2000e6);
         vm.prank(keeper);
         vm.expectRevert("ZERO_REFUND_ADDRESS");
-        pm.compoundFees(positionId, address(feeCollector), 200, keeper, 50, 0, address(0));
+        pm.compoundFees(positionId, address(feeCollector), 200, keeper, 50, 0, address(0), 0);
     }
 
     function test_compoundFees_revertsPositionNotFound() public {
         vm.prank(keeper);
         vm.expectRevert("POSITION_NOT_FOUND");
-        pm.compoundFees(999, address(feeCollector), 200, keeper, 50, 0, alice);
+        pm.compoundFees(999, address(feeCollector), 200, keeper, 50, 0, alice, 0);
     }
 
     function test_compoundFees_revertsClosedPosition() public {
@@ -179,7 +179,7 @@ contract CompoundFeesTest is Test {
         _setupFees(1e18, 2000e6);
         vm.prank(keeper);
         vm.expectRevert("POSITION_NOT_ACTIVE");
-        pm.compoundFees(positionId, address(feeCollector), 200, keeper, 50, 0, alice);
+        pm.compoundFees(positionId, address(feeCollector), 200, keeper, 50, 0, alice, 0);
     }
 
     // ========== Zero Fees ==========
@@ -188,7 +188,7 @@ contract CompoundFeesTest is Test {
         // No fees set (default 0)
         vm.prank(keeper);
         (uint256 f0, uint256 f1, uint256 liq) =
-            pm.compoundFees(positionId, address(feeCollector), 200, keeper, 50, 0, alice);
+            pm.compoundFees(positionId, address(feeCollector), 200, keeper, 50, 0, alice, 0);
         assertEq(f0, 0);
         assertEq(f1, 0);
         assertEq(liq, 0);
@@ -200,20 +200,20 @@ contract CompoundFeesTest is Test {
         _setupFees(500, 500); // Below threshold
         vm.prank(keeper);
         vm.expectRevert("BELOW_MIN_FEE_THRESHOLD");
-        pm.compoundFees(positionId, address(feeCollector), 200, keeper, 50, 1000, alice);
+        pm.compoundFees(positionId, address(feeCollector), 200, keeper, 50, 1000, alice, 0);
     }
 
     function test_compoundFees_aboveThresholdProceeds() public {
         _setupFees(2000, 500); // fee0 >= threshold
         vm.prank(keeper);
-        (,, uint256 liq) = pm.compoundFees(positionId, address(feeCollector), 0, keeper, 0, 1000, alice);
+        (,, uint256 liq) = pm.compoundFees(positionId, address(feeCollector), 0, keeper, 0, 1000, alice, 0);
         assertGt(liq, 0);
     }
 
     function test_compoundFees_zeroThresholdAlwaysProceeds() public {
         _setupFees(1, 1); // Tiny fees
         vm.prank(keeper);
-        (,, uint256 liq) = pm.compoundFees(positionId, address(feeCollector), 0, keeper, 0, 0, alice);
+        (,, uint256 liq) = pm.compoundFees(positionId, address(feeCollector), 0, keeper, 0, 0, alice, 0);
         assertGt(liq, 0);
     }
 
@@ -227,7 +227,7 @@ contract CompoundFeesTest is Test {
         uint256 protocolBps = 200; // 2%
 
         vm.prank(keeper);
-        pm.compoundFees(positionId, address(feeCollector), protocolBps, keeper, 0, 0, alice);
+        pm.compoundFees(positionId, address(feeCollector), protocolBps, keeper, 0, 0, alice, 0);
 
         // FeeCollector should have received 2% of each token
         uint256 expectedFee0 = (fee0 * protocolBps) / 10_000; // 200 WETH
@@ -245,7 +245,7 @@ contract CompoundFeesTest is Test {
         uint256 callerBps = 50; // 0.5%
 
         vm.prank(keeper);
-        pm.compoundFees(positionId, address(feeCollector), 0, rewardRecipient, callerBps, 0, alice);
+        pm.compoundFees(positionId, address(feeCollector), 0, rewardRecipient, callerBps, 0, alice, 0);
 
         uint256 expectedReward0 = (fee0 * callerBps) / 10_000;
         uint256 expectedReward1 = (fee1 * callerBps) / 10_000;
@@ -263,7 +263,7 @@ contract CompoundFeesTest is Test {
 
         vm.prank(keeper);
         (,, uint256 addedLiquidity) =
-            pm.compoundFees(positionId, address(feeCollector), protocolBps, keeper, callerBps, 0, alice);
+            pm.compoundFees(positionId, address(feeCollector), protocolBps, keeper, callerBps, 0, alice, 0);
 
         // Reinvested = total - protocol - caller = 97.5%
         uint256 pFee0 = (fee0 * protocolBps) / 10_000;
@@ -288,7 +288,7 @@ contract CompoundFeesTest is Test {
         address rewardRecipient = makeAddr("rewardRecipient");
 
         vm.prank(keeper);
-        pm.compoundFees(positionId, address(feeCollector), protocolBps, rewardRecipient, callerBps, 0, alice);
+        pm.compoundFees(positionId, address(feeCollector), protocolBps, rewardRecipient, callerBps, 0, alice, 0);
 
         // Verify all tokens accounted for (no tokens left in PM)
         assertEq(token0.balanceOf(address(pm)), 0, "PM should have zero token0");
@@ -299,7 +299,7 @@ contract CompoundFeesTest is Test {
         _setupFees(1e18, 2000e6);
 
         vm.prank(keeper);
-        pm.compoundFees(positionId, address(feeCollector), 0, keeper, 50, 0, alice);
+        pm.compoundFees(positionId, address(feeCollector), 0, keeper, 50, 0, alice, 0);
 
         // No protocol fees collected
         assertEq(feeCollector.accumulatedFees(address(token0)), 0);
@@ -311,7 +311,7 @@ contract CompoundFeesTest is Test {
         address rewardRecipient = makeAddr("rewardRecipient");
 
         vm.prank(keeper);
-        pm.compoundFees(positionId, address(feeCollector), 200, rewardRecipient, 0, 0, alice);
+        pm.compoundFees(positionId, address(feeCollector), 200, rewardRecipient, 0, 0, alice, 0);
 
         // No caller reward
         assertEq(token0.balanceOf(rewardRecipient), 0);
@@ -329,7 +329,7 @@ contract CompoundFeesTest is Test {
         emit FeesCompoundedInternal(positionId, fee0, fee1, 0);
 
         vm.prank(keeper);
-        pm.compoundFees(positionId, address(feeCollector), 200, keeper, 50, 0, alice);
+        pm.compoundFees(positionId, address(feeCollector), 200, keeper, 50, 0, alice, 0);
     }
 
     // ========== Borrowed Position ==========
@@ -344,7 +344,7 @@ contract CompoundFeesTest is Test {
 
         _setupFees(1e18, 2000e6);
         vm.prank(keeper);
-        (uint256 f0,,) = pm.compoundFees(positionId, address(feeCollector), 200, keeper, 50, 0, alice);
+        (uint256 f0,,) = pm.compoundFees(positionId, address(feeCollector), 200, keeper, 50, 0, alice, 0);
         assertGt(f0, 0);
     }
 
@@ -354,14 +354,14 @@ contract CompoundFeesTest is Test {
         _setupFees(1e18, 2000e6);
         // Exactly 50% total — should work
         vm.prank(keeper);
-        pm.compoundFees(positionId, address(feeCollector), 2500, keeper, 2500, 0, alice);
+        pm.compoundFees(positionId, address(feeCollector), 2500, keeper, 2500, 0, alice, 0);
     }
 
     function test_compoundFees_exceedsMaxFeeReverts() public {
         _setupFees(1e18, 2000e6);
         vm.prank(keeper);
         vm.expectRevert("FEES_TOO_HIGH");
-        pm.compoundFees(positionId, address(feeCollector), 2501, keeper, 2500, 0, alice);
+        pm.compoundFees(positionId, address(feeCollector), 2501, keeper, 2500, 0, alice, 0);
     }
 
     // ========== LPCompounder Integration ==========
@@ -515,7 +515,7 @@ contract CompoundFeesTest is Test {
 
         // 5% protocol, 0% caller
         vm.prank(keeper);
-        (,, uint256 liq) = pm.compoundFees(positionId, address(feeCollector), 500, keeper, 0, 0, alice);
+        (,, uint256 liq) = pm.compoundFees(positionId, address(feeCollector), 500, keeper, 0, 0, alice, 0);
 
         // 95% reinvested
         uint256 expectedReinvest0 = fee0 - (fee0 * 500 / 10_000);
@@ -531,7 +531,7 @@ contract CompoundFeesTest is Test {
         address rewardTo = makeAddr("rewardTo");
         // 0% protocol, 3% caller
         vm.prank(keeper);
-        pm.compoundFees(positionId, address(feeCollector), 0, rewardTo, 300, 0, alice);
+        pm.compoundFees(positionId, address(feeCollector), 0, rewardTo, 300, 0, alice, 0);
 
         assertEq(feeCollector.accumulatedFees(address(token0)), 0, "No protocol fee");
         assertEq(token0.balanceOf(rewardTo), fee0 * 300 / 10_000, "Caller gets 3%");
@@ -543,7 +543,7 @@ contract CompoundFeesTest is Test {
 
         vm.prank(keeper);
         (uint256 f0, uint256 f1, uint256 liq) =
-            pm.compoundFees(positionId, address(feeCollector), 200, keeper, 50, 0, alice);
+            pm.compoundFees(positionId, address(feeCollector), 200, keeper, 50, 0, alice, 0);
 
         assertEq(f0, 5e18);
         assertEq(f1, 0);
@@ -558,7 +558,7 @@ contract CompoundFeesTest is Test {
         _setupFees(1001, 0);
 
         vm.prank(keeper);
-        (uint256 f0,, uint256 liq) = pm.compoundFees(positionId, address(feeCollector), 200, keeper, 50, 1000, alice);
+        (uint256 f0,, uint256 liq) = pm.compoundFees(positionId, address(feeCollector), 200, keeper, 50, 1000, alice, 0);
 
         assertEq(f0, 1001);
         // 2% of 1001 = 20 (truncated), 0.5% of 1001 = 5 (truncated)
@@ -571,7 +571,7 @@ contract CompoundFeesTest is Test {
         _setupFees(10_000e18, 10_000e6);
 
         vm.prank(keeper);
-        (,, uint256 liq) = pm.compoundFees(positionId, address(feeCollector), 2500, keeper, 2500, 0, alice);
+        (,, uint256 liq) = pm.compoundFees(positionId, address(feeCollector), 2500, keeper, 2500, 0, alice, 0);
 
         // 50% reinvested
         uint256 expectedReinvest0 = 10_000e18 / 2;

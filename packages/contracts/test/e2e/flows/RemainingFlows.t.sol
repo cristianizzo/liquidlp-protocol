@@ -68,7 +68,7 @@ contract RemainingFlows is E2EBase {
         vm.startPrank(alice);
         IERC20(token0).approve(address(positionManager), addAmount0);
         IERC20(token1).approve(address(positionManager), addAmount1);
-        positionManager.addCollateral(positionId, addAmount0, addAmount1);
+        positionManager.addCollateral(positionId, addAmount0, addAmount1, 0, 0);
         vm.stopPrank();
 
         // Position value should increase
@@ -121,7 +121,7 @@ contract RemainingFlows is E2EBase {
         vm.startPrank(alice);
         IERC20(pos.token0).approve(address(positionManager), addAmount0);
         IERC20(pos.token1).approve(address(positionManager), addAmount1);
-        positionManager.addCollateral(positionId, addAmount0, addAmount1);
+        positionManager.addCollateral(positionId, addAmount0, addAmount1, 0, 0);
         vm.stopPrank();
 
         // V2: pos.amount should increase

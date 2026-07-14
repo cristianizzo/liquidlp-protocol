@@ -57,7 +57,16 @@ interface IPositionManager {
     /// @param positionId The position to add collateral to
     /// @param amount0 Amount of token0 to add
     /// @param amount1 Amount of token1 to add
-    function addCollateral(uint256 positionId, uint256 amount0, uint256 amount1) external;
+    /// @param minAmount0Used Minimum token0 that must be used (slippage protection)
+    /// @param minAmount1Used Minimum token1 that must be used (slippage protection)
+    function addCollateral(
+        uint256 positionId,
+        uint256 amount0,
+        uint256 amount1,
+        uint256 minAmount0Used,
+        uint256 minAmount1Used
+    )
+        external;
 
     function getPosition(uint256 positionId) external view returns (Position memory);
 

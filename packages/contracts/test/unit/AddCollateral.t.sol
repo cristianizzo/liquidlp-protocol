@@ -18,7 +18,7 @@ import {MockERC20} from "../mocks/MockERC20.sol";
 import {InterestRateModel} from "../../src/markets/InterestRateModel.sol";
 
 /// @title AddCollateralTest
-/// @notice Unit tests for PositionManager.addCollateral()
+/// @notice Unit tests for PositionManager.addCollateral(, 0, 0)
 contract AddCollateralTest is Test {
     ProtocolCore public core;
     ACLManager public aclManager;
@@ -145,7 +145,7 @@ contract AddCollateralTest is Test {
         vm.expectEmit(true, false, false, true);
         emit CollateralAdded(positionId, addAmount0 + addAmount1, addAmount0, addAmount1);
 
-        pm.addCollateral(positionId, addAmount0, addAmount1);
+        pm.addCollateral(positionId, addAmount0, addAmount1, 0, 0);
         vm.stopPrank();
 
         // V3: pos.amount should NOT change (liquidity in NFT)
@@ -165,7 +165,7 @@ contract AddCollateralTest is Test {
         vm.startPrank(alice);
         token0.approve(address(pm), addAmount0);
         token1.approve(address(pm), addAmount1);
-        pm.addCollateral(positionId, addAmount0, addAmount1);
+        pm.addCollateral(positionId, addAmount0, addAmount1, 0, 0);
         vm.stopPrank();
 
         // V2: pos.amount should increase
@@ -179,7 +179,7 @@ contract AddCollateralTest is Test {
 
         vm.startPrank(alice);
         token0.approve(address(pm), 1 ether);
-        pm.addCollateral(positionId, 1 ether, 0);
+        pm.addCollateral(positionId, 1 ether, 0, 0, 0);
         vm.stopPrank();
     }
 
@@ -188,7 +188,7 @@ contract AddCollateralTest is Test {
 
         vm.startPrank(alice);
         token1.approve(address(pm), 2000e6);
-        pm.addCollateral(positionId, 0, 2000e6);
+        pm.addCollateral(positionId, 0, 2000e6, 0, 0);
         vm.stopPrank();
     }
 
@@ -206,7 +206,7 @@ contract AddCollateralTest is Test {
         vm.startPrank(alice);
         token0.approve(address(pm), 1 ether);
         token1.approve(address(pm), 2000e6);
-        pm.addCollateral(positionId, 1 ether, 2000e6);
+        pm.addCollateral(positionId, 1 ether, 2000e6, 0, 0);
         vm.stopPrank();
     }
 
@@ -220,7 +220,7 @@ contract AddCollateralTest is Test {
         vm.expectEmit(true, false, false, true);
         emit CollateralAdded(positionId, 5 ether + 10_000e6, 5 ether, 10_000e6);
 
-        pm.addCollateral(positionId, 5 ether, 10_000e6);
+        pm.addCollateral(positionId, 5 ether, 10_000e6, 0, 0);
         vm.stopPrank();
     }
 
@@ -233,7 +233,7 @@ contract AddCollateralTest is Test {
         vm.startPrank(bob);
         token0.approve(address(pm), 1 ether);
         vm.expectRevert("NOT_POSITION_OWNER");
-        pm.addCollateral(positionId, 1 ether, 0);
+        pm.addCollateral(positionId, 1 ether, 0, 0, 0);
         vm.stopPrank();
     }
 
@@ -242,7 +242,7 @@ contract AddCollateralTest is Test {
 
         vm.prank(alice);
         vm.expectRevert("ZERO_AMOUNTS");
-        pm.addCollateral(positionId, 0, 0);
+        pm.addCollateral(positionId, 0, 0, 0, 0);
     }
 
     function test_addCollateral_revertsClosedPosition() public {
@@ -255,7 +255,7 @@ contract AddCollateralTest is Test {
         vm.startPrank(alice);
         token0.approve(address(pm), 1 ether);
         vm.expectRevert("POSITION_NOT_BORROWABLE");
-        pm.addCollateral(positionId, 1 ether, 0);
+        pm.addCollateral(positionId, 1 ether, 0, 0, 0);
         vm.stopPrank();
     }
 
@@ -263,7 +263,7 @@ contract AddCollateralTest is Test {
         vm.startPrank(alice);
         token0.approve(address(pm), 1 ether);
         vm.expectRevert("POSITION_NOT_FOUND");
-        pm.addCollateral(999, 1 ether, 0);
+        pm.addCollateral(999, 1 ether, 0, 0, 0);
         vm.stopPrank();
     }
 
@@ -279,7 +279,7 @@ contract AddCollateralTest is Test {
         vm.startPrank(alice);
         token0.approve(address(pm), 1 ether);
         vm.expectRevert("PAUSED");
-        pm.addCollateral(positionId, 1 ether, 0);
+        pm.addCollateral(positionId, 1 ether, 0, 0, 0);
         vm.stopPrank();
     }
 
@@ -299,7 +299,7 @@ contract AddCollateralTest is Test {
         token0.approve(address(pm), 1 ether);
         token1.approve(address(pm), 2000e6);
         vm.expectRevert("POSITION_TOO_LARGE");
-        pm.addCollateral(positionId, 1 ether, 2000e6);
+        pm.addCollateral(positionId, 1 ether, 2000e6, 0, 0);
         vm.stopPrank();
     }
 
@@ -320,7 +320,7 @@ contract AddCollateralTest is Test {
         vm.startPrank(alice);
         token0.approve(address(pm), 1 ether);
         token1.approve(address(pm), 2000e6);
-        pm.addCollateral(positionId, 1 ether, 2000e6);
+        pm.addCollateral(positionId, 1 ether, 2000e6, 0, 0);
         vm.stopPrank();
 
         // Verify pos.amount increased (V2 semantics)

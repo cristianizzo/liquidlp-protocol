@@ -31,6 +31,8 @@ contract LPCompounder {
 
     /// @notice Minimum fee per token to justify compounding
     uint256 public minCompoundThreshold = 1000;
+    /// @notice Maximum slippage on reinvestment (basis points). Default 200 = 2%.
+    uint256 public compoundSlippageBps = 200;
 
     event FeesCompounded(
         uint256 indexed positionId,
@@ -43,6 +45,7 @@ contract LPCompounder {
     event MinCompoundThresholdUpdated(uint256 oldValue, uint256 newValue);
     event TokensSwept(address indexed token, address indexed to, uint256 amount);
     event CompoundFailed(uint256 indexed positionId, bytes reason);
+    event CompoundSlippageUpdated(uint256 oldValue, uint256 newValue);
 
     constructor(address _core, address _positionManager, address _feeCollector) {
         require(_core != address(0) && _positionManager != address(0) && _feeCollector != address(0), "ZERO_ADDRESS");
@@ -73,7 +76,8 @@ contract LPCompounder {
             rewardRecipient,
             callerRewardBps,
             minCompoundThreshold,
-            pos.owner
+            pos.owner,
+            compoundSlippageBps
         );
 
         // Skip if no fees collected (no revert — graceful for batch)
@@ -119,6 +123,16 @@ contract LPCompounder {
         );
         emit MinCompoundThresholdUpdated(minCompoundThreshold, _threshold);
         minCompoundThreshold = _threshold;
+    }
+
+    /// @notice Set max slippage on compound reinvestment
+    function setCompoundSlippage(uint256 _bps) external {
+        require(
+            core.aclManager().isRiskAdmin(msg.sender) || core.aclManager().isPoolAdmin(msg.sender), "NOT_AUTHORIZED"
+        );
+        require(_bps <= 1000, "SLIPPAGE_TOO_HIGH"); // max 10%
+        emit CompoundSlippageUpdated(compoundSlippageBps, _bps);
+        compoundSlippageBps = _bps;
     }
 
     /// @notice Sweep stuck tokens
