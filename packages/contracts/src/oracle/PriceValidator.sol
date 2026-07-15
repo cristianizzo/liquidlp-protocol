@@ -4,6 +4,7 @@ pragma solidity ^0.8.26;
 import {ProtocolCore} from "../core/ProtocolCore.sol";
 import {ACLManager} from "../core/ACLManager.sol";
 import {CircuitBreaker} from "../security/CircuitBreaker.sol";
+import {LPMath} from "../libraries/LPMath.sol";
 
 /// @title PriceValidator
 /// @notice Cross-validates oracle prices and triggers circuit breakers
@@ -23,6 +24,7 @@ contract PriceValidator {
     uint256 public minPoolTvl = 1_000_000e18; // $1M minimum
     uint256 public stalePriceThreshold = 3600; // 1 hour
     uint256 public tvlDropThresholdBps = 3000; // 30% TVL drop triggers pause
+    uint256 public tvlDropWindow = 3600; // 1 hour window for TVL drop detection
 
     // --- Absolute Bounds ---
     uint256 public constant MIN_DEVIATION_BPS = 100;
@@ -34,6 +36,8 @@ contract PriceValidator {
     uint256 public constant MAX_STALE_THRESHOLD = 86_400;
     uint256 public constant MIN_TVL_DROP_BPS = 1000;
     uint256 public constant MAX_TVL_DROP_BPS = 8000;
+    uint256 public constant MIN_TVL_DROP_WINDOW = 900; // 15 minutes
+    uint256 public constant MAX_TVL_DROP_WINDOW = 86_400; // 24 hours
 
     // Volatility tracking
     struct PriceSnapshot {
@@ -104,6 +108,12 @@ contract PriceValidator {
         tvlDropThresholdBps = _bps;
     }
 
+    function setTvlDropWindow(uint256 _seconds) external onlyRiskAdmin {
+        require(_seconds >= MIN_TVL_DROP_WINDOW && _seconds <= MAX_TVL_DROP_WINDOW, "OUT_OF_BOUNDS");
+        emit ParameterUpdated("tvlDropWindow", tvlDropWindow, _seconds);
+        tvlDropWindow = _seconds;
+    }
+
     // --- Core Logic ---
 
     /// @notice Validate price and trigger circuit breaker if needed
@@ -119,30 +129,33 @@ contract PriceValidator {
         returns (bool valid, uint256 adjustedRiskBps)
     {
         require(pool != address(0), "ZERO_POOL");
-        require(!circuitBreaker.poolPaused(pool), "POOL_CIRCUIT_BREAKER");
+
+        // Allow validation while paused — still record telemetry for monitoring,
+        // but skip pause triggers (pool is already paused)
+        bool alreadyPaused = circuitBreaker.poolPaused(pool);
 
         adjustedRiskBps = 0;
 
-        // Check 1: TWAP vs Chainlink deviation
-        uint256 deviation = _calculateDeviation(twapPrice, chainlinkPrice);
+        // Check 1: TWAP vs Chainlink deviation (symmetric — anchored to min)
+        uint256 deviation = LPMath.deviationBps(twapPrice, chainlinkPrice);
         if (deviation > maxPriceDeviationBps) {
-            circuitBreaker.pausePool(pool, "ORACLE_DEVIATION");
+            if (!alreadyPaused) circuitBreaker.pausePool(pool, "ORACLE_DEVIATION");
             return (false, 0);
         }
 
         // Check 2: Pool TVL minimum
         if (poolTvl < minPoolTvl) {
-            circuitBreaker.pausePool(pool, "TVL_TOO_LOW");
+            if (!alreadyPaused) circuitBreaker.pausePool(pool, "TVL_TOO_LOW");
             return (false, 0);
         }
 
         // Check 3: TVL drop detection
         if (lastKnownTvl[pool] > 0 && lastPriceTimestamp[pool] > 0) {
             uint256 elapsed = block.timestamp - lastPriceTimestamp[pool];
-            if (elapsed <= 1 hours && poolTvl < lastKnownTvl[pool]) {
+            if (elapsed <= tvlDropWindow && poolTvl < lastKnownTvl[pool]) {
                 uint256 tvlDropBps = ((lastKnownTvl[pool] - poolTvl) * 10_000) / lastKnownTvl[pool];
                 if (tvlDropBps >= tvlDropThresholdBps) {
-                    circuitBreaker.pausePool(pool, "TVL_DROP");
+                    if (!alreadyPaused) circuitBreaker.pausePool(pool, "TVL_DROP");
                     return (false, 0);
                 }
             }
@@ -162,16 +175,18 @@ contract PriceValidator {
             }
         }
 
-        // Record price snapshot (ring buffer — overwrites oldest entry at 100 cap)
+        // Record price snapshot and TVL
         lastKnownTvl[pool] = poolTvl;
         lastPriceTimestamp[pool] = block.timestamp;
+
+        // Ring buffer: index always advances, overwrites oldest once full (cap 100)
+        uint256 idx = priceHistoryIndex[pool];
         if (priceHistory[pool].length < 100) {
             priceHistory[pool].push(PriceSnapshot(twapPrice, block.timestamp));
         } else {
-            uint256 idx = priceHistoryIndex[pool] % 100;
-            priceHistory[pool][idx] = PriceSnapshot(twapPrice, block.timestamp);
-            priceHistoryIndex[pool] = (idx + 1) % 100;
+            priceHistory[pool][idx % 100] = PriceSnapshot(twapPrice, block.timestamp);
         }
+        priceHistoryIndex[pool] = (idx + 1) % 100;
 
         if (adjustedRiskBps > 10_000) adjustedRiskBps = 10_000;
         emit PriceValidated(pool, twapPrice, 10_000 - adjustedRiskBps);
@@ -180,20 +195,11 @@ contract PriceValidator {
 
     // --- Internal ---
 
-    /// @dev Deviation anchored to parameter `a` (asymmetric by ~0.1% at 3% threshold).
-    ///      Same approach as Chainlink deviation checks. Using max(a,b) would add gas
-    ///      for negligible precision improvement.
-    function _calculateDeviation(uint256 a, uint256 b) internal pure returns (uint256) {
-        if (a == 0 || b == 0) return 10_000;
-        uint256 diff = a > b ? a - b : b - a;
-        return (diff * 10_000) / a;
-    }
-
     function _checkVolatility(address pool, uint256 currentPrice) internal view returns (uint256) {
         PriceSnapshot[] storage history = priceHistory[pool];
         if (history.length == 0) return 0;
 
-        // Find entry closest to 5 minutes ago (ring buffer — entries not chronologically ordered)
+        // Find entry closest to 5 minutes ago (ring buffer — entries may not be chronological)
         if (block.timestamp < 300) return 0;
         uint256 targetTimestamp = block.timestamp - 300;
         uint256 bestPrice = 0;
@@ -208,6 +214,6 @@ contract PriceValidator {
             }
         }
         if (bestPrice == 0) return 0;
-        return _calculateDeviation(currentPrice, bestPrice);
+        return LPMath.deviationBps(currentPrice, bestPrice);
     }
 }
