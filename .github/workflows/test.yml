@@ -26,17 +26,26 @@ jobs:
         with:
           cache: true
 
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: packages/contracts/lib
+          key: forge-deps-${{ hashFiles('packages/contracts/foundry.toml') }}
+
+      - name: Install dependencies
+        run: |
+          if [ ! -d "lib/forge-std" ]; then
+            forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable transmissions11/solmate --no-git
+          fi
+
       - name: Cache build artifacts
         uses: actions/cache@v4
         with:
           path: |
             packages/contracts/out
             packages/contracts/cache
-          key: forge-build-${{ hashFiles('packages/contracts/src/**/*.sol', 'packages/contracts/test/**/*.sol', 'packages/contracts/foundry.toml') }}
+          key: forge-build-${{ hashFiles('packages/contracts/src/**/*.sol', 'packages/contracts/foundry.toml') }}
           restore-keys: forge-build-
-
-      - name: Install dependencies
-        run: forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable transmissions11/solmate --no-git
 
       - name: Build
         run: forge build --sizes
@@ -67,25 +76,25 @@ jobs:
         with:
           cache: true
 
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: packages/contracts/lib
+          key: forge-deps-${{ hashFiles('packages/contracts/foundry.toml') }}
+
+      - name: Install dependencies
+        run: |
+          if [ ! -d "lib/forge-std" ]; then
+            forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable transmissions11/solmate --no-git
+          fi
+
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
           name: forge-build
 
-      - name: Install dependencies
-        run: forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable transmissions11/solmate --no-git
-
-      - name: Run unit tests
-        run: forge test --match-path 'test/unit/**' -v
-
-      - name: Run integration tests
-        run: forge test --match-path 'test/integration/**' -v
-
-      - name: Run invariant tests
-        run: forge test --match-path 'test/invariant/**' -v
-
-      - name: Run security tests
-        run: forge test --match-path 'test/security/**' -v
+      - name: Run unit + integration + invariant + security tests
+        run: forge test --match-path 'test/{unit,integration,invariant,security}/**' -v
 
   test-fork:
     name: Fork + E2E Tests
@@ -105,13 +114,22 @@ jobs:
         with:
           cache: true
 
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: packages/contracts/lib
+          key: forge-deps-${{ hashFiles('packages/contracts/foundry.toml') }}
+
+      - name: Install dependencies
+        run: |
+          if [ ! -d "lib/forge-std" ]; then
+            forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable transmissions11/solmate --no-git
+          fi
+
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
           name: forge-build
-
-      - name: Install dependencies
-        run: forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable transmissions11/solmate --no-git
 
       - name: Start Anvil fork
         run: |
@@ -159,8 +177,17 @@ jobs:
         with:
           cache: true
 
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: packages/contracts/lib
+          key: forge-deps-${{ hashFiles('packages/contracts/foundry.toml') }}
+
       - name: Install dependencies
-        run: forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable transmissions11/solmate --no-git
+        run: |
+          if [ ! -d "lib/forge-std" ]; then
+            forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable transmissions11/solmate --no-git
+          fi
 
       - name: Check formatting
         run: forge fmt --check
