@@ -5,7 +5,6 @@ import {ILPOracle} from "../interfaces/ILPOracle.sol";
 import {ILPOracleHub} from "../interfaces/ILPOracleHub.sol";
 import {IERC20} from "../interfaces/IERC20.sol";
 import {ProtocolCore} from "../core/ProtocolCore.sol";
-import {ACLManager} from "../core/ACLManager.sol";
 import {LPMath} from "../libraries/LPMath.sol";
 import {PriceFeedRegistry} from "./PriceFeedRegistry.sol";
 import {INonfungiblePositionManager, IUniswapV3Pool, IUniswapV3Factory} from "../interfaces/external/IUniswapV3.sol";
@@ -215,7 +214,7 @@ contract UniswapV3Oracle is ILPOracle {
 
     /// @inheritdoc ILPOracle
     function getPrice(
-        address, /* lpToken */
+        address lpToken,
         uint256 tokenId,
         uint256 /* amount */
     )
@@ -223,12 +222,13 @@ contract UniswapV3Oracle is ILPOracle {
         view
         returns (ILPOracleHub.PriceResult memory result)
     {
+        require(lpToken == address(positionManager), "WRONG_LP_TOKEN");
         result = _computePrice(tokenId);
     }
 
     /// @inheritdoc ILPOracle
     function getRawPrice(
-        address, /* lpToken */
+        address lpToken,
         uint256 tokenId,
         uint256 /* amount */
     )
@@ -236,15 +236,18 @@ contract UniswapV3Oracle is ILPOracle {
         view
         returns (uint256)
     {
+        require(lpToken == address(positionManager), "WRONG_LP_TOKEN");
         ILPOracleHub.PriceResult memory result = _computePrice(tokenId);
-        // Raw value = principal + fees
         return result.principalValue + result.feeValue;
     }
 
     /// @inheritdoc ILPOracle
-    /// @dev Always returns true — staleness is checked reactively inside priceFeedRegistry.getPrice()
-    ///      on every getPrice() call. Same rationale as V2Oracle: proactive Chainlink reads
-    ///      would add gas to every deposit for no additional safety.
+    /// @dev By design, always returns true. This is NOT a bug.
+    ///      Price staleness and feed validity are enforced reactively inside
+    ///      PriceFeedRegistry.getPrice() on every pricing call — if a feed is stale or
+    ///      invalid, getPrice() reverts. A proactive health check here would duplicate
+    ///      that logic, add gas to every deposit, and provide zero additional safety.
+    ///      Same pattern as Aave V3 (no proactive oracle health gate).
     function isHealthy() external pure returns (bool) {
         return true;
     }
@@ -268,9 +271,10 @@ contract UniswapV3Oracle is ILPOracle {
         // Zero-liquidity positions may still have uncollected fees — price those fees
         // instead of reverting (prevents blocking liquidation of fee-only positions)
 
-        // Step 2: Get pool and TWAP tick
+        // Step 2: Get pool and validate it's whitelisted
         address pool = factory.getPool(token0, token1, fee);
         require(pool != address(0), "POOL_NOT_FOUND");
+        require(core.isPoolSupported(pool), "POOL_NOT_WHITELISTED");
 
         int24 twapTick = _getTwapTick(pool);
 
@@ -300,7 +304,19 @@ contract UniswapV3Oracle is ILPOracle {
         uint256 principalValue = (amount0Normalized * price0) / 1e18 + (amount1Normalized * price1) / 1e18;
 
         // Step 7: Calculate fee value (50% discount + capped at 20% of principal)
-        // Prevents fee inflation attacks via self-trades in thin pools
+        //
+        // Fee valuation context:
+        //   - tokensOwed only reflects fees at last liquidity change or collect() call.
+        //     Newly accrued fees since then are NOT included (Uniswap V3 design).
+        //   - In practice, permissionless compoundFees() converts fees → principal frequently
+        //     (bots earn 0.5% caller reward). So tokensOwed rarely accumulates large values.
+        //   - The 50% discount is a safety margin for the window between fee accrual and
+        //     the next compound. It does NOT affect actual fee collection — compound and
+        //     liquidation both collect 100% of real fees regardless of oracle valuation.
+        //   - The 20% cap is the primary anti-manipulation defense: even with $1M in fake
+        //     fees from self-trades, only 20% of principal counts as collateral.
+        //   - Tradeoff: undervaluing fees can trigger earlier liquidation in edge cases.
+        //     Borrowers can prevent this by compounding (or bots do it automatically).
         uint256 feeValue =
             ((_normalizeTo18(uint256(tokensOwed0), dec0) * price0)
                     / 1e18
@@ -336,16 +352,13 @@ contract UniswapV3Oracle is ILPOracle {
 
     /// @notice Get TWAP tick from pool using observe()
     /// @dev Uses configurable twapPeriod. Rounds towards negative infinity.
-    /// @dev Validates observation cardinality and wraps observe() in try/catch
-    ///      to convert Uniswap's cryptic "OLD" error into a clear revert.
+    /// @dev Wraps observe() in try/catch to convert Uniswap's cryptic "OLD" error
+    ///      into a clear TWAP_UNAVAILABLE revert. No cardinality pre-check —
+    ///      observe() itself validates history sufficiency (L1/L2 compatible).
     function _getTwapTick(address pool) internal view returns (int24 twapTick) {
-        // Verify pool has sufficient observation history for TWAP period.
-        // Minimum cardinality: ceil(twapPeriod / 12) + 1 (assuming ~12s block time).
-        // For 1800s (30 min) TWAP: ceil(1800/12) + 1 = 151 observations.
-        (,,, uint16 observationCardinality,,,) = IUniswapV3Pool(pool).slot0();
-        uint256 requiredCardinality = (uint256(twapPeriod) + 11) / 12 + 1;
-        require(observationCardinality >= requiredCardinality, "INSUFFICIENT_CARDINALITY");
-
+        // No cardinality pre-check — observe() reverts if history is insufficient,
+        // caught by try/catch below. Avoids chain-specific block time assumptions
+        // (12s on L1, ~0.25-2s on L2s like Base/Arbitrum/Optimism).
         uint32[] memory secondsAgos = new uint32[](2);
         secondsAgos[0] = twapPeriod;
         secondsAgos[1] = 0;
@@ -431,7 +444,7 @@ contract UniswapV3Oracle is ILPOracle {
         int24 distFromCenter = currentTick > center ? currentTick - center : center - currentTick;
         int24 halfRange = rangeWidth / 2;
 
-        if (halfRange == 0) return 8000;
+        if (halfRange == 0 || distFromCenter >= halfRange) return 8000;
         uint256 centeredness = uint256(int256(halfRange - distFromCenter)) * 2000 / uint256(int256(halfRange));
         return 8000 + centeredness; // 8000-10000
     }

@@ -3,7 +3,6 @@ pragma solidity ^0.8.26;
 
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ProtocolCore} from "../core/ProtocolCore.sol";
-import {ACLManager} from "../core/ACLManager.sol";
 
 /// @notice Chainlink AggregatorV3 minimal interface
 interface IAggregatorV3 {
@@ -19,10 +18,25 @@ interface IAggregatorV3 {
 /// @dev Used by PositionManager and LendingEngine to convert debt amounts to USD.
 ///      Returns prices normalized to 18 decimals.
 ///      Same pattern as Aave's AaveOracle: token → Chainlink feed → USD price.
+///
+///      Registry address consistency:
+///        LP oracles (V2/V3) hold this registry as `immutable` — set once at deployment.
+///        PositionManager/LiquidationEngine read from `core.priceFeedRegistryAddr()` — mutable.
+///        If governance rotates the registry address on ProtocolCore, oracles still use the old one.
+///        This is intentional: rotating the registry requires redeploying oracles (not upgradeable),
+///        registering them via `core.registerOracle()`, and updating `core.priceFeedRegistryAddr()`
+///        as a coordinated multi-step governance action.
+///
+///      Fail-closed design:
+///        getPrice() reverts on stale/invalid feeds. This blocks deposits, borrows, and liquidations
+///        for affected assets. This is intentional — pricing on bad data is worse than pausing.
+///        If Chainlink is down beyond maxStaleness, emergency admin pauses the protocol.
+///        Same approach as Aave V3.
 contract PriceFeedRegistry {
     ProtocolCore public immutable core;
 
     mapping(address => address) public priceFeeds; // token → Chainlink feed
+    mapping(address => uint8) public feedDecimals; // feed → cached decimals
     uint256 public maxStaleness = 3600; // 1 hour
 
     event PriceFeedUpdated(address indexed token, address indexed feed);
@@ -54,6 +68,7 @@ contract PriceFeedRegistry {
         require(answer > 0, "INVALID_FEED_PRICE");
 
         priceFeeds[token] = feed;
+        feedDecimals[feed] = dec;
         emit PriceFeedUpdated(token, feed);
     }
 
@@ -77,12 +92,11 @@ contract PriceFeedRegistry {
         require(updatedAt > 0 && answeredInRound >= roundId, "STALE_ROUND");
         require(block.timestamp >= updatedAt && block.timestamp - updatedAt <= maxStaleness, "STALE_PRICE");
 
-        uint8 feedDecimals = IAggregatorV3(feed).decimals();
-        require(feedDecimals <= 36, "INVALID_FEED_DECIMALS");
-        if (feedDecimals < 18) {
-            price = Math.mulDiv(uint256(answer), 10 ** (18 - feedDecimals), 1);
-        } else if (feedDecimals > 18) {
-            price = Math.mulDiv(uint256(answer), 1, 10 ** (feedDecimals - 18));
+        uint8 dec = feedDecimals[feed];
+        if (dec < 18) {
+            price = Math.mulDiv(uint256(answer), 10 ** (18 - dec), 1);
+        } else if (dec > 18) {
+            price = Math.mulDiv(uint256(answer), 1, 10 ** (dec - 18));
         } else {
             price = uint256(answer);
         }

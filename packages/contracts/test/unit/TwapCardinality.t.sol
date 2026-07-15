@@ -121,55 +121,27 @@ contract TwapCardinalityTest is Test {
         mockPool = new MockV3Pool();
     }
 
-    // ========== Cardinality Check ==========
+    // ========== TWAP — observe() succeeds with valid mock ==========
 
-    function test_cardinality_defaultTwap30min_requires151() public {
-        // Default twapPeriod = 1800s, block time ~12s
-        // Required: ceil(1800/12) + 1 = 151
-        // Cardinality = 150 should fail
-        mockPool.setCardinality(150);
-
-        vm.expectRevert("INSUFFICIENT_CARDINALITY");
+    function test_twap_succeeds_anyCardinality() public {
+        // Cardinality pre-check removed (L2-compatible).
+        // observe() handles it — mock returns valid data so any cardinality works.
+        mockPool.setCardinality(1);
         oracle.exposed_getTwapTick(address(mockPool));
-    }
 
-    function test_cardinality_exactly151_succeeds() public {
         mockPool.setCardinality(151);
-        // Should not revert (mock pool returns valid tick cumulatives)
         oracle.exposed_getTwapTick(address(mockPool));
-    }
 
-    function test_cardinality_200_succeeds() public {
         mockPool.setCardinality(200);
         oracle.exposed_getTwapTick(address(mockPool));
     }
 
-    function test_cardinality_1_reverts() public {
-        mockPool.setCardinality(1);
-        vm.expectRevert("INSUFFICIENT_CARDINALITY");
-        oracle.exposed_getTwapTick(address(mockPool));
-    }
-
-    function test_cardinality_2_reverts() public {
-        // Old check was >= 2 which would pass. New check requires 151.
-        mockPool.setCardinality(2);
-        vm.expectRevert("INSUFFICIENT_CARDINALITY");
-        oracle.exposed_getTwapTick(address(mockPool));
-    }
-
-    // ========== Custom TWAP Period ==========
-
-    function test_cardinality_customTwap5min() public {
-        // twapPeriod = 300s, required = ceil(300/12) + 1 = 26
+    function test_twap_customPeriod5min() public {
         vm.prank(owner);
         oracle.setTwapPeriod(300);
 
-        mockPool.setCardinality(25);
-        vm.expectRevert("INSUFFICIENT_CARDINALITY");
-        oracle.exposed_getTwapTick(address(mockPool));
-
-        mockPool.setCardinality(26);
-        oracle.exposed_getTwapTick(address(mockPool)); // Should succeed
+        mockPool.setCardinality(1);
+        oracle.exposed_getTwapTick(address(mockPool)); // succeeds — observe() handles it
     }
 
     // ========== Try/Catch on observe() ==========
