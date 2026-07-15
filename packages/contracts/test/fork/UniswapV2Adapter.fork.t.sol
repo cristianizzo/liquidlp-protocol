@@ -25,8 +25,7 @@ contract UniswapV2AdapterForkTest is Test {
     address public protocol = makeAddr("protocol");
 
     function setUp() public {
-        string memory rpcUrl = vm.envOr("ETH_RPC_URL", string("https://ethereum-rpc.publicnode.com"));
-        vm.createSelectFork(rpcUrl);
+        vm.activeFork();
 
         aclManager = new ACLManager(owner);
         core = new ProtocolCore(owner, address(aclManager));
