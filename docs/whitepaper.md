@@ -81,8 +81,9 @@ User deposits LP position → Protocol locks it → User borrows stablecoins
 - Isolated markets per LP type — risk contained
 
 **For liquidators:**
-- Input: USDC. Output: USDC + bonus (3-8%).
+- Input: USDC. Output: underlying tokens (e.g., ETH + USDC) + 30% of bonus (3-8%).
 - Never touch LP tokens — all unwinding is atomic inside the contract
+- FlashloanLiquidator helper enables capital-free, single-asset liquidations
 - Existing liquidation bots work with minimal changes
 
 ---
@@ -182,7 +183,7 @@ This is the hard infrastructure layer — whoever builds the most accurate LP pr
 │  ┌────────────────────────────────────────────────────────┐     │
 │  │               Oracle System                            │     │
 │  │  LPOracleHub → V3Oracle │ V2Oracle │ CurveOracle │ ...│     │
-│  │  + PriceValidator (circuit breakers)                   │     │
+│  │  + PriceFeedRegistry (Chainlink) + PriceValidator      │     │
 │  └────────────────────────────────────────────────────────┘     │
 │                                                                │
 │  ┌────────────────────────────────────────────────────────┐     │
@@ -218,7 +219,7 @@ This is the hard infrastructure layer — whoever builds the most accurate LP pr
 
 The oracle is both the most security-critical component and the primary technical moat. If LP prices can be manipulated, attackers drain the protocol. If LP prices are inaccurate, the protocol either over-lends (bad debt) or under-lends (poor UX). Getting this right across multiple AMM types is the hard problem that competitors have not solved.
 
-No single pricing method works for all AMMs. Each requires a purpose-built oracle that understands the specific invariant curve, then a unified validation layer on top.
+No single pricing method works for all AMMs. Each requires a purpose-built oracle that understands the specific invariant curve, then a unified validation layer on top. All Chainlink price feed lookups are consolidated in a single `PriceFeedRegistry` — one source of truth for token→feed mappings, staleness checks, and decimal normalization (Aave's AaveOracle pattern).
 
 ### Per-LP-Type Pricing
 
@@ -249,8 +250,8 @@ Uses Chainlink prices (not pool reserves ratio), making it immune to reserve man
 | 1 | TWAP vs Chainlink deviation > 3% | Circuit breaker — halt pool |
 | 2 | Pool TVL below $1M minimum | Circuit breaker — halt pool |
 | 3 | TVL dropped > 30% in 1 hour | Circuit breaker — halt pool |
-| 4 | Price volatility > 10% in 5 minutes | +5% haircut (don't halt) |
-| 5 | Price older than 1 hour | +2% haircut |
+| 4 | Price volatility > 10% in 5 minutes | +5% risk premium (don't halt) |
+| 5 | Price older than 1 hour | +2% risk premium |
 
 All thresholds are configurable by the DAO with absolute safety bounds.
 
@@ -318,32 +319,32 @@ The protocol takes a fee from the **bonus portion** of the seized collateral, no
 - Fee is proportional to the liquidator's profit, not the debt size
 
 ```
-Example: 5% liquidation bonus, 10% protocol fee on bonus
+Example: 5% liquidation bonus, 70% protocol fee on bonus
 
 Liquidator repays:     $16,625 USDC (100% goes to debt)
 Collateral unwound:    2.5 ETH + $10,000 USDC (= $17,456 total, includes 5% bonus)
 Bonus portion:         $831 (5% of $16,625)
-Protocol fee:          $83 (10% of bonus), deducted proportionally from ETH + USDC
-Liquidator receives:   remaining ETH + USDC (~$17,373)
-FeeCollector receives: proportional ETH + USDC (~$83)
+Protocol fee:          $582 (70% of bonus), deducted proportionally from ETH + USDC
+Liquidator receives:   remaining ETH + USDC (~$16,874)
+FeeCollector receives: proportional ETH + USDC (~$582)
 ```
 
 The fee is deducted proportionally from both tokens so no swap is needed. FeeCollector accumulates fees in any token — `distribute()` sends them to treasury + insurance.
 
-### FlashloanLiquidator (Optional Helper — Planned)
+### FlashloanLiquidator (Periphery Helper)
 
-For liquidation bots that want single-asset simplicity, the protocol will provide an optional `FlashloanLiquidator` periphery contract (inspired by Revert Lend's audited design):
+For liquidation bots that want single-asset simplicity, the protocol provides a `FlashloanLiquidator` periphery contract (inspired by Revert Lend's audited design):
 
 ```
 1. Bot calls FlashloanLiquidator.liquidate()
-2. Flash loan borrow asset (USDC) from Uniswap
+2. Flash loan borrow asset (USDC) from Uniswap V3 pool (0.01% fee)
 3. Call LiquidationEngine.liquidate() → repay debt → receive ETH + USDC
-4. Swap ETH → USDC via DEX (bot's choice of route/slippage)
+4. Swap non-borrow tokens → borrow asset via SwapRouter (multi-hop supported)
 5. Repay flash loan
-6. Keep profit
+6. Keep profit (enforced by minProfit parameter)
 ```
 
-The swap happens in the helper contract, not in the core protocol. If the helper has a bug or gets sandwiched, the protocol is unaffected — the debt was already repaid in step 3. The helper is a stateless periphery contract that can be redeployed anytime without affecting the core.
+The swap happens in the helper contract, not in the core protocol. If the helper has a bug or gets sandwiched, the protocol is unaffected — the debt was already repaid in step 3. The helper is a stateless, permissionless periphery contract that can be redeployed anytime without affecting the core. When the received token already matches the borrow asset, the swap step is skipped entirely.
 
 ### Avoiding Liquidation
 
@@ -403,15 +404,15 @@ Anyone calls LPCompounder.compoundPosition(positionId)
 
 ### Risk Parameters Per LP Type
 
-| LP Type | Max LTV | Liq. Threshold | Liq. Bonus | Oracle Haircut | Min Pool TVL |
-|---|---|---|---|---|---|
-| Curve stable (3pool) | 85% | 90% | 3% | 3% | $10M |
-| Uniswap V2 (major) | 70% | 80% | 5% | 5% | $5M |
-| Uniswap V3 (wide range) | 65% | 75% | 5% | 7% | $5M |
-| Uniswap V3 (narrow range) | 55% | 65% | 7% | 10% | $5M |
-| Aerodrome | 60% | 70% | 6% | 8% | $3M |
-| PancakeSwap V2/V3 | 60-65% | 70-75% | 5-6% | 7-8% | $3M |
-| Exotic pairs (memecoins) | 40% | 50% | 10% | 15% | $1M |
+| LP Type | Max LTV | Liq. Threshold | Liq. Bonus | Min Pool TVL |
+|---|---|---|---|---|
+| Curve stable (3pool) | 85% | 90% | 3% | $10M |
+| Uniswap V2 (major) | 70% | 80% | 5% | $5M |
+| Uniswap V3 (wide range) | 65% | 75% | 5% | $5M |
+| Uniswap V3 (narrow range) | 55% | 65% | 7% | $5M |
+| Aerodrome | 60% | 70% | 6% | $3M |
+| PancakeSwap V2/V3 | 60-65% | 70-75% | 5-6% | $3M |
+| Exotic pairs (memecoins) | 40% | 50% | 10% | $1M |
 
 *Hard cap: 15% maximum liquidation bonus enforced in code (`MAX_LIQUIDATION_BONUS = 1500 bps`), aligned with Aave V3's upper bound. Governance cannot set bonus above this limit.*
 
@@ -473,8 +474,7 @@ Inspired by Aave's revenue model ($907M in total fees in 2025, ~$140M protocol-r
 | Source | Rate | How It Works |
 |---|---|---|
 | Reserve factor | 10-25% of interest | Protocol keeps this % of borrow interest. Rest goes to lenders. Per LP type — higher risk = higher cut. |
-| Liquidation fee | 10% of liq. penalty | Protocol takes 10% of the liquidation bonus. Liquidators keep 90%. |
-| Management fee | 0.1% annual | Annual fee on deposited LP collateral value. Charged by keeper via periodic accrual. Configurable by RISK_ADMIN (max 1%). |
+| Liquidation fee | 70% of liq. bonus | Protocol takes 70% of the liquidation bonus portion. Liquidators keep 30%. Configurable (0.5-90%). |
 | Compound fee | 2.5% of compounded fees | When V3 trading fees are auto-compounded, protocol keeps 2% and 0.5% goes to the caller as gas reward. Permissionless — anyone can trigger. |
 
 ### Reserve Factors by LP Type
@@ -502,7 +502,7 @@ All fee rates and distribution ratios are configurable by the DAO with absolute 
 
 ### Revenue Projections
 
-**Assumptions:** 40% average utilization, 8% weighted average borrow APR, 20% average reserve factor, liquidation events generating ~5% of interest revenue in fees.
+**Assumptions:** 40% average utilization, 8% weighted average borrow APR, 20% average reserve factor, 70% protocol share of liquidation bonus. Liquidation events estimated at ~5% of total borrows annually with average 5% bonus.
 
 ```
 Revenue = TVL × Utilization × Borrow APR × Reserve Factor + Liquidation Fees
@@ -511,16 +511,16 @@ Example at $500M TVL:
   $500M × 40% utilization = $200M total borrows
   $200M × 8% APR = $16M annual interest
   $16M × 20% reserve factor = $3.2M protocol interest revenue
-  + ~$160K liquidation fees (est.)
-  ≈ $3.4M annual protocol revenue
+  Liquidation fees: $200M × 5% liquidated × 5% bonus × 70% protocol = ~$0.35M
+  ≈ $3.55M annual protocol revenue
 ```
 
-| TVL | Borrows (40% util.) | Interest (8% APR) | Protocol Rev (20% RF) | + Liq. Fees | Total |
+| TVL | Borrows (40% util.) | Interest (8% APR) | Protocol Rev (20% RF) | + Liq. Fees (70% share) | Total |
 |---|---|---|---|---|---|
-| $500M | $200M | $16M | $3.2M | ~$0.2M | **~$3.4M** |
-| $1B | $400M | $32M | $6.4M | ~$0.3M | **~$6.7M** |
-| $2B | $800M | $64M | $12.8M | ~$0.6M | **~$13.4M** |
-| $5B | $2B | $160M | $32M | ~$1.5M | **~$33.5M** |
+| $500M | $200M | $16M | $3.2M | ~$0.35M | **~$3.55M** |
+| $1B | $400M | $32M | $6.4M | ~$0.7M | **~$7.1M** |
+| $2B | $800M | $64M | $12.8M | ~$1.4M | **~$14.2M** |
+| $5B | $2B | $160M | $32M | ~$3.5M | **~$35.5M** |
 
 *These are estimates. Actual revenue depends on utilization rates, borrow demand, and market conditions.*
 
@@ -543,13 +543,13 @@ The protocol is governed by a DAO with token voting. No centralized team control
 - Community proposes → vote (5-7 days) → OZ `TimelockController` (48h delay) → execute
 - Guardian becomes elected Security Council
 - Structural changes (adapter registration, pool whitelisting, role grants) go through the 48h timelock
-- Risk parameter changes (LTV, haircut, borrow caps) remain instant via RISK_ADMIN — no timelock needed
+- Risk parameter changes (LTV, borrow caps, liquidation bonus) remain instant via RISK_ADMIN — no timelock needed
 
 ### Direction-Based Security
 
 | Direction | Timelock | Examples |
 |---|---|---|
-| Safer (reduces risk) | None | Lower LTV, increase haircut, pause market |
+| Safer (reduces risk) | None | Lower LTV, reduce borrow cap, pause market |
 | Riskier (increases risk) | 24-48h | Raise LTV, new adapter, change fees |
 | Emergency | None | Pause protocol (guardian only) |
 
@@ -647,10 +647,10 @@ Each chain deployment is independent with shared governance via cross-chain mess
 
 | Scenario | Collateral TVL | Annual Revenue |
 |---|---|---|
-| Conservative (5% SAM) | $250M | ~$1.7M |
-| Base case (10% SAM) | $500M | ~$3.4M |
-| Optimistic (20% SAM) | $1B | ~$6.7M |
-| Bull case (30% SAM) | $1.5B | ~$10M |
+| Conservative (5% SAM) | $250M | ~$1.8M |
+| Base case (10% SAM) | $500M | ~$3.55M |
+| Optimistic (20% SAM) | $1B | ~$7.1M |
+| Bull case (30% SAM) | $1.5B | ~$10.7M |
 
 **Comparable protocols:**
 - Aave: ~$14.5B TVL (lending leader)

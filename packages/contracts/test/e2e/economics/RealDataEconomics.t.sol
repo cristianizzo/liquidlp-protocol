@@ -6,6 +6,7 @@ import {IPositionManager} from "../../../src/interfaces/IPositionManager.sol";
 import {IMarket} from "../../../src/interfaces/IMarket.sol";
 import {ILPAdapter} from "../../../src/interfaces/ILPAdapter.sol";
 import {IUniswapV2Pair} from "../../../src/interfaces/external/IUniswapV2.sol";
+import {Market} from "../../../src/markets/Market.sol";
 
 /// @title RealDataEconomics
 /// @notice Comprehensive E2E tests for all economic flows using real fork data.
@@ -198,14 +199,8 @@ contract RealDataEconomics is E2EBase {
         uint256 hfAfterCrash = _getHealthFactor(positionId);
 
         // Verify liquidatable — V2 sqrt(k) needs big price drops
-        console.log("DEBUG: V2 HF after crash:", hfAfterCrash / 1e16);
-        console.log("DEBUG: V2 value after crash:", valueAfterCrash / 1e18);
-
         (bool canLiq, uint256 maxRepay) = liquidationEngine.isLiquidatable(positionId);
-        if (!canLiq) {
-            console.log("DEBUG: V2 NOT liquidatable - need bigger dump. Skipping.");
-            return;
-        }
+        assertTrue(canLiq, "V2 position must be liquidatable after crash");
 
         // Step 5: Liquidate directly
         _fundUsdc(liquidator, maxRepay);
@@ -222,7 +217,7 @@ contract RealDataEconomics is E2EBase {
         assertLt(debtAfter, debtBefore, "V2 debt must decrease");
         // V2 position LP amount should be reduced after partial/full liquidation
         assertTrue(
-            posAfter.amount < lpBefore || uint8(posAfter.status) == 3,
+            posAfter.amount < lpBefore || posAfter.status == IPositionManager.PositionStatus.Liquidated,
             "V2 LP must be reduced or position fully liquidated"
         );
 
@@ -238,7 +233,8 @@ contract RealDataEconomics is E2EBase {
         console.log("  Borrowed:            %s USDC", borrowAmount / 1e6);
         console.log("  Debt before:         %s USDC", debtBefore / 1e6);
         console.log("  Debt after:          %s USDC", debtAfter / 1e6);
-        string memory status = uint8(posAfter.status) == 3 ? "LIQUIDATED" : "Active (partial)";
+        string memory status =
+            posAfter.status == IPositionManager.PositionStatus.Liquidated ? "LIQUIDATED" : "Active (partial)";
         console.log("  Position status:     %s", status);
         console.log("=========================================================");
 
@@ -264,7 +260,7 @@ contract RealDataEconomics is E2EBase {
     ///   - Fee generation requires large swap volumes
     ///   - Oracle valuation of fee-only positions depends on internal Uniswap accounting
     ///   The fee-only code path is covered by unit tests with mocked oracles instead.
-    function test_v3_feeOnlyLiquidation_SKIPPED() public pure {
+    function skip_v3_feeOnlyLiquidation() public pure {
         // Intentionally empty -- see @dev comment above for rationale.
     }
 
@@ -535,15 +531,15 @@ contract RealDataEconomics is E2EBase {
     // Test 7: Health factor boundary — exactly at 1.0
     // ========================================================================
 
-    function test_hfBoundary_exactlyAt1() public {
-        // Step 1: Create V3 position and borrow near max
+    function test_hfBoundary_nearLiquidationThreshold() public {
+        // Step 1: Create V3 position and borrow 95% of max — HF starts very close to 1.0
         uint256 tokenId = _createV3Position(alice, 1 ether, 2000e6);
         uint256 positionId = _depositV3(alice, tokenId);
         vm.roll(block.number + 2);
 
         uint256 maxBorrow = lendingEngine.getMaxBorrow(positionId);
-        // Borrow 90% of max to leave some room
-        uint256 borrowAmount = (maxBorrow * 90) / 100;
+        // Borrow 95% of max — HF starts at ~1.08 (very close to threshold)
+        uint256 borrowAmount = (maxBorrow * 95) / 100;
         require(borrowAmount > 0, "No borrow available");
 
         vm.prank(alice);
@@ -552,9 +548,8 @@ contract RealDataEconomics is E2EBase {
         uint256 hfBefore = _getHealthFactor(positionId);
         assertGt(hfBefore, 1e18, "HF must start > 1.0");
 
-        // Step 2: Crash ETH price with a small dump to nudge HF just below 1.0
-        // Use a smaller dump to get a gradual price decline
-        int256 crashedPrice = _crashEthPrice(4100 ether);
+        // Step 2: Small ETH dump to nudge HF just below 1.0
+        int256 crashedPrice = _crashEthPrice(3500 ether);
 
         uint256 hfAfterCrash = _getHealthFactor(positionId);
 
@@ -610,6 +605,3 @@ contract RealDataEconomics is E2EBase {
         vm.stopPrank();
     }
 }
-
-// Import Market directly for accessing storage vars (shares, totalShares, state, etc.)
-import {Market} from "../../../src/markets/Market.sol";
