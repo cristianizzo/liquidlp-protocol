@@ -3,7 +3,6 @@ pragma solidity ^0.8.26;
 
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ProtocolCore} from "../core/ProtocolCore.sol";
-import {ACLManager} from "../core/ACLManager.sol";
 
 /// @notice Chainlink AggregatorV3 minimal interface
 interface IAggregatorV3 {
@@ -19,6 +18,20 @@ interface IAggregatorV3 {
 /// @dev Used by PositionManager and LendingEngine to convert debt amounts to USD.
 ///      Returns prices normalized to 18 decimals.
 ///      Same pattern as Aave's AaveOracle: token → Chainlink feed → USD price.
+///
+///      Registry address consistency:
+///        LP oracles (V2/V3) hold this registry as `immutable` — set once at deployment.
+///        PositionManager/LiquidationEngine read from `core.priceFeedRegistryAddr()` — mutable.
+///        If governance rotates the registry address on ProtocolCore, oracles still use the old one.
+///        This is intentional: rotating the registry requires redeploying oracles (not upgradeable),
+///        registering them via `core.registerOracle()`, and updating `core.priceFeedRegistryAddr()`
+///        as a coordinated multi-step governance action.
+///
+///      Fail-closed design:
+///        getPrice() reverts on stale/invalid feeds. This blocks deposits, borrows, and liquidations
+///        for affected assets. This is intentional — pricing on bad data is worse than pausing.
+///        If Chainlink is down beyond maxStaleness, emergency admin pauses the protocol.
+///        Same approach as Aave V3.
 contract PriceFeedRegistry {
     ProtocolCore public immutable core;
 
