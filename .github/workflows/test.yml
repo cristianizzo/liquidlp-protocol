@@ -113,39 +113,17 @@ jobs:
       - name: Install dependencies
         run: forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts OpenZeppelin/openzeppelin-contracts-upgradeable transmissions11/solmate --no-git
 
-      - name: Start Anvil fork
-        run: |
-          if [ -n "${{ secrets.DRPC_KEY }}" ]; then
-            ETH_RPC_URL="https://lb.drpc.org/ogrpc?network=ethereum&dkey=${{ secrets.DRPC_KEY }}"
-          else
-            ETH_RPC_URL="https://ethereum-rpc.publicnode.com"
-          fi
-          anvil --fork-url "$ETH_RPC_URL" --block-time 12 --chain-id 1 &
-
-      - name: Wait for Anvil
-        run: |
-          for i in $(seq 1 30); do
-            if cast block-number --rpc-url http://localhost:8545 2>/dev/null; then
-              echo "Anvil is ready at block $(cast block-number --rpc-url http://localhost:8545)"
-              exit 0
-            fi
-            echo "Waiting for Anvil... ($i/30)"
-            sleep 2
-          done
-          echo "Anvil failed to start"
-          exit 1
-
       - name: Run fork tests
         run: forge test --match-path 'test/fork/**' -v
         timeout-minutes: 10
         env:
-          ETH_RPC_URL: http://localhost:8545
+          ETH_RPC_URL: ${{ secrets.DRPC_KEY && format('https://lb.drpc.org/ogrpc?network=ethereum&dkey={0}', secrets.DRPC_KEY) || 'https://ethereum-rpc.publicnode.com' }}
 
       - name: Run E2E tests
         run: forge test --match-path 'test/e2e/**' -v
         timeout-minutes: 15
         env:
-          ETH_RPC_URL: http://localhost:8545
+          ETH_RPC_URL: ${{ secrets.DRPC_KEY && format('https://lb.drpc.org/ogrpc?network=ethereum&dkey={0}', secrets.DRPC_KEY) || 'https://ethereum-rpc.publicnode.com' }}
 
   lint:
     name: Lint & Format
