@@ -106,7 +106,7 @@ contract CompoundFeesTest is Test {
         aclManager.addKeeper(address(compounder));
         aclManager.addKeeper(keeper);
         core.registerAdapter(ILPAdapter.LPType.UniswapV3, address(adapter));
-        oracleHub.registerOracle(ILPAdapter.LPType.UniswapV3, address(oracle));
+        core.registerOracle(ILPAdapter.LPType.UniswapV3, address(oracle));
         core.whitelistPool(lpToken);
         marketId = core.registerMarket(address(market));
         pm.setLendingEngine(address(le));
@@ -408,7 +408,7 @@ contract CompoundFeesTest is Test {
 
         vm.startPrank(owner);
         core.registerAdapter(ILPAdapter.LPType.UniswapV2, address(v2Adapter));
-        oracleHub.registerOracle(ILPAdapter.LPType.UniswapV2, address(oracle));
+        core.registerOracle(ILPAdapter.LPType.UniswapV2, address(oracle));
         core.whitelistPool(v2LpToken);
         uint256 v2MarketId = core.registerMarket(address(v2Market));
         vm.stopPrank();

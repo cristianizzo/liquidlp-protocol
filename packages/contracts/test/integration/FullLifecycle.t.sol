@@ -142,7 +142,7 @@ contract FullLifecycleTest is Test {
         aclManager.addPositionManager(address(pm));
         aclManager.addKeeper(address(liq));
         core.registerAdapter(ILPAdapter.LPType.UniswapV2, address(adapter));
-        oracleHub.registerOracle(ILPAdapter.LPType.UniswapV2, address(oracle));
+        core.registerOracle(ILPAdapter.LPType.UniswapV2, address(oracle));
         core.whitelistPool(lpToken);
         marketId = core.registerMarket(address(market));
         pm.setLendingEngine(address(le));

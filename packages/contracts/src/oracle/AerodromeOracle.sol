@@ -43,15 +43,14 @@ contract AerodromeOracle is ILPOracle {
     }
 
     /// @inheritdoc ILPOracle
-    function getPrice(address, uint256, uint256) external view returns (ILPOracleHub.PriceResult memory result) {
-        result = ILPOracleHub.PriceResult({
-            totalValue: 0, principalValue: 0, feeValue: 0, confidence: 10_000, timestamp: block.timestamp
-        });
+    /// @dev Stub — Aerodrome LP pricing not yet implemented. Reverts to prevent silent zero-valuation.
+    function getPrice(address, uint256, uint256) external pure returns (ILPOracleHub.PriceResult memory) {
+        revert("NOT_IMPLEMENTED");
     }
 
     /// @inheritdoc ILPOracle
-    function getRawPrice(address, uint256, uint256) external view returns (uint256) {
-        return 0;
+    function getRawPrice(address, uint256, uint256) external pure returns (uint256) {
+        revert("NOT_IMPLEMENTED");
     }
 
     /// @inheritdoc ILPOracle

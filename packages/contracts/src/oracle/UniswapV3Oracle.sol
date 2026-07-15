@@ -285,6 +285,7 @@ contract UniswapV3Oracle is ILPOracle {
         // Step 4: Get token decimals and Chainlink prices (both normalized to 18 dec)
         uint8 dec0 = IERC20(token0).decimals();
         uint8 dec1 = IERC20(token1).decimals();
+        require(dec0 <= 36 && dec1 <= 36, "INVALID_DECIMALS");
         uint256 price0 = priceFeedRegistry.getPrice(token0); // 18 decimals USD
         uint256 price1 = priceFeedRegistry.getPrice(token1); // 18 decimals USD
 
@@ -410,7 +411,7 @@ contract UniswapV3Oracle is ILPOracle {
 
         // Chainlink ratio: price0/price1 (both 18 dec USD)
         // This gives "how many token1-values per token0-value" = token1_per_token0 in USD terms
-        uint256 chainlinkRatio = (price0 * 1e18) / price1;
+        uint256 chainlinkRatio = LiquidityAmountsLib.mulDiv(price0, 1e18, price1);
 
         uint256 deviation = LPMath.deviationBps(twapRatioNormalized, chainlinkRatio);
         require(deviation <= maxDeviationBps, "ORACLE_DEVIATION");
@@ -437,10 +438,10 @@ contract UniswapV3Oracle is ILPOracle {
 
     // --- Internal: Helpers ---
 
-    /// @notice Normalize a token amount to 18 decimals
+    /// @notice Normalize a token amount to 18 decimals (overflow-safe)
     function _normalizeTo18(uint256 amount, uint8 tokenDecimals) internal pure returns (uint256) {
         if (tokenDecimals == 18) return amount;
-        if (tokenDecimals < 18) return amount * (10 ** (18 - tokenDecimals));
+        if (tokenDecimals < 18) return LiquidityAmountsLib.mulDiv(amount, 10 ** (18 - tokenDecimals), 1);
         return amount / (10 ** (tokenDecimals - 18));
     }
 }

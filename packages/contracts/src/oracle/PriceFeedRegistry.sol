@@ -40,9 +40,19 @@ contract PriceFeedRegistry {
     }
 
     /// @notice Set Chainlink price feed for a token
+    /// @dev Validates the feed is callable and returns sane data before registering
     function setPriceFeed(address token, address feed) external onlyPoolAdmin {
         require(token != address(0) && feed != address(0), "ZERO_ADDRESS");
         require(feed.code.length > 0, "NOT_CONTRACT");
+
+        // Validate feed works and has valid decimals
+        uint8 dec = IAggregatorV3(feed).decimals();
+        require(dec <= 36, "INVALID_FEED_DECIMALS");
+
+        // Validate feed returns a positive price (catch misconfigured feeds early)
+        (, int256 answer,,,) = IAggregatorV3(feed).latestRoundData();
+        require(answer > 0, "INVALID_FEED_PRICE");
+
         priceFeeds[token] = feed;
         emit PriceFeedUpdated(token, feed);
     }
@@ -72,7 +82,7 @@ contract PriceFeedRegistry {
         if (feedDecimals < 18) {
             price = Math.mulDiv(uint256(answer), 10 ** (18 - feedDecimals), 1);
         } else if (feedDecimals > 18) {
-            price = uint256(answer) / (10 ** (feedDecimals - 18));
+            price = Math.mulDiv(uint256(answer), 1, 10 ** (feedDecimals - 18));
         } else {
             price = uint256(answer);
         }

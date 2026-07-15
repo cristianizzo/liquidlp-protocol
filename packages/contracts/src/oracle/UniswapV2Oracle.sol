@@ -6,7 +6,7 @@ import {ILPOracleHub} from "../interfaces/ILPOracleHub.sol";
 import {IUniswapV2Pair} from "../interfaces/external/IUniswapV2.sol";
 import {IERC20} from "../interfaces/IERC20.sol";
 import {ProtocolCore} from "../core/ProtocolCore.sol";
-import {ACLManager} from "../core/ACLManager.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {LPMath} from "../libraries/LPMath.sol";
 import {PriceFeedRegistry} from "./PriceFeedRegistry.sol";
 
@@ -24,11 +24,6 @@ import {PriceFeedRegistry} from "./PriceFeedRegistry.sol";
 contract UniswapV2Oracle is ILPOracle {
     ProtocolCore public immutable core;
     PriceFeedRegistry public immutable priceFeedRegistry;
-
-    modifier onlyPoolAdmin() {
-        require(core.aclManager().isPoolAdmin(msg.sender), "NOT_POOL_ADMIN");
-        _;
-    }
 
     constructor(address _core, address _priceFeedRegistry) {
         require(_core != address(0), "ZERO_CORE");
@@ -85,6 +80,8 @@ contract UniswapV2Oracle is ILPOracle {
     ///      Uses Chainlink for token prices. All results in 18-decimal USD.
     function _computePrice(address lpToken, uint256 amount) internal view returns (uint256) {
         if (amount == 0) return 0;
+        require(lpToken.code.length > 0, "NOT_CONTRACT");
+        require(core.isPoolSupported(lpToken), "POOL_NOT_SUPPORTED");
 
         IUniswapV2Pair pair = IUniswapV2Pair(lpToken);
         (uint112 reserve0Raw, uint112 reserve1Raw,) = pair.getReserves();
@@ -109,11 +106,11 @@ contract UniswapV2Oracle is ILPOracle {
         return LPMath.fairLPValueV2(reserve0, reserve1, totalSupply, price0, price1, amount);
     }
 
-    /// @notice Normalize token amount to 18 decimals
+    /// @notice Normalize token amount to 18 decimals (overflow-safe)
     function _normalizeTo18(uint256 amount, uint8 decimals) internal pure returns (uint256) {
         require(decimals <= 36, "INVALID_DECIMALS");
         if (decimals == 18) return amount;
-        if (decimals < 18) return amount * (10 ** (18 - decimals));
+        if (decimals < 18) return Math.mulDiv(amount, 10 ** (18 - decimals), 1);
         return amount / (10 ** (decimals - 18));
     }
 }

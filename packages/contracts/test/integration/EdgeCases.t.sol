@@ -127,7 +127,7 @@ contract EdgeCasesTest is Test {
         aclManager.addPositionManager(address(pm));
         aclManager.addKeeper(address(liq));
         core.registerAdapter(ILPAdapter.LPType.UniswapV3, address(adapter));
-        oracleHub.registerOracle(ILPAdapter.LPType.UniswapV3, address(oracle));
+        core.registerOracle(ILPAdapter.LPType.UniswapV3, address(oracle));
         core.whitelistPool(lpToken);
         pm.setLendingEngine(address(le));
         liq.setFeeCollector(address(fc));

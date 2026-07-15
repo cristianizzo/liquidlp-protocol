@@ -166,7 +166,7 @@ contract FlashloanLiquidatorTest is Test {
         aclManager.addLiquidationEngine(address(liq));
         aclManager.addPositionManager(address(pm));
         core.registerAdapter(ILPAdapter.LPType.UniswapV2, address(adapter));
-        oracleHub.registerOracle(ILPAdapter.LPType.UniswapV2, address(oracle));
+        core.registerOracle(ILPAdapter.LPType.UniswapV2, address(oracle));
         core.whitelistPool(lpToken);
         marketId = core.registerMarket(address(market));
         pm.setLendingEngine(address(le));
