@@ -41,6 +41,7 @@ contract UniswapV2OracleForkTest is Test {
         priceFeedRegistry.setPriceFeed(USDC, CL_USDC_USD);
         // Fork may have stale Chainlink data — increase tolerance for testing
         priceFeedRegistry.setMaxStaleness(86_400); // 24h for fork tests
+        core.whitelistPool(UNI_V2_WETH_USDC);
         vm.stopPrank();
 
         oracle = new UniswapV2Oracle(address(core), address(priceFeedRegistry));
@@ -134,6 +135,7 @@ contract UniswapV2OracleForkTest is Test {
 
     function test_missingFeed_reverts() public {
         // Deploy oracle with empty registry (no feeds registered)
+        // Pool is already whitelisted on core, so the pool check passes
         vm.prank(owner);
         PriceFeedRegistry emptyRegistry = new PriceFeedRegistry(address(core));
         UniswapV2Oracle oracle2 = new UniswapV2Oracle(address(core), address(emptyRegistry));
@@ -143,6 +145,12 @@ contract UniswapV2OracleForkTest is Test {
 
         vm.expectRevert("NO_PRICE_FEED");
         oracle2.getRawPrice(UNI_V2_WETH_USDC, 0, amount);
+    }
+
+    function test_unsupportedPool_reverts() public {
+        address fakePool = makeAddr("fakePool");
+        vm.expectRevert("NOT_CONTRACT");
+        oracle.getRawPrice(fakePool, 0, 1e18);
     }
 
     // ========== Admin ==========
