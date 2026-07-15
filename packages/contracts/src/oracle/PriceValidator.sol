@@ -118,6 +118,7 @@ contract PriceValidator {
         onlyKeeper
         returns (bool valid, uint256 adjustedRiskBps)
     {
+        require(pool != address(0), "ZERO_POOL");
         require(!circuitBreaker.poolPaused(pool), "POOL_CIRCUIT_BREAKER");
 
         adjustedRiskBps = 0;
@@ -172,6 +173,7 @@ contract PriceValidator {
             priceHistoryIndex[pool] = (idx + 1) % 100;
         }
 
+        if (adjustedRiskBps > 10_000) adjustedRiskBps = 10_000;
         emit PriceValidated(pool, twapPrice, 10_000 - adjustedRiskBps);
         return (true, adjustedRiskBps);
     }
