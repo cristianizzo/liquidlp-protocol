@@ -66,8 +66,6 @@ contract RealDataEconomics is E2EBase {
     // ========================================================================
 
     function test_v3_liquidation_realPrice_feeSplit() public {
-        address marketAddr = core.markets(ethUsdcMarketId);
-
         // Snapshot balances before
         uint256 protocolUsdcBefore = IERC20(Constants.USDC).balanceOf(address(feeCollector));
         uint256 protocolWethBefore = IERC20(Constants.WETH).balanceOf(address(feeCollector));
@@ -92,6 +90,7 @@ contract RealDataEconomics is E2EBase {
 
         // Step 3: Crash ETH price using real pool dump
         int256 crashedPrice = _crashEthPrice(4100 ether);
+        assertGt(crashedPrice, 0, "Crashed price must be positive");
 
         uint256 valueAfterCrash = _getPositionValue(positionId);
         uint256 hfAfterCrash = _getHealthFactor(positionId);
@@ -145,9 +144,9 @@ contract RealDataEconomics is E2EBase {
         uint256 totalBonusUsd = protocolTotalUsd + liquidatorProfitUsd;
         if (totalBonusUsd > 0) {
             uint256 protocolPct = (protocolTotalUsd * 100) / totalBonusUsd;
-            // Allow wide tolerance for rounding/price estimation (expect ~70%, accept 40-95%)
-            assertGe(protocolPct, 40, "Protocol share must be >= 40% of bonus (target 70%)");
-            assertLe(protocolPct, 95, "Protocol share must be <= 95% of bonus (target 70%)");
+            // Allow tolerance for rounding/price estimation (expect ~70%, accept 55-85%)
+            assertGe(protocolPct, 55, "Protocol share must be >= 55% of bonus (target 70%)");
+            assertLe(protocolPct, 85, "Protocol share must be <= 85% of bonus (target 70%)");
         }
 
         // Log full metrics
@@ -214,6 +213,7 @@ contract RealDataEconomics is E2EBase {
         // Step 4: Crash ETH price — V2 uses sqrt(k) so needs bigger dump to move HF below 1
         // sqrt(k) drops by sqrt(price_ratio), so need ~60%+ ETH price drop for V2 liquidation
         int256 crashedPrice = _crashEthPrice(5000 ether);
+        assertGt(crashedPrice, 0, "Crashed price must be positive");
 
         uint256 valueAfterCrash = _getPositionValue(positionId);
         uint256 hfAfterCrash = _getHealthFactor(positionId);
@@ -570,6 +570,7 @@ contract RealDataEconomics is E2EBase {
 
         // Step 2: Small ETH dump to nudge HF just below 1.0
         int256 crashedPrice = _crashEthPrice(3500 ether);
+        assertGt(crashedPrice, 0, "Crashed price must be positive");
 
         uint256 hfAfterCrash = _getHealthFactor(positionId);
 
