@@ -91,8 +91,11 @@ contract UniswapV2Oracle is ILPOracle {
 
         address token0 = pair.token0();
         address token1 = pair.token1();
+        require(token0 != token1, "IDENTICAL_TOKENS");
 
         // Normalize reserves to 18 decimals
+        // Note: totalSupply is passed raw — Uniswap V2 LP tokens are always 18 decimals,
+        // matching the 18-dec normalized reserves. LPMath.fairLPValueV2 expects this.
         uint8 dec0 = IERC20(token0).decimals();
         uint8 dec1 = IERC20(token1).decimals();
         uint256 reserve0 = _normalizeTo18(uint256(reserve0Raw), dec0);
