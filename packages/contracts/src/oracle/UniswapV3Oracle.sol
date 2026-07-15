@@ -352,8 +352,9 @@ contract UniswapV3Oracle is ILPOracle {
 
     /// @notice Get TWAP tick from pool using observe()
     /// @dev Uses configurable twapPeriod. Rounds towards negative infinity.
-    /// @dev Validates observation cardinality and wraps observe() in try/catch
-    ///      to convert Uniswap's cryptic "OLD" error into a clear revert.
+    /// @dev Wraps observe() in try/catch to convert Uniswap's cryptic "OLD" error
+    ///      into a clear TWAP_UNAVAILABLE revert. No cardinality pre-check —
+    ///      observe() itself validates history sufficiency (L1/L2 compatible).
     function _getTwapTick(address pool) internal view returns (int24 twapTick) {
         // No cardinality pre-check — observe() reverts if history is insufficient,
         // caught by try/catch below. Avoids chain-specific block time assumptions
