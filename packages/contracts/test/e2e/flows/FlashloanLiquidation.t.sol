@@ -390,8 +390,8 @@ contract FlashloanLiquidation is E2EBase {
     // ========================================================================
 
     function test_scenario_partialLiquidation() public {
-        // 90% borrow, small ETH dump → HF drops below 1, partial liquidation
-        _runScenario("PARTIAL LIQUIDATION", 90, 4000 ether);
+        // 95% borrow, moderate ETH dump → HF drops below 1, partial liquidation
+        _runScenario("PARTIAL LIQUIDATION", 95, 4100 ether);
     }
 
     // ========================================================================
@@ -399,8 +399,8 @@ contract FlashloanLiquidation is E2EBase {
     // ========================================================================
 
     function test_scenario_fullLiquidation() public {
-        // 90% borrow, moderate ETH dump → underwater, full liquidation
-        _runScenario("FULL LIQUIDATION", 90, 4200 ether);
+        // 95% borrow, larger ETH dump → underwater, full liquidation
+        _runScenario("FULL LIQUIDATION", 95, 4200 ether);
     }
 
     // ========================================================================
@@ -408,8 +408,8 @@ contract FlashloanLiquidation is E2EBase {
     // ========================================================================
 
     function test_scenario_bigMarketCrash() public {
-        // 90% borrow, large ETH dump → severe crash
-        _runScenario("BIG MARKET CRASH", 90, 4250 ether);
+        // 95% borrow, big ETH dump → severe crash
+        _runScenario("BIG MARKET CRASH", 95, 4250 ether);
     }
 
     // ========================================================================
@@ -417,7 +417,7 @@ contract FlashloanLiquidation is E2EBase {
     // ========================================================================
 
     function test_scenario_aggressiveBorrow() public {
-        // 95% borrow, small dump → barely liquidatable
+        // 95% borrow, moderate dump → barely liquidatable
         _runScenario("AGGRESSIVE BORROW", 95, 4100 ether);
     }
 }

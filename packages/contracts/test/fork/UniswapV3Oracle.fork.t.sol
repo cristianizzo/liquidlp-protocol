@@ -45,8 +45,7 @@ contract UniswapV3OracleForkTest is Test {
     address public owner = makeAddr("owner");
 
     function setUp() public {
-        string memory rpcUrl = vm.envOr("ETH_RPC_URL", string("https://ethereum-rpc.publicnode.com"));
-        vm.createSelectFork(rpcUrl);
+        vm.activeFork();
 
         ACLManager aclManager = new ACLManager(owner);
         core = new ProtocolCore(owner, address(aclManager));

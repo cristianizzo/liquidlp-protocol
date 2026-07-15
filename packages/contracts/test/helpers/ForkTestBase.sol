@@ -78,9 +78,8 @@ abstract contract ForkTestBase is Test {
     uint256 public forkId;
 
     function setUp() public virtual {
-        // Fork Ethereum mainnet
-        string memory rpcUrl = vm.envOr("ETH_RPC_URL", string("https://ethereum-rpc.publicnode.com"));
-        forkId = vm.createSelectFork(rpcUrl);
+        // Reuse existing fork from --fork-url (Anvil in CI, or local Anvil)
+        forkId = vm.activeFork();
 
         vm.startPrank(deployer);
 
