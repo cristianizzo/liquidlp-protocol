@@ -165,13 +165,13 @@ abstract contract DeployBase is Script {
         // V3 Oracle
         if (cfg.v3NftManager != address(0)) {
             UniswapV3Oracle v3Oracle = new UniswapV3Oracle(address(core), cfg.v3NftManager, address(priceFeedRegistry));
-            oracleHub.registerOracle(ILPAdapter.LPType.UniswapV3, address(v3Oracle));
+            core.registerOracle(ILPAdapter.LPType.UniswapV3, address(v3Oracle));
         }
 
         // V2 Oracle
         if (cfg.v2Factory != address(0)) {
             UniswapV2Oracle v2Oracle = new UniswapV2Oracle(address(core), address(priceFeedRegistry));
-            oracleHub.registerOracle(ILPAdapter.LPType.UniswapV2, address(v2Oracle));
+            core.registerOracle(ILPAdapter.LPType.UniswapV2, address(v2Oracle));
         }
 
         // PriceFeedRegistry (for cross-decimal HF/LTV)

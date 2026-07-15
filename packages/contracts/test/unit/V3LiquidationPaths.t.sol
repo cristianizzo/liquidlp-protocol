@@ -113,8 +113,8 @@ contract V3LiquidationPaths is Test {
         aclManager.addPositionManager(address(pm));
         core.registerAdapter(ILPAdapter.LPType.UniswapV3, address(v3Adapter));
         core.registerAdapter(ILPAdapter.LPType.UniswapV2, address(v2Adapter));
-        oracleHub.registerOracle(ILPAdapter.LPType.UniswapV3, address(oracle));
-        oracleHub.registerOracle(ILPAdapter.LPType.UniswapV2, address(oracle));
+        core.registerOracle(ILPAdapter.LPType.UniswapV3, address(oracle));
+        core.registerOracle(ILPAdapter.LPType.UniswapV2, address(oracle));
         core.whitelistPool(lpToken);
         core.whitelistPool(v2LpToken);
         v3MarketId = core.registerMarket(address(v3Market));

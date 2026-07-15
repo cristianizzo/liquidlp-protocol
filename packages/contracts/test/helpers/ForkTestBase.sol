@@ -152,9 +152,9 @@ abstract contract ForkTestBase is Test {
         v3Oracle = new UniswapV3Oracle(address(core), Constants.UNI_V3_NFT_MANAGER, address(priceFeedRegistry));
         v2Oracle = new UniswapV2Oracle(address(core), address(priceFeedRegistry));
 
-        // Register oracles in hub
-        oracleHub.registerOracle(ILPAdapter.LPType.UniswapV3, address(v3Oracle));
-        oracleHub.registerOracle(ILPAdapter.LPType.UniswapV2, address(v2Oracle));
+        // Register oracles in ProtocolCore (single source of truth — hub reads from core)
+        core.registerOracle(ILPAdapter.LPType.UniswapV3, address(v3Oracle));
+        core.registerOracle(ILPAdapter.LPType.UniswapV2, address(v2Oracle));
 
         // PriceFeedRegistry (for cross-decimal HF/LTV calculations)
         priceFeedRegistry.setPriceFeed(Constants.USDC, Constants.CL_USDC_USD);

@@ -94,7 +94,7 @@ contract LiquidationDecimalTest is Test {
         aclManager.addLiquidationEngine(address(liq));
         aclManager.addPositionManager(address(pm));
         core.registerAdapter(ILPAdapter.LPType.UniswapV2, address(adapter));
-        oracleHub.registerOracle(ILPAdapter.LPType.UniswapV2, address(oracle));
+        core.registerOracle(ILPAdapter.LPType.UniswapV2, address(oracle));
         core.whitelistPool(lpToken);
         pm.setLendingEngine(address(le));
         vm.stopPrank();
