@@ -167,12 +167,7 @@ contract RealDataEconomics is E2EBase {
 
     /// @dev V2 liquidation with real price crash requires debugging — TWAP/Chainlink interaction
     ///      differs from V3 (sqrt(k) pricing). Skipped pending investigation.
-    /// @dev V2 full liquidation reveals C-2 bug: reducePositionAmount zeros pos.amount,
-    ///      then updateDebt(0) sees amount=0+tokenId=0 and sets status=Closed.
-    ///      markLiquidated then reverts with NOT_LIQUIDATABLE_STATUS.
-    ///      FIX NEEDED: updateDebt should not transition to Closed during liquidation flow.
-    function test_v2_liquidation_realPrice_SKIP() public {
-        return;
+    function test_v2_liquidation_realPrice() public {
         // Step 1: Alice creates V2 WETH/USDC LP position
         uint256 lpAmount = _createV2Position(alice, 1 ether, 2000e6);
         require(lpAmount > 0, "V2 LP creation failed");

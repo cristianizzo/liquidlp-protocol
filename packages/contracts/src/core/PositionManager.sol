@@ -347,14 +347,9 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         if (newDebt > 0 && pos.status == PositionStatus.Active) {
             pos.status = PositionStatus.Borrowed;
         } else if (newDebt == 0 && pos.status == PositionStatus.Borrowed) {
-            if (pos.amount > 0 || pos.tokenId > 0) {
-                // Position still has collateral (amount for V2, tokenId for V3)
-                pos.status = PositionStatus.Active;
-            } else {
-                // Fully consumed (no LP, no debt) → mark as closed
-                pos.status = PositionStatus.Closed;
-                if (activePositionCount[pos.owner] > 0) activePositionCount[pos.owner]--;
-            }
+            // Debt cleared → transition to Active. Final status (Closed/Liquidated)
+            // is set by withdraw() or markLiquidated(), not here.
+            pos.status = PositionStatus.Active;
         }
     }
 
