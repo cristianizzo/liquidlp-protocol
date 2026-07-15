@@ -239,18 +239,19 @@ abstract contract E2EBase is ForkTestBase {
 
         // --- Step 2: Dump WETH into the real pool via SwapRouter ---
         IWETH(Constants.WETH).approve(Constants.UNI_V3_SWAP_ROUTER, dumpAmountEth);
+        // forgefmt: disable-next-item
         ISwapRouterSingle(Constants.UNI_V3_SWAP_ROUTER)
             .exactInputSingle(
                 ISwapRouterSingle.ExactInputSingleParams({
-                    tokenIn: Constants.WETH,
-                    tokenOut: Constants.USDC,
-                    fee: 3000,
-                    recipient: whale,
-                    deadline: block.timestamp + 300,
-                    amountIn: dumpAmountEth,
-                    amountOutMinimum: 0,
-                    sqrtPriceLimitX96: 0
-                })
+                tokenIn: Constants.WETH,
+                tokenOut: Constants.USDC,
+                fee: 3000,
+                recipient: whale,
+                deadline: block.timestamp + 300,
+                amountIn: dumpAmountEth,
+                amountOutMinimum: 0,
+                sqrtPriceLimitX96: 0
+            })
             );
         vm.stopPrank();
 
