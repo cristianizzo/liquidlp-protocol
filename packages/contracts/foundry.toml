@@ -18,8 +18,11 @@ max_test_rejects = 500000
 runs = 1000
 depth = 100
 
-# CI profile: fewer fuzz runs for speed (via_ir required — multiple contracts exceed stack depth)
+# CI profile: faster builds + fewer fuzz runs
+# via_ir required (stack depth), but optimizer disabled for ~3x faster compile.
+# Optimizer only affects gas costs, not correctness.
 [profile.ci]
+optimizer = false
 fuzz = { runs = 500 }
 invariant = { runs = 100, depth = 50 }
 

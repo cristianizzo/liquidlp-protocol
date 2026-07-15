@@ -44,8 +44,10 @@ contract PoolHealthMonitor {
 
     constructor(address _core, address _circuitBreaker) {
         require(_core != address(0) && _circuitBreaker != address(0), "ZERO_ADDRESS");
+        require(_core.code.length > 0 && _circuitBreaker.code.length > 0, "NOT_CONTRACT");
         core = ProtocolCore(_core);
         circuitBreaker = CircuitBreaker(_circuitBreaker);
+        require(address(circuitBreaker.core()) == _core, "CORE_MISMATCH");
     }
 
     // --- Admin Setters ---

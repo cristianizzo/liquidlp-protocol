@@ -46,6 +46,11 @@ contract FlashloanLiquidator is IUniswapV3FlashCallback {
         address flashLoanPool;
     }
 
+    /// @dev Swap amountOutMinimum is 0 — slippage protection is end-to-end via minProfit.
+    ///      After all swaps complete, the contract checks: balance >= flashLoan + fee + minProfit.
+    ///      If a sandwich attack degrades swap output, minProfit check fails → entire tx reverts.
+    ///      This is more robust than per-swap slippage because it accounts for the total outcome.
+    ///      Callers MUST set minProfit > 0 to be protected from sandwich attacks.
     struct LiquidateParams {
         uint256 positionId;
         uint256 repayAmount;

@@ -398,8 +398,32 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     }
 
     /// @inheritdoc IPositionManager
+    /// @dev Returns ALL position IDs including closed/liquidated ones.
+    ///      Use getActivePositionsByOwner() for only active/borrowed positions.
+    ///      We don't remove IDs on close/liquidate to avoid O(n) array shifts on every withdrawal.
     function getPositionsByOwner(address posOwner) external view returns (uint256[] memory) {
         return _ownerPositions[posOwner];
+    }
+
+    /// @notice Get only active/borrowed position IDs for an owner
+    /// @dev Filters _ownerPositions — gas cost scales with total positions ever created.
+    ///      Use for off-chain queries. On-chain callers should use activePositionCount for count.
+    function getActivePositionsByOwner(address posOwner) external view returns (uint256[] memory) {
+        uint256[] storage all = _ownerPositions[posOwner];
+        uint256 count = 0;
+        for (uint256 i = 0; i < all.length; i++) {
+            PositionStatus s = _positions[all[i]].status;
+            if (s == PositionStatus.Active || s == PositionStatus.Borrowed) count++;
+        }
+        uint256[] memory result = new uint256[](count);
+        uint256 idx = 0;
+        for (uint256 i = 0; i < all.length; i++) {
+            PositionStatus s = _positions[all[i]].status;
+            if (s == PositionStatus.Active || s == PositionStatus.Borrowed) {
+                result[idx++] = all[i];
+            }
+        }
+        return result;
     }
 
     /// @inheritdoc IPositionManager
