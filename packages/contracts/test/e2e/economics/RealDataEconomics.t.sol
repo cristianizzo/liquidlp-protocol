@@ -78,9 +78,9 @@ contract RealDataEconomics is E2EBase {
         uint256 positionId = _depositV3(alice, tokenId);
         vm.roll(block.number + 2);
 
-        // Step 2: Alice borrows 90% of max
+        // Step 2: Alice borrows 95% of max — closer to liquidation threshold
         uint256 maxBorrow = lendingEngine.getMaxBorrow(positionId);
-        uint256 borrowAmount = (maxBorrow * 90) / 100;
+        uint256 borrowAmount = (maxBorrow * 95) / 100;
         require(borrowAmount > 0, "No borrow available");
 
         vm.prank(alice);
