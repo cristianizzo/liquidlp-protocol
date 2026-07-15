@@ -147,10 +147,16 @@ contract UniswapV2OracleForkTest is Test {
         oracle2.getRawPrice(UNI_V2_WETH_USDC, 0, amount);
     }
 
-    function test_unsupportedPool_reverts() public {
+    function test_unsupportedPool_revertsNotContract() public {
         address fakePool = makeAddr("fakePool");
         vm.expectRevert("NOT_CONTRACT");
         oracle.getRawPrice(fakePool, 0, 1e18);
+    }
+
+    function test_unsupportedPool_revertsNotSupported() public {
+        // Real contract but not whitelisted
+        vm.expectRevert("POOL_NOT_SUPPORTED");
+        oracle.getRawPrice(address(core), 0, 1e18);
     }
 
     // ========== Admin ==========
