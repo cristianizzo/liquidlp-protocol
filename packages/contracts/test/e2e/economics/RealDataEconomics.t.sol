@@ -105,7 +105,7 @@ contract RealDataEconomics is E2EBase {
         _fundUsdc(liquidator, maxRepay);
         vm.startPrank(liquidator);
         IERC20(Constants.USDC).approve(address(liquidationEngine), maxRepay);
-        liquidationEngine.liquidate(positionId, maxRepay, block.timestamp + 300, 0, 0);
+        liquidationEngine.liquidate(positionId, maxRepay, block.timestamp + 3600, 0, 0);
         vm.stopPrank();
 
         // Step 5: Measure results
@@ -577,7 +577,7 @@ contract RealDataEconomics is E2EBase {
             _fundUsdc(liquidator, maxRepay);
             vm.startPrank(liquidator);
             IERC20(Constants.USDC).approve(address(liquidationEngine), maxRepay);
-            liquidationEngine.liquidate(positionId, maxRepay, block.timestamp + 300, 0, 0);
+            liquidationEngine.liquidate(positionId, maxRepay, block.timestamp + 3600, 0, 0);
             vm.stopPrank();
 
             uint256 debtAfter = _getDebt(positionId);
