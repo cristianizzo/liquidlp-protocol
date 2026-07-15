@@ -20,7 +20,7 @@ depth = 100
 
 # CI profile: faster builds + fewer fuzz runs
 # via_ir required (stack depth), but optimizer disabled for ~3x faster compile.
-# Optimizer only affects gas costs, not correctness.
+# Disabling optimizer affects gas costs and bytecode size, not correctness.
 [profile.ci]
 optimizer = false
 fuzz = { runs = 500 }
