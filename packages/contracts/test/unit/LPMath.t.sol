@@ -51,11 +51,14 @@ contract LPMathTest is Test {
         // Same values → 0 deviation
         assertEq(LPMath.deviationBps(100, 100), 0);
 
-        // 5% deviation
-        assertEq(LPMath.deviationBps(100, 95), 500);
+        // Symmetric: anchored to min(a, b)
+        // deviationBps(100, 95) = 5 * 10000 / 95 = 526
+        assertEq(LPMath.deviationBps(100, 95), 526);
+        // Symmetric: deviationBps(95, 100) == deviationBps(100, 95)
+        assertEq(LPMath.deviationBps(95, 100), 526);
 
-        // 10% deviation
-        assertEq(LPMath.deviationBps(100, 90), 1000);
+        // 10% deviation: 10 * 10000 / 90 = 1111
+        assertEq(LPMath.deviationBps(100, 90), 1111);
     }
 
     function test_fairLPValueV2() public pure {

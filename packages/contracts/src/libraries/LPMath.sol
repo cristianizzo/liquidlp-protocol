@@ -59,11 +59,15 @@ library LPMath {
     }
 
     /// @notice Calculate absolute deviation between two values in basis points
-    /// @dev Anchored to first parameter (a): deviation = |a - b| / a * 10000
+    /// @dev Anchored to the minimum of (a, b): deviation = |a - b| / min(a, b) * 10000
+    ///      Symmetric: deviationBps(a, b) == deviationBps(b, a).
+    ///      Using min as anchor catches manipulation in both directions — an inflated TWAP
+    ///      produces the same deviation as a deflated TWAP for the same absolute difference.
     ///      Returns 10_000 (100%) if either value is 0.
     function deviationBps(uint256 a, uint256 b) internal pure returns (uint256) {
         if (a == 0 || b == 0) return 10_000;
         uint256 diff = a > b ? a - b : b - a;
-        return Math.mulDiv(diff, 10_000, a);
+        uint256 anchor = a < b ? a : b;
+        return Math.mulDiv(diff, 10_000, anchor);
     }
 }

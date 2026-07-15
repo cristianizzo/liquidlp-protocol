@@ -23,6 +23,7 @@ contract PriceFeedRegistry {
     ProtocolCore public immutable core;
 
     mapping(address => address) public priceFeeds; // token → Chainlink feed
+    mapping(address => uint8) public feedDecimals; // feed → cached decimals
     uint256 public maxStaleness = 3600; // 1 hour
 
     event PriceFeedUpdated(address indexed token, address indexed feed);
@@ -54,6 +55,7 @@ contract PriceFeedRegistry {
         require(answer > 0, "INVALID_FEED_PRICE");
 
         priceFeeds[token] = feed;
+        feedDecimals[feed] = dec;
         emit PriceFeedUpdated(token, feed);
     }
 
@@ -77,12 +79,11 @@ contract PriceFeedRegistry {
         require(updatedAt > 0 && answeredInRound >= roundId, "STALE_ROUND");
         require(block.timestamp >= updatedAt && block.timestamp - updatedAt <= maxStaleness, "STALE_PRICE");
 
-        uint8 feedDecimals = IAggregatorV3(feed).decimals();
-        require(feedDecimals <= 36, "INVALID_FEED_DECIMALS");
-        if (feedDecimals < 18) {
-            price = Math.mulDiv(uint256(answer), 10 ** (18 - feedDecimals), 1);
-        } else if (feedDecimals > 18) {
-            price = Math.mulDiv(uint256(answer), 1, 10 ** (feedDecimals - 18));
+        uint8 dec = feedDecimals[feed];
+        if (dec < 18) {
+            price = Math.mulDiv(uint256(answer), 10 ** (18 - dec), 1);
+        } else if (dec > 18) {
+            price = Math.mulDiv(uint256(answer), 1, 10 ** (dec - 18));
         } else {
             price = uint256(answer);
         }

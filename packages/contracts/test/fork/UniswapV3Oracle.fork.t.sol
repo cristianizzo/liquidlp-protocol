@@ -59,6 +59,8 @@ contract UniswapV3OracleForkTest is Test {
         priceFeedRegistry.setPriceFeed(DAI, CL_DAI_USD);
         // Use generous staleness for fork testing (node may not be fully synced)
         priceFeedRegistry.setMaxStaleness(86_400); // 24 hours
+        core.whitelistPool(ETH_USDC_500);
+        core.whitelistPool(ETH_USDC_3000);
         vm.stopPrank();
 
         oracle = new UniswapV3Oracle(address(core), UNI_V3_NFT_MANAGER, address(priceFeedRegistry));
