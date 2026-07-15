@@ -78,10 +78,9 @@ abstract contract ForkTestBase is Test {
     uint256 public forkId;
 
     function setUp() public virtual {
-        // Fork Ethereum mainnet at a pinned block for deterministic tests
+        // Fork Ethereum mainnet
         string memory rpcUrl = vm.envOr("ETH_RPC_URL", string("https://ethereum-rpc.publicnode.com"));
-        uint256 forkBlock = vm.envOr("FORK_BLOCK", uint256(25_538_490));
-        forkId = vm.createSelectFork(rpcUrl, forkBlock);
+        forkId = vm.createSelectFork(rpcUrl);
 
         vm.startPrank(deployer);
 

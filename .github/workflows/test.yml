@@ -138,10 +138,14 @@ jobs:
       - name: Run fork tests
         run: forge test --match-path 'test/fork/**' --fork-url http://localhost:8545 -v
         timeout-minutes: 10
+        env:
+          ETH_RPC_URL: http://localhost:8545
 
       - name: Run E2E tests
         run: forge test --match-path 'test/e2e/**' --fork-url http://localhost:8545 -v
         timeout-minutes: 15
+        env:
+          ETH_RPC_URL: http://localhost:8545
 
   lint:
     name: Lint & Format
