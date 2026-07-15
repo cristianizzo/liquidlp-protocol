@@ -47,6 +47,5 @@ docker-compose.override.yml
 # Docs (local only, except whitepaper)
 docs/*
 !docs/whitepaper.md
-!docs/TODO.md
 
 CLAUDE.md
