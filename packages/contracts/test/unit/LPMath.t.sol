@@ -2,6 +2,7 @@
 pragma solidity ^0.8.26;
 
 import "forge-std/Test.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {LPMath} from "../../src/libraries/LPMath.sol";
 
 /// @dev Wrapper to make internal LPMath functions callable externally (for vm.expectRevert)
@@ -31,20 +32,16 @@ contract LPMathTest is Test {
         wrapper = new LPMathWrapper();
     }
 
-    function test_sqrt() public pure {
-        assertEq(LPMath.sqrt(0), 0);
-        assertEq(LPMath.sqrt(1), 1);
-        assertEq(LPMath.sqrt(4), 2);
-        assertEq(LPMath.sqrt(9), 3);
-        assertEq(LPMath.sqrt(100), 10);
-        assertEq(LPMath.sqrt(1e18), 1e9);
-    }
-
-    function test_sqrt_nonPerfect() public pure {
-        // sqrt(2) ≈ 1.414... → should return 1
-        assertEq(LPMath.sqrt(2), 1);
-        // sqrt(8) ≈ 2.828... → should return 2
-        assertEq(LPMath.sqrt(8), 2);
+    function test_sqrt_usesOZ() public pure {
+        // LPMath uses OZ Math.sqrt internally — verify consistency
+        assertEq(Math.sqrt(0), 0);
+        assertEq(Math.sqrt(1), 1);
+        assertEq(Math.sqrt(4), 2);
+        assertEq(Math.sqrt(9), 3);
+        assertEq(Math.sqrt(100), 10);
+        assertEq(Math.sqrt(1e18), 1e9);
+        assertEq(Math.sqrt(2), 1);
+        assertEq(Math.sqrt(8), 2);
     }
 
     function test_deviationBps() public pure {

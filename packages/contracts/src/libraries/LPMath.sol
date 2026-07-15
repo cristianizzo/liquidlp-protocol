@@ -5,20 +5,11 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @title LPMath
 /// @notice Math utilities for LP position valuation
-/// @dev Uses OZ Math.mulDiv for overflow-safe full-precision multiplication.
+/// @dev Uses OpenZeppelin Math for sqrt and mulDiv (audited, battle-tested).
+///      Prefer importing tested libraries over custom implementations.
+///      Only protocol-specific formulas (fairLPValueV2, deviationBps) are custom.
 ///      All prices are 18-decimal USD. Reserves are in native token decimals.
 library LPMath {
-    /// @notice Babylonian square root
-    function sqrt(uint256 x) internal pure returns (uint256 y) {
-        if (x == 0) return 0;
-        y = x;
-        uint256 z = (x + 1) / 2;
-        while (z < y) {
-            y = z;
-            z = (x / z + z) / 2;
-        }
-    }
-
     /// @notice Calculate fair value of V2 LP token using sqrt(k) method
     /// @dev Formula: value = 2 * sqrt(reserve0 * reserve1) * sqrt(price0 * price1) * amount / (totalSupply * 1e18)
     ///      Uses mulDiv to prevent overflow on reserve0 * reserve1 and price0 * price1.
@@ -45,10 +36,10 @@ library LPMath {
         if (amount == 0) return 0;
 
         // sqrt(k) = sqrt(reserve0 * reserve1) — mulDiv for overflow-safe product
-        uint256 sqrtK = sqrt(Math.mulDiv(reserve0, reserve1, 1));
+        uint256 sqrtK = Math.sqrt(Math.mulDiv(reserve0, reserve1, 1));
 
         // sqrt(price0 * price1) — mulDiv for overflow-safe product
-        uint256 sqrtP = sqrt(Math.mulDiv(price0, price1, 1));
+        uint256 sqrtP = Math.sqrt(Math.mulDiv(price0, price1, 1));
 
         // value = 2 * sqrtK * sqrtP * amount / (totalSupply * 1e18)
         // Chain mulDiv to maximize precision while preventing overflow:

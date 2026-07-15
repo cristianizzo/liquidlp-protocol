@@ -2,6 +2,7 @@
 pragma solidity ^0.8.26;
 
 import "forge-std/Test.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {InterestRateModel} from "../../src/markets/InterestRateModel.sol";
 import {LPMath} from "../../src/libraries/LPMath.sol";
 
@@ -54,10 +55,10 @@ contract LendingInvariantTest is Test {
         assertGt(deviation, 0, "Deviation of meaningfully different values must be > 0");
     }
 
-    /// @notice sqrt(x)^2 should approximate x
+    /// @notice sqrt(x)^2 should approximate x (uses OZ Math.sqrt)
     function testFuzz_sqrtApprox(uint256 x) public pure {
         x = bound(x, 0, type(uint128).max);
-        uint256 root = LPMath.sqrt(x);
+        uint256 root = Math.sqrt(x);
 
         // root^2 <= x < (root+1)^2
         assertLe(root * root, x, "sqrt(x)^2 must be <= x");
