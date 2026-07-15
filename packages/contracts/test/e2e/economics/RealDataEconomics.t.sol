@@ -129,8 +129,20 @@ contract RealDataEconomics is E2EBase {
         assertLt(debtAfter, debtBefore, "Debt must decrease after liquidation");
 
         // Assert: protocol earned fees (70% of bonus)
-        // Protocol should get some fees — either USDC or WETH
         assertTrue(protocolUsdcEarned > 0 || protocolWethEarned > 0, "Protocol must earn liquidation fees");
+
+        // Assert: fee split matches configured 70/30 ratio
+        // protocolTotalUsd = protocol's USD-denominated share
+        // liquidatorUsdcNet = liquidator's net profit in USDC
+        // Together they approximate the total bonus; protocol should be ~70%
+        uint256 liquidatorNetUsd = liquidatorUsdcNet / 1e6;
+        uint256 totalBonusUsd = protocolTotalUsd + liquidatorNetUsd;
+        if (totalBonusUsd > 0) {
+            uint256 protocolPct = (protocolTotalUsd * 100) / totalBonusUsd;
+            // Allow ±10% tolerance for rounding/slippage (expect ~70%, accept 55-85%)
+            assertGe(protocolPct, 55, "Protocol share must be >= 55% of bonus (target 70%)");
+            assertLe(protocolPct, 85, "Protocol share must be <= 85% of bonus (target 70%)");
+        }
 
         // Log full metrics
         console.log("=========================================================");
