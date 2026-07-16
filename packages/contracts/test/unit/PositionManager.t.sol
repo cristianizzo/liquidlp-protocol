@@ -820,4 +820,38 @@ contract PositionManagerTest is Test {
         core.setPriceFeedRegistry(address(0));
         assertEq(core.priceFeedRegistryAddr(), address(0));
     }
+
+    // ========== getActivePositionsByOwner ==========
+
+    function test_getActivePositionsByOwner_filtersClosedAndLiquidated() public {
+        // Create 3 positions
+        vm.startPrank(alice);
+        uint256 pos1 = pm.deposit(lpToken, 1, 100e18, marketId);
+        uint256 pos2 = pm.deposit(lpToken, 2, 100e18, marketId);
+        uint256 pos3 = pm.deposit(lpToken, 3, 100e18, marketId);
+        vm.stopPrank();
+
+        // All 3 should appear in both views
+        uint256[] memory all = pm.getPositionsByOwner(alice);
+        assertEq(all.length, 3);
+        uint256[] memory active = pm.getActivePositionsByOwner(alice);
+        assertEq(active.length, 3);
+
+        // Close pos1 (withdraw)
+        vm.prank(alice);
+        pm.withdraw(pos1);
+
+        // Liquidate pos2
+        vm.prank(liquidationEngine);
+        pm.markLiquidated(pos2, makeAddr("liquidator"), 0);
+
+        // getPositionsByOwner still returns all 3 (includes closed/liquidated)
+        all = pm.getPositionsByOwner(alice);
+        assertEq(all.length, 3);
+
+        // getActivePositionsByOwner returns only pos3
+        active = pm.getActivePositionsByOwner(alice);
+        assertEq(active.length, 1);
+        assertEq(active[0], pos3);
+    }
 }

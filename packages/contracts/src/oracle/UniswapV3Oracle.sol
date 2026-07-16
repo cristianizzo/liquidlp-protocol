@@ -271,10 +271,11 @@ contract UniswapV3Oracle is ILPOracle {
         // Zero-liquidity positions may still have uncollected fees — price those fees
         // instead of reverting (prevents blocking liquidation of fee-only positions)
 
-        // Step 2: Get pool and validate it's whitelisted
+        // Step 2: Get pool from Uniswap factory
+        // Pool whitelist is enforced at deposit time (PositionManager), not here.
+        // Oracle must price any position — including delisted pools — to enable liquidation.
         address pool = factory.getPool(token0, token1, fee);
         require(pool != address(0), "POOL_NOT_FOUND");
-        require(core.isPoolSupported(pool), "POOL_NOT_WHITELISTED");
 
         int24 twapTick = _getTwapTick(pool);
 

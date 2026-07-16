@@ -81,7 +81,8 @@ contract UniswapV2Oracle is ILPOracle {
     function _computePrice(address lpToken, uint256 amount) internal view returns (uint256) {
         if (amount == 0) return 0;
         require(lpToken.code.length > 0, "NOT_CONTRACT");
-        require(core.isPoolSupported(lpToken), "POOL_NOT_SUPPORTED");
+        // Pool whitelist is enforced at deposit time (PositionManager), not here.
+        // Oracle must price any position — including delisted pools — to enable liquidation.
 
         IUniswapV2Pair pair = IUniswapV2Pair(lpToken);
         (uint112 reserve0Raw, uint112 reserve1Raw,) = pair.getReserves();

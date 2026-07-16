@@ -139,6 +139,11 @@ contract ProtocolCore {
         emit PoolWhitelisted(pool);
     }
 
+    /// @notice Remove a pool from the whitelist — blocks new deposits only.
+    /// @dev Existing positions in this pool can still be withdrawn, repaid, and liquidated.
+    ///      Oracles intentionally do NOT check whitelist so pricing continues for delisted pools.
+    ///      Admin should verify no active borrowed positions remain before removing,
+    ///      or accept that existing positions will run until closed/liquidated naturally.
     function removePool(address pool) external onlyPoolAdmin {
         require(supportedPools[pool], "NOT_WHITELISTED");
         supportedPools[pool] = false;

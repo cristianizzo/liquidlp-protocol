@@ -18,8 +18,10 @@ max_test_rejects = 500000
 runs = 1000
 depth = 100
 
-# CI profile: fewer fuzz runs for speed (via_ir required — multiple contracts exceed stack depth)
+# CI profile: fewer fuzz/invariant runs for speed.
+# Optimizer stays on — required to keep contracts under EIP-170 size limit (24KB).
 [profile.ci]
+optimizer_runs = 50
 fuzz = { runs = 500 }
 invariant = { runs = 100, depth = 50 }
 
