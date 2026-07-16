@@ -18,11 +18,10 @@ max_test_rejects = 500000
 runs = 1000
 depth = 100
 
-# CI profile: faster builds + fewer fuzz runs
-# via_ir required (stack depth), but optimizer disabled for ~3x faster compile.
-# Disabling optimizer affects gas costs and bytecode size, not correctness.
+# CI profile: fewer fuzz/invariant runs for speed.
+# Optimizer stays on — required to keep contracts under EIP-170 size limit (24KB).
 [profile.ci]
-optimizer = false
+optimizer_runs = 50
 fuzz = { runs = 500 }
 invariant = { runs = 100, depth = 50 }
 
