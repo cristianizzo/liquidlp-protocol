@@ -48,8 +48,8 @@ contract FlashloanLiquidator is IUniswapV3FlashCallback {
 
     /// @dev Swap amountOutMinimum is 0 — slippage protection is end-to-end via minProfit.
     ///      The flash callback enforces repayment: borrowAsset balance >= repayAmount + fee.
-    ///      After the flash completes, liquidate() requires profit (balanceAfter - balanceBefore) >= minProfit.
-    ///      If a sandwich attack degrades swap output, the minProfit check fails → entire tx reverts.
+    ///      After the flash completes, liquidate() computes profit = max(balanceAfter - balanceBefore, 0)
+    ///      and requires profit >= minProfit. If a sandwich degrades swap output, this check fails → revert.
     ///      This is more robust than per-swap slippage because it accounts for the total outcome.
     ///      Callers SHOULD set minProfit > 0 to protect against sandwich attacks.
     struct LiquidateParams {
