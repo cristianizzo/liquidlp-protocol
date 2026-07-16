@@ -260,6 +260,43 @@ contract UniswapV3Adapter is ILPAdapter {
     }
 
     /// @inheritdoc ILPAdapter
+    /// @dev Decreases liquidity and sends underlying tokens to recipient.
+    ///      Unlike unwind(), this does NOT collect accumulated fees — only the decreased liquidity.
+    ///      Used by PositionManager.removeCollateral() for deleverage flows.
+    function removeLiquidity(
+        address lpToken,
+        uint256 tokenId,
+        uint128 liquidity,
+        address recipient
+    )
+        external
+        onlyProtocol
+        returns (uint256 amount0, uint256 amount1)
+    {
+        require(lpToken == address(nftManager), "NOT_UNISWAP_V3");
+        require(liquidity > 0, "ZERO_LIQUIDITY");
+        require(recipient != address(0), "ZERO_RECIPIENT");
+        require(nftManager.ownerOf(tokenId) == address(this), "NOT_HELD");
+
+        // Decrease liquidity — returns the exact token amounts freed
+        (uint256 decreased0, uint256 decreased1) = nftManager.decreaseLiquidity(
+            INonfungiblePositionManager.DecreaseLiquidityParams({
+                tokenId: tokenId, liquidity: liquidity, amount0Min: 0, amount1Min: 0, deadline: block.timestamp
+            })
+        );
+
+        // Collect ONLY the decreased amounts — leave accumulated fees in the position.
+        // tokensOwed includes both decreased liquidity + accumulated fees, but we cap
+        // amount0Max/amount1Max to only collect what was decreased. Remaining fees stay
+        // in the NFT for later collectFees/compoundFees calls.
+        (amount0, amount1) = nftManager.collect(
+            INonfungiblePositionManager.CollectParams({
+                tokenId: tokenId, recipient: recipient, amount0Max: uint128(decreased0), amount1Max: uint128(decreased1)
+            })
+        );
+    }
+
+    /// @inheritdoc ILPAdapter
     /// @dev Reads live liquidity directly from V3 NFT — the source of truth for V3 positions
     function getLiquidity(address lpToken, uint256 tokenId, uint256) external view override returns (uint128) {
         require(lpToken == address(nftManager), "NOT_UNISWAP_V3");

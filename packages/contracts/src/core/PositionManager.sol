@@ -66,6 +66,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
 
     // --- Events ---
     event CollateralAdded(uint256 indexed positionId, uint256 addedLiquidity, uint256 used0, uint256 used1);
+    event CollateralRemoved(uint256 indexed positionId, uint128 liquidityRemoved, uint256 amount0, uint256 amount1);
     event CircuitBreakerNotConfigured(uint256 indexed marketId, address pool);
     event PositionAmountReduced(uint256 indexed positionId, uint256 amountRemoved, uint256 newAmount);
     event LendingEngineUpdated(address indexed oldEngine, address indexed newEngine);
@@ -345,6 +346,87 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         }
 
         emit CollateralAdded(positionId, addedLiquidity, used0, used1);
+    }
+
+    /// @notice Remove partial collateral from an LP position
+    /// @dev Decreases liquidity and sends underlying tokens to msg.sender.
+    ///      Auth: position owner or active transformer (during transform() call).
+    ///      Post-check: if position has debt, health factor must remain >= 1.0.
+    ///      For V2: pos.amount is reduced. For V3: liquidity lives in the NFT.
+    /// @param positionId The position to remove collateral from
+    /// @param liquidity Amount of liquidity units to remove
+    /// @param minAmount0 Minimum token0 to receive (slippage protection)
+    /// @param minAmount1 Minimum token1 to receive (slippage protection)
+    /// @return amount0 Actual token0 received
+    /// @return amount1 Actual token1 received
+    function removeCollateral(
+        uint256 positionId,
+        uint128 liquidity,
+        uint256 minAmount0,
+        uint256 minAmount1
+    )
+        external
+        whenNotPaused
+        nonReentrant
+        positionExists(positionId)
+        returns (uint256 amount0, uint256 amount1)
+    {
+        Position storage pos = _positions[positionId];
+        require(_isOwnerOrActiveTransformer(positionId, msg.sender), "NOT_POSITION_OWNER");
+        require(pos.status == PositionStatus.Active || pos.status == PositionStatus.Borrowed, "POSITION_NOT_ACTIVE");
+        require(liquidity > 0, "ZERO_LIQUIDITY");
+
+        address adapterAddr = core.adapters(pos.lpType);
+        require(adapterAddr != address(0), "ADAPTER_NOT_FOUND");
+
+        // Circuit breaker: block collateral removal on frozen markets (oracle may be manipulated)
+        if (address(circuitBreaker) != address(0)) {
+            require(!circuitBreaker.marketFrozen(pos.marketId), "MARKET_FROZEN");
+        }
+
+        // Validate liquidity bounds before calling adapter
+        if (pos.lpType == ILPAdapter.LPType.UniswapV2 || pos.lpType == ILPAdapter.LPType.PancakeSwapV2) {
+            require(uint256(liquidity) <= pos.amount, "EXCEEDS_POSITION_AMOUNT");
+        } else {
+            uint128 currentLiquidity = ILPAdapter(adapterAddr).getLiquidity(pos.lpToken, pos.tokenId, pos.amount);
+            require(liquidity <= currentLiquidity, "EXCEEDS_AVAILABLE_LIQUIDITY");
+        }
+
+        // Snapshot pre-change value for RiskManager delta tracking
+        uint256 valueBefore;
+        address rmAddr = core.riskManagerAddr();
+        if (rmAddr != address(0)) {
+            valueBefore = getPositionValue(positionId);
+        }
+
+        // Remove liquidity — tokens sent to msg.sender (owner or transformer)
+        (amount0, amount1) = ILPAdapter(adapterAddr).removeLiquidity(pos.lpToken, pos.tokenId, liquidity, msg.sender);
+
+        require(amount0 >= minAmount0, "SLIPPAGE_AMOUNT0");
+        require(amount1 >= minAmount1, "SLIPPAGE_AMOUNT1");
+
+        // For V2: reduce stored LP amount
+        if (pos.lpType == ILPAdapter.LPType.UniswapV2 || pos.lpType == ILPAdapter.LPType.PancakeSwapV2) {
+            pos.amount -= uint256(liquidity);
+        }
+
+        // RiskManager: track withdrawal for supply cap accounting
+        if (rmAddr != address(0)) {
+            uint256 valueAfter = getPositionValue(positionId);
+            uint256 delta = valueBefore > valueAfter ? valueBefore - valueAfter : 0;
+            if (delta > 0) {
+                RiskManager(rmAddr).recordWithdraw(delta, pos.marketId);
+            }
+        }
+
+        // Health check: if position has debt, must remain solvent
+        if (pos.status == PositionStatus.Borrowed) {
+            require(address(lendingEngine) != address(0), "LENDING_ENGINE_NOT_SET");
+            uint256 hf = this.getHealthFactor(positionId);
+            require(hf >= 1e18, "UNHEALTHY_AFTER_REMOVAL");
+        }
+
+        emit CollateralRemoved(positionId, liquidity, amount0, amount1);
     }
 
     // --- Transform (periphery contract delegation) ---

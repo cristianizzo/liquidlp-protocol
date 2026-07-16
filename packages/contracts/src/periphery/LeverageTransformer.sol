@@ -57,6 +57,7 @@ contract LeverageTransformer is IUniswapV3FlashCallback {
         uint256 flashAmount;
         address flashLoanPool;
         uint256 repayAmount;
+        uint128 liquidityToRemove; // Amount of LP liquidity to withdraw after repaying debt
         bytes swapPath0; // token0 → borrowAsset
         bytes swapPath1; // token1 → borrowAsset
     }
@@ -73,6 +74,7 @@ contract LeverageTransformer is IUniswapV3FlashCallback {
         bytes swapPath1;
         uint256 swap0Portion;
         uint256 repayAmount;
+        uint128 liquidityToRemove;
     }
 
     event LeverageIncreased(uint256 indexed positionId, uint256 flashAmount, uint256 borrowed);
@@ -120,7 +122,8 @@ contract LeverageTransformer is IUniswapV3FlashCallback {
             swapPath0: params.swapPath0,
             swapPath1: params.swapPath1,
             swap0Portion: params.swap0Portion,
-            repayAmount: 0
+            repayAmount: 0,
+            liquidityToRemove: 0
         });
 
         _executeFlash(params.flashLoanPool, params.flashAmount, config.borrowAsset, ctx);
@@ -131,6 +134,7 @@ contract LeverageTransformer is IUniswapV3FlashCallback {
         require(msg.sender == address(positionManager), "ONLY_POSITION_MANAGER");
         require(params.flashAmount > 0, "ZERO_FLASH");
         require(params.repayAmount > 0, "ZERO_REPAY");
+        require(params.liquidityToRemove > 0, "ZERO_LIQUIDITY");
 
         IPositionManager.Position memory pos = positionManager.getPosition(params.positionId);
         address marketAddr = core.markets(pos.marketId);
@@ -151,7 +155,8 @@ contract LeverageTransformer is IUniswapV3FlashCallback {
             swapPath0: params.swapPath0,
             swapPath1: params.swapPath1,
             swap0Portion: 0,
-            repayAmount: params.repayAmount
+            repayAmount: params.repayAmount,
+            liquidityToRemove: params.liquidityToRemove
         });
 
         _executeFlash(params.flashLoanPool, params.flashAmount, config.borrowAsset, ctx);
@@ -258,17 +263,21 @@ contract LeverageTransformer is IUniswapV3FlashCallback {
     function _handleLeverageDown(FlashContext memory ctx, uint256 flashFee) internal {
         uint256 flashBalance = IERC20(ctx.borrowAsset).balanceOf(address(this));
 
-        // Step 1: Approve the Market (not LendingEngine) — Market.transferIn pulls from payer
+        // Step 1: Repay debt — approve the Market (Market.transferIn pulls from payer)
         IPositionManager.Position memory pos = positionManager.getPosition(ctx.positionId);
         address marketAddr = core.markets(pos.marketId);
         IERC20(ctx.borrowAsset).forceApprove(marketAddr, ctx.repayAmount);
         lendingEngine.repay(ctx.positionId, ctx.repayAmount);
 
-        // Step 2: Swap any received tokens to borrow asset for flash repayment
+        // Step 2: Remove collateral — now possible because debt is lower (HF improved)
+        // Tokens (token0 + token1) are sent to this contract
+        positionManager.removeCollateral(ctx.positionId, ctx.liquidityToRemove, 0, 0);
+
+        // Step 3: Swap received tokens to borrow asset for flash repayment
         _swapIfNeeded(ctx.token0, ctx.borrowAsset, ctx.swapPath0);
         _swapIfNeeded(ctx.token1, ctx.borrowAsset, ctx.swapPath1);
 
-        // Step 3: Repay flash loan (flashBalance + fee, not repayAmount)
+        // Step 4: Repay flash loan (flashBalance + fee, not repayAmount)
         uint256 totalOwed = flashBalance + flashFee;
         require(IERC20(ctx.borrowAsset).balanceOf(address(this)) >= totalOwed, "INSUFFICIENT_FOR_REPAY");
         IERC20(ctx.borrowAsset).safeTransfer(_activeFlashPool, totalOwed);
