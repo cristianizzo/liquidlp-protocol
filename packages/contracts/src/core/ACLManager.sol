@@ -12,15 +12,41 @@ import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol"
 ///      DEFAULT_ADMIN_ROLE holder (owner multisig, later timelock) can grant/revoke all roles.
 contract ACLManager is AccessControlEnumerable {
     // --- Admin Roles (humans / multisigs / governance) ---
+
+    /// @notice Full protocol management — deploy contracts, register markets/oracles/adapters,
+    ///         upgrade UUPS proxies, configure fee collector. Held by deployer, later DAO timelock.
     bytes32 public constant POOL_ADMIN = keccak256("POOL_ADMIN");
+
+    /// @notice Emergency pause only — can pause the entire protocol or individual markets.
+    ///         Cannot change parameters or upgrade contracts. Held by security multisig.
     bytes32 public constant EMERGENCY_ADMIN = keccak256("EMERGENCY_ADMIN");
+
+    /// @notice Risk parameter tuning — LTV, liquidation threshold, borrow caps, interest rate
+    ///         models, oracle thresholds. Cannot deploy or upgrade contracts.
     bytes32 public constant RISK_ADMIN = keccak256("RISK_ADMIN");
 
     // --- Contract Roles (protocol contracts + automation bots) ---
+
+    /// @notice Core lending contract — can call transferOut/transferIn on markets,
+    ///         update position debt, accrue interest. Exactly one instance.
     bytes32 public constant LENDING_ENGINE = keccak256("LENDING_ENGINE");
+
+    /// @notice Core liquidation contract — can call markLiquidated, reducePositionAmount
+    ///         on PositionManager. Exactly one instance.
     bytes32 public constant LIQUIDATION_ENGINE = keccak256("LIQUIDATION_ENGINE");
+
+    /// @notice Core position contract — can record fees in FeeCollector.
+    ///         Exactly one instance.
     bytes32 public constant POSITION_MANAGER = keccak256("POSITION_MANAGER");
+
+    /// @notice Automation bots — can call compoundFees, PriceValidator.validatePrice,
+    ///         PoolHealthMonitor.checkPool. Multiple instances (bot fleet).
     bytes32 public constant KEEPER = keccak256("KEEPER");
+
+    /// @notice Periphery contracts that act on user positions via PositionManager.transform().
+    ///         Admin-whitelisted, user-invoked. Examples: LeverageTransformer, CompoundSwapRouter.
+    ///         Authorization is transient — only active during the transform() call.
+    bytes32 public constant TRANSFORMER = keccak256("TRANSFORMER");
 
     constructor(address admin) {
         require(admin != address(0), "ZERO_ADMIN");
@@ -116,6 +142,21 @@ contract ACLManager is AccessControlEnumerable {
 
     function isPositionManager(address addr) external view returns (bool) {
         return hasRole(POSITION_MANAGER, addr);
+    }
+
+    // --- Contract Roles (Transformer — periphery contracts that act on positions) ---
+    function addTransformer(address addr) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(addr != address(0), "ZERO_ADDRESS");
+        grantRole(TRANSFORMER, addr);
+    }
+
+    function removeTransformer(address addr) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(addr != address(0), "ZERO_ADDRESS");
+        revokeRole(TRANSFORMER, addr);
+    }
+
+    function isTransformer(address addr) external view returns (bool) {
+        return hasRole(TRANSFORMER, addr);
     }
 
     // --- Contract Roles (Keeper) ---

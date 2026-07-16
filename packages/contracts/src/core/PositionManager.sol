@@ -39,6 +39,10 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     /// @dev Deprecated — was `authorized` mapping. Kept for UUPS storage layout compatibility.
     mapping(address => bool) private __deprecated_authorized;
 
+    /// @dev Set during transform() — the position being transformed. Zero when not in transform.
+    ///      Used as both reentrancy guard and authorization context for transformer callbacks.
+    uint256 public transformedPositionId;
+
     /// @dev Params struct to avoid stack-too-deep in compoundFees → _distributeFees
     struct CompoundParams {
         address token0;
@@ -62,10 +66,19 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     event PositionAmountReduced(uint256 indexed positionId, uint256 amountRemoved, uint256 newAmount);
     event LendingEngineUpdated(address indexed oldEngine, address indexed newEngine);
     event CircuitBreakerUpdated(address indexed oldBreaker, address indexed newBreaker);
+    event PositionTransformed(uint256 indexed positionId, address indexed transformer);
 
     // --- ACL Helpers ---
     function _acl() internal view returns (ACLManager) {
         return core.aclManager();
+    }
+
+    /// @dev Returns true if caller is the position owner OR an active transformer for this position.
+    ///      Transformers are only authorized during a transform() call (transient authorization).
+    function _isOwnerOrActiveTransformer(uint256 positionId, address caller) internal view returns (bool) {
+        if (_positions[positionId].owner == caller) return true;
+        // During transform(): the transformer is authorized for the specific position being transformed
+        return transformedPositionId == positionId && _acl().isTransformer(caller);
     }
 
     // --- Modifiers ---
@@ -218,7 +231,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     /// @inheritdoc IPositionManager
     function withdraw(uint256 positionId) external whenNotPaused nonReentrant positionExists(positionId) {
         Position storage pos = _positions[positionId];
-        require(pos.owner == msg.sender, "NOT_POSITION_OWNER");
+        require(_isOwnerOrActiveTransformer(positionId, msg.sender), "NOT_POSITION_OWNER");
         require(positionDebt[positionId] == 0, "HAS_DEBT");
         require(pos.status == PositionStatus.Active, "NOT_ACTIVE");
 
@@ -266,7 +279,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         positionExists(positionId)
     {
         Position storage pos = _positions[positionId];
-        require(pos.owner == msg.sender, "NOT_POSITION_OWNER");
+        require(_isOwnerOrActiveTransformer(positionId, msg.sender), "NOT_POSITION_OWNER");
         require(pos.status == PositionStatus.Active || pos.status == PositionStatus.Borrowed, "POSITION_NOT_BORROWABLE");
         require(amount0 > 0 || amount1 > 0, "ZERO_AMOUNTS");
 
@@ -326,6 +339,65 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         }
 
         emit CollateralAdded(positionId, addedLiquidity, used0, used1);
+    }
+
+    // --- Transform (periphery contract delegation) ---
+
+    /// @notice Execute a transformation on a position via a whitelisted transformer contract.
+    /// @dev Gateway for periphery contracts (LeverageTransformer, CompoundSwapRouter) to act
+    ///      on user positions. The transformer is temporarily authorized to call addCollateral/withdraw
+    ///      on the specified position during this call — authorization is revoked after.
+    ///
+    ///      Security model (Revert Lend pattern):
+    ///        1. Transformer must be admin-whitelisted (TRANSFORMER role in ACLManager)
+    ///        2. Caller must be the position owner
+    ///        3. Authorization is transient — only active during this call
+    ///        4. Health check after transformation — ensures position is still solvent
+    ///        5. Reentrancy blocked — transformedPositionId must be 0 on entry
+    ///
+    /// @param positionId The position to transform
+    /// @param transformer The whitelisted transformer contract to call
+    /// @param data Calldata to forward to the transformer
+    function transform(
+        uint256 positionId,
+        address transformer,
+        bytes calldata data
+    )
+        external
+        whenNotPaused
+        positionExists(positionId)
+    {
+        Position storage pos = _positions[positionId];
+        require(pos.owner == msg.sender, "NOT_POSITION_OWNER");
+        require(_acl().isTransformer(transformer), "NOT_TRANSFORMER");
+        require(transformedPositionId == 0, "TRANSFORM_IN_PROGRESS");
+
+        // Set transient authorization — transformer can now call addCollateral/withdraw for this position
+        transformedPositionId = positionId;
+
+        // Call the transformer
+        (bool success, bytes memory result) = transformer.call(data);
+        if (!success) {
+            // Bubble up revert reason
+            if (result.length > 0) {
+                assembly {
+                    revert(add(result, 32), mload(result))
+                }
+            }
+            revert("TRANSFORM_FAILED");
+        }
+
+        // Revoke authorization
+        transformedPositionId = 0;
+
+        // Defense-in-depth: verify position is still healthy after transformation
+        // (skip if position was closed during transform — e.g., full deleverage)
+        if (pos.status == PositionStatus.Borrowed && address(lendingEngine) != address(0)) {
+            uint256 hf = this.getHealthFactor(positionId);
+            require(hf >= 1e18, "UNHEALTHY_AFTER_TRANSFORM");
+        }
+
+        emit PositionTransformed(positionId, transformer);
     }
 
     // --- State Updates (role-based access) ---
@@ -620,7 +692,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
 
     // --- Storage Gap ---
     // 46 slots: layout unchanged (deprecated slots preserved for UUPS compatibility).
-    uint256[46] private __gap;
+    uint256[45] private __gap;
 
     // --- Internal ---
 
