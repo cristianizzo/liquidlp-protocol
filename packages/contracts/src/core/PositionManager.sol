@@ -43,6 +43,10 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     ///      Used as both reentrancy guard and authorization context for transformer callbacks.
     uint256 public transformedPositionId;
 
+    /// @dev The specific transformer contract authorized during transform(). Zero when not in transform.
+    ///      Only THIS address can act on the position — prevents other transformers from piggy-backing.
+    address public activeTransformer;
+
     /// @dev Params struct to avoid stack-too-deep in compoundFees → _distributeFees
     struct CompoundParams {
         address token0;
@@ -73,12 +77,12 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         return core.aclManager();
     }
 
-    /// @dev Returns true if caller is the position owner OR an active transformer for this position.
-    ///      Transformers are only authorized during a transform() call (transient authorization).
+    /// @dev Returns true if caller is the position owner OR the specific active transformer.
+    ///      Only the exact transformer contract passed to transform() is authorized, and only
+    ///      for the exact position being transformed. Prevents other transformers from piggy-backing.
     function _isOwnerOrActiveTransformer(uint256 positionId, address caller) internal view returns (bool) {
         if (_positions[positionId].owner == caller) return true;
-        // During transform(): the transformer is authorized for the specific position being transformed
-        return transformedPositionId == positionId && _acl().isTransformer(caller);
+        return transformedPositionId == positionId && caller == activeTransformer;
     }
 
     // --- Modifiers ---
@@ -253,12 +257,14 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         }
 
         // CEI: update state BEFORE external call
+        // Use pos.owner for accounting — msg.sender may be a transformer during transform()
+        address owner = pos.owner;
         pos.status = PositionStatus.Closed;
-        if (activePositionCount[msg.sender] > 0) activePositionCount[msg.sender]--;
-        emit PositionClosed(positionId, msg.sender);
+        if (activePositionCount[owner] > 0) activePositionCount[owner]--;
+        emit PositionClosed(positionId, owner);
 
-        // Unlock LP via adapter
-        ILPAdapter(adapterAddr).unlock(pos.lpToken, pos.tokenId, pos.amount, msg.sender);
+        // Unlock LP via adapter — always send to position owner, not msg.sender
+        ILPAdapter(adapterAddr).unlock(pos.lpToken, pos.tokenId, pos.amount, owner);
     }
 
     /// @inheritdoc IPositionManager
@@ -372,13 +378,13 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         require(_acl().isTransformer(transformer), "NOT_TRANSFORMER");
         require(transformedPositionId == 0, "TRANSFORM_IN_PROGRESS");
 
-        // Set transient authorization — transformer can now call addCollateral/withdraw for this position
+        // Set transient authorization — only THIS transformer, only THIS position
         transformedPositionId = positionId;
+        activeTransformer = transformer;
 
         // Call the transformer
         (bool success, bytes memory result) = transformer.call(data);
         if (!success) {
-            // Bubble up revert reason
             if (result.length > 0) {
                 assembly {
                     revert(add(result, 32), mload(result))
@@ -389,6 +395,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
 
         // Revoke authorization
         transformedPositionId = 0;
+        activeTransformer = address(0);
 
         // Defense-in-depth: verify position is still healthy after transformation
         // (skip if position was closed during transform — e.g., full deleverage)
@@ -692,7 +699,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
 
     // --- Storage Gap ---
     // 46 slots: layout unchanged (deprecated slots preserved for UUPS compatibility).
-    uint256[45] private __gap;
+    uint256[44] private __gap;
 
     // --- Internal ---
 

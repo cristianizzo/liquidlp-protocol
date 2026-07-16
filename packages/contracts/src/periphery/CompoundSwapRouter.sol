@@ -26,8 +26,9 @@ import {FeeCollector} from "../core/FeeCollector.sol";
 ///           (allowed because transformedPositionId matches)
 ///        6. PositionManager verifies health factor (defense in depth)
 ///
-///      Permissionless: anyone can trigger compound and earn the 0.5% caller reward.
-///      Must also be granted KEEPER role (required by compoundFees).
+///      Access: position owner calls positionManager.transform() which calls this contract.
+///      The caller reward recipient can be any address (e.g., a bot address).
+///      This contract must be granted both TRANSFORMER and KEEPER roles.
 contract CompoundSwapRouter {
     using SafeERC20 for IERC20;
 

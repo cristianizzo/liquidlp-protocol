@@ -256,37 +256,29 @@ contract LeverageTransformer is IUniswapV3FlashCallback {
     }
 
     function _handleLeverageDown(FlashContext memory ctx, uint256 flashFee) internal {
-        // Step 1: Repay debt with flash-borrowed funds
-        IERC20(ctx.borrowAsset).forceApprove(address(lendingEngine), ctx.repayAmount);
+        uint256 flashBalance = IERC20(ctx.borrowAsset).balanceOf(address(this));
+
+        // Step 1: Approve the Market (not LendingEngine) — Market.transferIn pulls from payer
+        IPositionManager.Position memory pos = positionManager.getPosition(ctx.positionId);
+        address marketAddr = core.markets(pos.marketId);
+        IERC20(ctx.borrowAsset).forceApprove(marketAddr, ctx.repayAmount);
         lendingEngine.repay(ctx.positionId, ctx.repayAmount);
 
-        // Step 2: Withdraw collateral (reduced debt → higher HF → can withdraw)
-        // Note: full withdrawal closes position. Partial withdrawal not supported for V3.
-        // For partial deleverage, user should repay debt manually then withdraw.
-
-        // Step 3: Swap any received tokens to borrow asset for flash repayment
+        // Step 2: Swap any received tokens to borrow asset for flash repayment
         _swapIfNeeded(ctx.token0, ctx.borrowAsset, ctx.swapPath0);
         _swapIfNeeded(ctx.token1, ctx.borrowAsset, ctx.swapPath1);
 
-        // Step 4: Repay flash loan
-        uint256 totalOwed = IERC20(ctx.borrowAsset).balanceOf(address(this));
-        uint256 flashOwed = (totalOwed > 0 ? totalOwed : 0); // use available balance
-        uint256 flashTotal = IERC20(ctx.borrowAsset).balanceOf(address(this)) >= (ctx.repayAmount + flashFee)
-            ? ctx.repayAmount + flashFee
-            : 0;
-
-        // For leverageDown we may not have enough to repay flash — user needs to ensure
-        // enough collateral value exists after debt repayment
-        uint256 owed = ctx.repayAmount + flashFee; // approximation — flash amount may differ
-        // Actually use the real flash balance tracking
-        IERC20(ctx.borrowAsset).safeTransfer(_activeFlashPool, owed);
+        // Step 3: Repay flash loan (flashBalance + fee, not repayAmount)
+        uint256 totalOwed = flashBalance + flashFee;
+        require(IERC20(ctx.borrowAsset).balanceOf(address(this)) >= totalOwed, "INSUFFICIENT_FOR_REPAY");
+        IERC20(ctx.borrowAsset).safeTransfer(_activeFlashPool, totalOwed);
 
         // Refund leftovers to position owner
         _refundAll(ctx.borrowAsset, ctx.positionOwner);
         _refundAll(ctx.token0, ctx.positionOwner);
         _refundAll(ctx.token1, ctx.positionOwner);
 
-        emit LeverageDecreased(ctx.positionId, ctx.repayAmount, ctx.repayAmount);
+        emit LeverageDecreased(ctx.positionId, flashBalance, ctx.repayAmount);
     }
 
     function _swapIfNeeded(address tokenIn, address tokenOut, bytes memory path) internal {
