@@ -266,7 +266,8 @@ contract UniswapV3Oracle is ILPOracle {
         uint256 amount0Normalized = _normalizeTo18(amount0, dec0);
         uint256 amount1Normalized = _normalizeTo18(amount1, dec1);
 
-        uint256 principalValue = Math.mulDiv(amount0Normalized, price0, 1e18) + Math.mulDiv(amount1Normalized, price1, 1e18);
+        uint256 principalValue =
+            Math.mulDiv(amount0Normalized, price0, 1e18) + Math.mulDiv(amount1Normalized, price1, 1e18);
 
         // Step 7: Calculate fee value (50% discount + capped at 20% of principal)
         //
@@ -367,9 +368,7 @@ contract UniswapV3Oracle is ILPOracle {
         // Overflow-safe: sqrtPrice^2 can exceed uint256 at high ticks (>443636)
         // Use mulDiv to combine squaring with 2^192 division, then scale to 18 decimals
         uint256 twapRatioRaw = Math.mulDiv(
-            Math.mulDiv(uint256(twapSqrtPrice), uint256(twapSqrtPrice), uint256(1) << 96),
-            1e18,
-            uint256(1) << 96
+            Math.mulDiv(uint256(twapSqrtPrice), uint256(twapSqrtPrice), uint256(1) << 96), 1e18, uint256(1) << 96
         );
 
         // Adjust for decimal difference:
