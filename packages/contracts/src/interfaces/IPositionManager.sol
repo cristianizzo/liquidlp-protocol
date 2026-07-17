@@ -85,19 +85,20 @@ interface IPositionManager {
     /// @notice Mark position as liquidated (called by LiquidationEngine)
     function markLiquidated(uint256 positionId, address liquidator, uint256 debtRepaid) external;
 
+    /// @notice Parameters for fee compounding
+    struct CompoundFeesParams {
+        uint256 positionId;
+        address protocolFeeRecipient;
+        uint256 protocolFeeBps;
+        address callerRewardRecipient;
+        uint256 callerRewardBps;
+        uint256 minFeeThreshold;
+        address dustRefundTo;
+        uint256 maxSlippageBps;
+    }
+
     /// @notice Collect fees and reinvest as liquidity (called by LPCompounder)
-    function compoundFees(
-        uint256 positionId,
-        address protocolFeeRecipient,
-        uint256 protocolFeeBps,
-        address callerRewardRecipient,
-        uint256 callerRewardBps,
-        uint256 minFeeThreshold,
-        address dustRefundTo,
-        uint256 maxSlippageBps
-    )
-        external
-        returns (uint256, uint256, uint256);
+    function compoundFees(CompoundFeesParams calldata params) external returns (uint256, uint256, uint256);
 
     /// @notice Get the block number at which a position was deposited
     function getDepositBlock(uint256 positionId) external view returns (uint256);

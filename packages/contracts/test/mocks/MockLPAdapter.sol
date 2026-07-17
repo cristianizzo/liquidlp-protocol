@@ -116,6 +116,31 @@ contract MockLPAdapter is ILPAdapter {
         return (mockFee0, mockFee1);
     }
 
+    function removeLiquidity(
+        address,
+        uint256,
+        uint128 liquidity,
+        address recipient
+    )
+        external
+        override
+        returns (uint256 out0, uint256 out1)
+    {
+        if (totalLiquidity > 0) {
+            out0 = (unwindAmount0 * uint256(liquidity)) / totalLiquidity;
+            out1 = (unwindAmount1 * uint256(liquidity)) / totalLiquidity;
+        } else {
+            out0 = unwindAmount0;
+            out1 = unwindAmount1;
+        }
+        if (out0 > 0 && token0Return != address(0)) {
+            require(IERC20(token0Return).transfer(recipient, out0), "TRANSFER_FAILED");
+        }
+        if (out1 > 0 && token1Return != address(0)) {
+            require(IERC20(token1Return).transfer(recipient, out1), "TRANSFER_FAILED");
+        }
+    }
+
     function addLiquidity(
         address,
         uint256,

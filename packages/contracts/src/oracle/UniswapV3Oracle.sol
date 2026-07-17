@@ -8,6 +8,7 @@ import {ProtocolCore} from "../core/ProtocolCore.sol";
 import {LPMath} from "../libraries/LPMath.sol";
 import {PriceFeedRegistry} from "./PriceFeedRegistry.sol";
 import {INonfungiblePositionManager, IUniswapV3Pool, IUniswapV3Factory} from "../interfaces/external/IUniswapV3.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @title TickMathLib
 /// @notice Computes sqrt price for ticks of size 1.0001 (Uniswap V3 canonical implementation)
@@ -49,46 +50,9 @@ library TickMathLib {
 }
 
 /// @title LiquidityAmountsLib
-/// @notice Computes token amounts from liquidity and sqrt price ranges
+/// @notice Computes token amounts from liquidity and sqrt price ranges (Uniswap V3 canonical formulas)
+/// @dev Uses OZ Math.mulDiv for overflow-safe 512-bit precision instead of custom assembly.
 library LiquidityAmountsLib {
-    /// @notice Full-precision 512-bit multiplication then division
-    function mulDiv(uint256 a, uint256 b, uint256 denominator) internal pure returns (uint256 result) {
-        uint256 prod0;
-        uint256 prod1;
-        assembly {
-            let mm := mulmod(a, b, not(0))
-            prod0 := mul(a, b)
-            prod1 := sub(sub(mm, prod0), lt(mm, prod0))
-        }
-        if (prod1 == 0) {
-            require(denominator > 0);
-            assembly { result := div(prod0, denominator) }
-            return result;
-        }
-        require(denominator > prod1);
-        uint256 remainder;
-        assembly {
-            remainder := mulmod(a, b, denominator)
-            prod1 := sub(prod1, gt(remainder, prod0))
-            prod0 := sub(prod0, remainder)
-        }
-        uint256 twos = denominator & (~denominator + 1);
-        assembly {
-            denominator := div(denominator, twos)
-            prod0 := div(prod0, twos)
-            twos := add(div(sub(0, twos), twos), 1)
-        }
-        prod0 |= prod1 * twos;
-        uint256 inverse = (3 * denominator) ^ 2;
-        inverse *= 2 - denominator * inverse;
-        inverse *= 2 - denominator * inverse;
-        inverse *= 2 - denominator * inverse;
-        inverse *= 2 - denominator * inverse;
-        inverse *= 2 - denominator * inverse;
-        inverse *= 2 - denominator * inverse;
-        result = prod0 * inverse;
-    }
-
     function getAmount0ForLiquidity(
         uint160 sqrtRatioAX96,
         uint160 sqrtRatioBX96,
@@ -99,7 +63,7 @@ library LiquidityAmountsLib {
         returns (uint256)
     {
         if (sqrtRatioAX96 > sqrtRatioBX96) (sqrtRatioAX96, sqrtRatioBX96) = (sqrtRatioBX96, sqrtRatioAX96);
-        return mulDiv(uint256(liquidity) << 96, sqrtRatioBX96 - sqrtRatioAX96, sqrtRatioBX96) / sqrtRatioAX96;
+        return Math.mulDiv(uint256(liquidity) << 96, sqrtRatioBX96 - sqrtRatioAX96, sqrtRatioBX96) / sqrtRatioAX96;
     }
 
     function getAmount1ForLiquidity(
@@ -112,7 +76,7 @@ library LiquidityAmountsLib {
         returns (uint256)
     {
         if (sqrtRatioAX96 > sqrtRatioBX96) (sqrtRatioAX96, sqrtRatioBX96) = (sqrtRatioBX96, sqrtRatioAX96);
-        return mulDiv(liquidity, sqrtRatioBX96 - sqrtRatioAX96, 1 << 96);
+        return Math.mulDiv(liquidity, sqrtRatioBX96 - sqrtRatioAX96, 1 << 96);
     }
 
     function getAmountsForLiquidity(
@@ -302,7 +266,8 @@ contract UniswapV3Oracle is ILPOracle {
         uint256 amount0Normalized = _normalizeTo18(amount0, dec0);
         uint256 amount1Normalized = _normalizeTo18(amount1, dec1);
 
-        uint256 principalValue = (amount0Normalized * price0) / 1e18 + (amount1Normalized * price1) / 1e18;
+        uint256 principalValue =
+            Math.mulDiv(amount0Normalized, price0, 1e18) + Math.mulDiv(amount1Normalized, price1, 1e18);
 
         // Step 7: Calculate fee value (50% discount + capped at 20% of principal)
         //
@@ -319,10 +284,8 @@ contract UniswapV3Oracle is ILPOracle {
         //   - Tradeoff: undervaluing fees can trigger earlier liquidation in edge cases.
         //     Borrowers can prevent this by compounding (or bots do it automatically).
         uint256 feeValue =
-            ((_normalizeTo18(uint256(tokensOwed0), dec0) * price0)
-                    / 1e18
-                    + (_normalizeTo18(uint256(tokensOwed1), dec1) * price1)
-                    / 1e18) / 2;
+            (Math.mulDiv(_normalizeTo18(uint256(tokensOwed0), dec0), price0, 1e18)
+                    + Math.mulDiv(_normalizeTo18(uint256(tokensOwed1), dec1), price1, 1e18)) / 2;
         // Cap fees at 20% of principal value (prevents fee inflation via self-trades).
         // Skip cap when principalValue == 0 (fee-only positions — fees ARE the value).
         // @dev Accepted tradeoff: capping when principal=0 would value fee-only positions
@@ -404,10 +367,8 @@ contract UniswapV3Oracle is ILPOracle {
         uint160 twapSqrtPrice = TickMathLib.getSqrtRatioAtTick(twapTick);
         // Overflow-safe: sqrtPrice^2 can exceed uint256 at high ticks (>443636)
         // Use mulDiv to combine squaring with 2^192 division, then scale to 18 decimals
-        uint256 twapRatioRaw = LiquidityAmountsLib.mulDiv(
-            LiquidityAmountsLib.mulDiv(uint256(twapSqrtPrice), uint256(twapSqrtPrice), uint256(1) << 96),
-            1e18,
-            uint256(1) << 96
+        uint256 twapRatioRaw = Math.mulDiv(
+            Math.mulDiv(uint256(twapSqrtPrice), uint256(twapSqrtPrice), uint256(1) << 96), 1e18, uint256(1) << 96
         );
 
         // Adjust for decimal difference:
@@ -418,14 +379,14 @@ contract UniswapV3Oracle is ILPOracle {
         require(dec0 <= 36 && dec1 <= 36, "INVALID_DECIMALS");
         uint256 twapRatioNormalized;
         if (dec0 >= dec1) {
-            twapRatioNormalized = LiquidityAmountsLib.mulDiv(twapRatioRaw, 10 ** (dec0 - dec1), 1);
+            twapRatioNormalized = Math.mulDiv(twapRatioRaw, 10 ** (dec0 - dec1), 1);
         } else {
             twapRatioNormalized = twapRatioRaw / (10 ** (dec1 - dec0));
         }
 
         // Chainlink ratio: price0/price1 (both 18 dec USD)
         // This gives "how many token1-values per token0-value" = token1_per_token0 in USD terms
-        uint256 chainlinkRatio = LiquidityAmountsLib.mulDiv(price0, 1e18, price1);
+        uint256 chainlinkRatio = Math.mulDiv(price0, 1e18, price1);
 
         uint256 deviation = LPMath.deviationBps(twapRatioNormalized, chainlinkRatio);
         require(deviation <= maxDeviationBps, "ORACLE_DEVIATION");
@@ -455,7 +416,7 @@ contract UniswapV3Oracle is ILPOracle {
     /// @notice Normalize a token amount to 18 decimals (overflow-safe)
     function _normalizeTo18(uint256 amount, uint8 tokenDecimals) internal pure returns (uint256) {
         if (tokenDecimals == 18) return amount;
-        if (tokenDecimals < 18) return LiquidityAmountsLib.mulDiv(amount, 10 ** (18 - tokenDecimals), 1);
+        if (tokenDecimals < 18) return Math.mulDiv(amount, 10 ** (18 - tokenDecimals), 1);
         return amount / (10 ** (tokenDecimals - 18));
     }
 }

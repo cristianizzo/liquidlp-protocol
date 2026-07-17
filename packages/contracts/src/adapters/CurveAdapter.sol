@@ -60,6 +60,11 @@ contract CurveAdapter is ILPAdapter {
     }
 
     /// @inheritdoc ILPAdapter
+    function removeLiquidity(address, uint256, uint128, address) external onlyProtocol returns (uint256, uint256) {
+        revert("NOT_IMPLEMENTED");
+    }
+
+    /// @inheritdoc ILPAdapter
     function collectFees(address, uint256) external pure returns (uint256, uint256) {
         return (0, 0);
     }

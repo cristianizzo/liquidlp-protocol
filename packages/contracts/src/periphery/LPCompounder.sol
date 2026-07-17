@@ -70,14 +70,16 @@ contract LPCompounder {
         // Compound via PositionManager (which has adapter access)
         // Threshold check is inside compoundFees — reverts if below minCompoundThreshold
         (uint256 fees0, uint256 fees1, uint256 addedLiquidity) = positionManager.compoundFees(
-            positionId,
-            address(feeCollector),
-            protocolFeeBps,
-            rewardRecipient,
-            callerRewardBps,
-            minCompoundThreshold,
-            pos.owner,
-            compoundSlippageBps
+            IPositionManager.CompoundFeesParams({
+                positionId: positionId,
+                protocolFeeRecipient: address(feeCollector),
+                protocolFeeBps: protocolFeeBps,
+                callerRewardRecipient: rewardRecipient,
+                callerRewardBps: callerRewardBps,
+                minFeeThreshold: minCompoundThreshold,
+                dustRefundTo: pos.owner,
+                maxSlippageBps: compoundSlippageBps
+            })
         );
 
         // Skip if no fees collected (no revert — graceful for batch)

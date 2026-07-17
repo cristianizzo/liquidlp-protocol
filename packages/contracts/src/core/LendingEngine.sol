@@ -98,7 +98,13 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
         require(amount > 0, "ZERO_AMOUNT");
 
         PositionManager.Position memory pos = positionManager.getPosition(positionId);
-        require(pos.owner == msg.sender, "NOT_POSITION_OWNER");
+        // Allow owner or the specific active transformer (during PositionManager.transform() call)
+        require(
+            pos.owner == msg.sender
+                || (positionManager.transformedPositionId() == positionId
+                    && msg.sender == positionManager.activeTransformer()),
+            "NOT_POSITION_OWNER"
+        );
         require(
             pos.status != IPositionManager.PositionStatus.Liquidated
                 && pos.status != IPositionManager.PositionStatus.Closed,

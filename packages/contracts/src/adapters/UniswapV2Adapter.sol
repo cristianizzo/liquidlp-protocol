@@ -180,6 +180,33 @@ contract UniswapV2Adapter is ILPAdapter {
     }
 
     /// @inheritdoc ILPAdapter
+    /// @dev Burns LP tokens via V2 Router, sends underlying tokens to recipient.
+    function removeLiquidity(
+        address lpToken,
+        uint256,
+        uint128 liquidity,
+        address recipient
+    )
+        external
+        onlyProtocol
+        returns (uint256 amount0, uint256 amount1)
+    {
+        require(liquidity > 0, "ZERO_LIQUIDITY");
+        require(recipient != address(0), "ZERO_RECIPIENT");
+        require(lpToken.code.length > 0, "NOT_CONTRACT");
+        IUniswapV2Pair pair = IUniswapV2Pair(lpToken);
+        require(pair.factory() == address(v2Factory), "NOT_OUR_FACTORY");
+
+        address token0 = pair.token0();
+        address token1 = pair.token1();
+
+        OZIERC20(lpToken).forceApprove(address(v2Router), uint256(liquidity));
+
+        (amount0, amount1) =
+            v2Router.removeLiquidity(token0, token1, uint256(liquidity), 0, 0, recipient, block.timestamp);
+    }
+
+    /// @inheritdoc ILPAdapter
     /// @dev V2 fees auto-compound into reserves. No separate collection needed.
     function collectFees(address, uint256) external pure returns (uint256, uint256) {
         return (0, 0);
@@ -201,9 +228,7 @@ contract UniswapV2Adapter is ILPAdapter {
     /// @dev Checks if address is a contract AND is a V2 pair from our factory
     function isSupported(address lpToken) external view returns (bool) {
         if (lpToken == address(0)) return false;
-        uint256 size;
-        assembly { size := extcodesize(lpToken) }
-        if (size == 0) return false;
+        if (lpToken.code.length == 0) return false;
 
         try IUniswapV2Pair(lpToken).factory() returns (address f) {
             return f == address(v2Factory);

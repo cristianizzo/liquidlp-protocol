@@ -91,6 +91,22 @@ interface ILPAdapter {
         external
         returns (uint256 addedLiquidity, uint256 used0, uint256 used1);
 
+    /// @notice Remove partial liquidity from an LP position (for deleverage/collateral withdrawal)
+    /// @param lpToken Address of LP token or NFT manager
+    /// @param tokenId NFT token ID (0 for ERC-20)
+    /// @param liquidity Amount of liquidity to remove
+    /// @param recipient Address to send the underlying tokens to
+    /// @return amount0 Amount of token0 received
+    /// @return amount1 Amount of token1 received
+    function removeLiquidity(
+        address lpToken,
+        uint256 tokenId,
+        uint128 liquidity,
+        address recipient
+    )
+        external
+        returns (uint256 amount0, uint256 amount1);
+
     /// @notice Get the effective liquidity of a position
     /// @param lpToken Address of LP token or NFT manager
     /// @param tokenId NFT token ID (0 for ERC-20)

@@ -50,6 +50,11 @@ contract AerodromeAdapter is ILPAdapter {
     }
 
     /// @inheritdoc ILPAdapter
+    function removeLiquidity(address, uint256, uint128, address) external onlyProtocol returns (uint256, uint256) {
+        revert("NOT_IMPLEMENTED");
+    }
+
+    /// @inheritdoc ILPAdapter
     function addLiquidity(
         address,
         uint256,
