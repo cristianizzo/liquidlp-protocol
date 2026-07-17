@@ -193,8 +193,8 @@ contract CompoundSwapRouterE2E is E2EBase {
         IUniswapV3Pool pool = IUniswapV3Pool(Constants.UNI_V3_WETH_USDC_3000);
         (uint160 sqrtPriceX96,,,,,,) = pool.slot0();
 
-        uint256 priceX96 = _mulDiv(uint256(sqrtPriceX96), uint256(sqrtPriceX96), uint256(1) << 96);
-        uint256 ethPriceUsd8 = _mulDiv(uint256(1) << 96, 1e20, priceX96);
+        uint256 priceX96 = Math.mulDiv(uint256(sqrtPriceX96), uint256(sqrtPriceX96), uint256(1) << 96);
+        uint256 ethPriceUsd8 = Math.mulDiv(uint256(1) << 96, 1e20, priceX96);
 
         vm.mockCall(
             Constants.CL_ETH_USD,

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.26;
 
 import "forge-std/Test.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 interface IUniswapV3Pool {
     function slot0()
@@ -59,10 +60,10 @@ contract PriceConversionTest is Test {
         //   priceX96 = mulDiv(sqrtPriceX96, sqrtPriceX96, 2^96) = sqrtPriceX96^2 / 2^96
         //   ethPriceUsd8 = mulDiv(2^96, 10^20, priceX96) = 2^96 * 10^20 / priceX96
 
-        uint256 priceX96 = _mulDiv(uint256(sqrtPriceX96), uint256(sqrtPriceX96), uint256(1) << 96);
+        uint256 priceX96 = Math.mulDiv(uint256(sqrtPriceX96), uint256(sqrtPriceX96), uint256(1) << 96);
         emit log_named_uint("priceX96", priceX96);
 
-        uint256 ethPriceUsd8 = _mulDiv(uint256(1) << 96, 1e20, priceX96);
+        uint256 ethPriceUsd8 = Math.mulDiv(uint256(1) << 96, 1e20, priceX96);
         emit log_named_uint("ethPriceUsd8", ethPriceUsd8);
 
         // Convert to human-readable for logging
@@ -74,47 +75,5 @@ contract PriceConversionTest is Test {
         // Sanity check: ETH should be between $1,000 and $10,000
         assertGt(ethPriceUsd8, 1000 * 1e8, "ETH price too low");
         assertLt(ethPriceUsd8, 10_000 * 1e8, "ETH price too high");
-    }
-
-    /// @notice Full-precision 512-bit mulDiv
-    function _mulDiv(uint256 a, uint256 b, uint256 denominator) internal pure returns (uint256 result) {
-        uint256 prod0;
-        uint256 prod1;
-        assembly {
-            let mm := mulmod(a, b, not(0))
-            prod0 := mul(a, b)
-            prod1 := sub(sub(mm, prod0), lt(mm, prod0))
-        }
-        if (prod1 == 0) {
-            require(denominator > 0);
-            assembly {
-                result := div(prod0, denominator)
-            }
-            return result;
-        }
-        require(denominator > prod1);
-        uint256 remainder;
-        assembly {
-            remainder := mulmod(a, b, denominator)
-            prod1 := sub(prod1, gt(remainder, prod0))
-            prod0 := sub(prod0, remainder)
-        }
-        unchecked {
-            uint256 twos = denominator & (~denominator + 1);
-            assembly {
-                denominator := div(denominator, twos)
-                prod0 := div(prod0, twos)
-                twos := add(div(sub(0, twos), twos), 1)
-            }
-            prod0 |= prod1 * twos;
-            uint256 inverse = (3 * denominator) ^ 2;
-            inverse *= 2 - denominator * inverse;
-            inverse *= 2 - denominator * inverse;
-            inverse *= 2 - denominator * inverse;
-            inverse *= 2 - denominator * inverse;
-            inverse *= 2 - denominator * inverse;
-            inverse *= 2 - denominator * inverse;
-            result = prod0 * inverse;
-        }
     }
 }
