@@ -10,8 +10,8 @@ import {INonfungiblePositionManager} from "../../../src/interfaces/external/IUni
 /// @dev Tests against real Uniswap V3 positions on forked mainnet.
 ///
 ///      Flows tested:
-///        1. compound with no swap — basic fee collection + reinvestment
-///        2. compound with dust swap — out-of-range fees swapped and reinvested
+///        1. compound with no swap — basic fee collection + reinvestment (works)
+///        2. compound with dust swap — reverts with real Uniswap SwapRouter (needs adapter)
 ///        3. Security — unauthorized caller, direct call blocked
 contract CompoundSwapRouterE2E is E2EBase {
     CompoundSwapRouter public compoundRouter;

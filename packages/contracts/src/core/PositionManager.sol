@@ -433,7 +433,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
 
     /// @notice Execute a transformation on a position via a whitelisted transformer contract.
     /// @dev Gateway for periphery contracts (LeverageTransformer, CompoundSwapRouter) to act
-    ///      on user positions. The transformer is temporarily authorized to call addCollateral/withdraw
+    ///      on user positions. The transformer is temporarily authorized to call addCollateral/removeCollateral/withdraw
     ///      on the specified position during this call — authorization is revoked after.
     ///
     ///      Security model (Revert Lend pattern):

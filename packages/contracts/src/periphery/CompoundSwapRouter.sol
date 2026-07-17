@@ -10,12 +10,15 @@ import {IPositionManager} from "../interfaces/IPositionManager.sol";
 import {FeeCollector} from "../core/FeeCollector.sol";
 
 /// @title CompoundSwapRouter
-/// @notice Compound V3 fees with automatic dust swap for out-of-range positions.
+/// @notice Compound V3 fees with optional dust swap for out-of-range positions.
 /// @dev Called through PositionManager.transform() — NOT directly by users.
 ///
 ///      When a V3 position is out of range, collected fees in one token can't be
-///      reinvested (returned as dust). This contract catches that dust, swaps it
-///      to the other token, and reinvests — maximizing compound efficiency.
+///      reinvested (returned as dust). This contract catches that dust and optionally
+///      swaps it to the other token for reinvestment.
+///      NOTE: The dust swap path requires a SwapRouter adapter that implements
+///      ISwapRouter.exactInput — the real Uniswap V3 SwapRouter uses a callback
+///      pattern that is incompatible. The no-swap path works fully.
 ///
 ///      Flow:
 ///        1. User calls positionManager.transform(positionId, this, compoundData)
