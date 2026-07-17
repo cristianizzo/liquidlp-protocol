@@ -228,9 +228,7 @@ contract UniswapV2Adapter is ILPAdapter {
     /// @dev Checks if address is a contract AND is a V2 pair from our factory
     function isSupported(address lpToken) external view returns (bool) {
         if (lpToken == address(0)) return false;
-        uint256 size;
-        assembly { size := extcodesize(lpToken) }
-        if (size == 0) return false;
+        if (lpToken.code.length == 0) return false;
 
         try IUniswapV2Pair(lpToken).factory() returns (address f) {
             return f == address(v2Factory);
