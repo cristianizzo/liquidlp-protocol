@@ -229,80 +229,82 @@ abstract contract E2EBase is ForkTestBase {
     /// @param dumpAmountEth Amount of ETH to dump (e.g. 5000 ether for a big crash)
     /// @return crashedEthPrice The ETH/USD price (8 decimals) that Chainlink now returns
     function _crashEthPrice(uint256 dumpAmountEth) internal returns (int256 crashedEthPrice) {
-        IUniswapV3Pool pool = IUniswapV3Pool(Constants.UNI_V3_WETH_USDC_3000);
+        // Step 1-2: Dump WETH into the pool (separate function to reduce stack)
+        _dumpWethIntoPool(dumpAmountEth);
 
-        // --- Step 1: Create whale with WETH ---
-        address whale = makeAddr("ethDumpWhale");
-        vm.deal(whale, dumpAmountEth + 1 ether); // extra for gas
-        vm.startPrank(whale);
-        IWETH(Constants.WETH).deposit{value: dumpAmountEth}();
-
-        // --- Step 2: Dump WETH into the real pool via SwapRouter ---
-        IWETH(Constants.WETH).approve(Constants.UNI_V3_SWAP_ROUTER, dumpAmountEth);
-        // forgefmt: disable-next-item
-        ISwapRouterSingle(Constants.UNI_V3_SWAP_ROUTER)
-            .exactInputSingle(
-                ISwapRouterSingle.ExactInputSingleParams({
-                tokenIn: Constants.WETH,
-                tokenOut: Constants.USDC,
-                fee: 3000,
-                recipient: whale,
-                deadline: block.timestamp + 300,
-                amountIn: dumpAmountEth,
-                amountOutMinimum: 0,
-                sqrtPriceLimitX96: 0
-            })
-            );
-        vm.stopPrank();
-
-        // --- Step 3: Advance time so TWAP fully absorbs the crash ---
-        // 35 minutes > 30-min TWAP window — entire window is post-crash
+        // Step 3: Advance time so TWAP absorbs the crash
         _advanceTime(35 minutes);
 
-        // --- Step 4: Read the actual post-crash sqrtPriceX96 from pool ---
-        (uint160 sqrtPriceX96,,,,,,) = pool.slot0();
+        // Step 4-5: Read pool price and convert to Chainlink format
+        crashedEthPrice = _readPoolPriceAsChainlink();
 
-        // --- Step 5: Convert pool sqrtPriceX96 to Chainlink 8-decimal ETH/USD ---
-        // Pool: USDC(token0, 6dec) / WETH(token1, 18dec)
-        // sqrtPriceX96 = sqrt(token1/token0) * 2^96, so price = sqrtPriceX96^2 / 2^192 = WETH_raw / USDC_raw
-        // ETH/USD (human) = USDC_human / WETH_human = (1/price) * 10^(18-6) = 10^12 * 2^192 / sqrtPriceX96^2
-        // Chainlink 8-dec = ETH/USD * 10^8 = 10^20 * 2^192 / sqrtPriceX96^2
-        // Split via mulDiv: priceX96 = sqrtPriceX96^2 / 2^96, then ethPriceUsd8 = 2^96 * 10^20 / priceX96
-        uint256 priceX96 = _mulDiv(uint256(sqrtPriceX96), uint256(sqrtPriceX96), uint256(1) << 96);
-        uint256 ethPriceUsd8 = _mulDiv(uint256(1) << 96, 1e20, priceX96);
-
-        crashedEthPrice = int256(ethPriceUsd8);
-        require(crashedEthPrice > 0, "Crashed price must be positive");
-
-        // --- Step 6: Mock Chainlink ETH/USD feed ---
-        vm.mockCall(
-            Constants.CL_ETH_USD,
-            abi.encodeWithSelector(IAggregatorV3.latestRoundData.selector),
-            abi.encode(
-                uint80(1), // roundId
-                crashedEthPrice, // answer (8 decimals)
-                block.timestamp, // startedAt
-                block.timestamp, // updatedAt
-                uint80(1) // answeredInRound
-            )
-        );
-
-        // Keep USDC/USD at $1 (already correct, but re-mock to ensure freshness)
-        vm.mockCall(
-            Constants.CL_USDC_USD,
-            abi.encodeWithSelector(IAggregatorV3.latestRoundData.selector),
-            abi.encode(
-                uint80(1), // roundId
-                int256(100_000_000), // $1.00 with 8 decimals
-                block.timestamp, // startedAt
-                block.timestamp, // updatedAt
-                uint80(1) // answeredInRound
-            )
-        );
+        // Step 6: Mock Chainlink feeds
+        _mockChainlinkFeeds(crashedEthPrice);
 
         console.log("=== ETH Price Crash ===");
         console.log("  Dump amount:    %s ETH", dumpAmountEth / 1e18);
         console.log("  Chainlink mock:  $%s (8 dec)", uint256(crashedEthPrice));
+    }
+
+    /// @dev Dump WETH into the WETH/USDC 0.3% pool to crash the price
+    function _dumpWethIntoPool(uint256 dumpAmountEth) internal {
+        address whale = makeAddr("ethDumpWhale");
+        vm.deal(whale, dumpAmountEth + 1 ether);
+        vm.startPrank(whale);
+        IWETH(Constants.WETH).deposit{value: dumpAmountEth}();
+        IWETH(Constants.WETH).approve(Constants.UNI_V3_SWAP_ROUTER, dumpAmountEth);
+        _swapExactSingle(Constants.WETH, Constants.USDC, 3000, dumpAmountEth, whale);
+        vm.stopPrank();
+    }
+
+    /// @dev Single-hop exact input swap via Uniswap V3 SwapRouter
+    function _swapExactSingle(
+        address tokenIn,
+        address tokenOut,
+        uint24 fee,
+        uint256 amountIn,
+        address recipient
+    )
+        internal
+        returns (uint256)
+    {
+        return ISwapRouterSingle(Constants.UNI_V3_SWAP_ROUTER)
+            .exactInputSingle(
+                ISwapRouterSingle.ExactInputSingleParams({
+                    tokenIn: tokenIn,
+                    tokenOut: tokenOut,
+                    fee: fee,
+                    recipient: recipient,
+                    deadline: block.timestamp + 300,
+                    amountIn: amountIn,
+                    amountOutMinimum: 0,
+                    sqrtPriceLimitX96: 0
+                })
+            );
+    }
+
+    /// @dev Read current pool sqrtPriceX96 and convert to Chainlink 8-decimal ETH/USD
+    function _readPoolPriceAsChainlink() internal view returns (int256) {
+        IUniswapV3Pool pool = IUniswapV3Pool(Constants.UNI_V3_WETH_USDC_3000);
+        (uint160 sqrtPriceX96,,,,,,) = pool.slot0();
+        uint256 priceX96 = _mulDiv(uint256(sqrtPriceX96), uint256(sqrtPriceX96), uint256(1) << 96);
+        uint256 ethPriceUsd8 = _mulDiv(uint256(1) << 96, 1e20, priceX96);
+        require(ethPriceUsd8 > 0, "Crashed price must be positive");
+        return int256(ethPriceUsd8);
+    }
+
+    /// @dev Mock Chainlink feeds for ETH/USD and USDC/USD
+    function _mockChainlinkFeeds(int256 ethPrice) internal {
+        vm.mockCall(
+            Constants.CL_ETH_USD,
+            abi.encodeWithSelector(IAggregatorV3.latestRoundData.selector),
+            abi.encode(uint80(1), ethPrice, block.timestamp, block.timestamp, uint80(1))
+        );
+        vm.mockCall(
+            Constants.CL_USDC_USD,
+            abi.encodeWithSelector(IAggregatorV3.latestRoundData.selector),
+            abi.encode(uint80(1), int256(100_000_000), block.timestamp, block.timestamp, uint80(1))
+        );
     }
 
     // --- TickMath (inlined to avoid import conflicts) ---

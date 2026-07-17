@@ -137,77 +137,48 @@ contract CompoundSwapRouterE2E is E2EBase {
         address whale = makeAddr("feeWhale");
         vm.deal(whale, ethAmount + 1 ether);
         vm.startPrank(whale);
-
-        // Wrap ETH
         IWETH(Constants.WETH).deposit{value: ethAmount}();
         IWETH(Constants.WETH).approve(Constants.UNI_V3_SWAP_ROUTER, type(uint256).max);
-
-        // Swap WETH → USDC (generates fees in one direction)
-        uint256 usdcOut = ISwapRouterSingle(Constants.UNI_V3_SWAP_ROUTER)
-            .exactInputSingle(
-                ISwapRouterSingle.ExactInputSingleParams({
-                    tokenIn: Constants.WETH,
-                    tokenOut: Constants.USDC,
-                    fee: 3000,
-                    recipient: whale,
-                    deadline: block.timestamp + 300,
-                    amountIn: ethAmount,
-                    amountOutMinimum: 0,
-                    sqrtPriceLimitX96: 0
-                })
-            );
-
-        // Swap USDC → WETH (generates fees in the other direction, restores price)
+        uint256 usdcOut = _swapExact(Constants.WETH, Constants.USDC, ethAmount, whale);
         IERC20(Constants.USDC).approve(Constants.UNI_V3_SWAP_ROUTER, usdcOut);
-        ISwapRouterSingle(Constants.UNI_V3_SWAP_ROUTER)
-            .exactInputSingle(
-                ISwapRouterSingle.ExactInputSingleParams({
-                    tokenIn: Constants.USDC,
-                    tokenOut: Constants.WETH,
-                    fee: 3000,
-                    recipient: whale,
-                    deadline: block.timestamp + 300,
-                    amountIn: usdcOut,
-                    amountOutMinimum: 0,
-                    sqrtPriceLimitX96: 0
-                })
-            );
-
+        _swapExact(Constants.USDC, Constants.WETH, usdcOut, whale);
         vm.stopPrank();
-
-        // Short time advance — price is roughly restored so no Chainlink sync needed
         _advanceTime(35 minutes);
-
-        // Sync Chainlink to pool price (small drift from round-trip slippage)
         _syncChainlinkToPool();
     }
 
+    function _swapExact(
+        address tokenIn,
+        address tokenOut,
+        uint256 amountIn,
+        address recipient
+    )
+        internal
+        returns (uint256)
+    {
+        return ISwapRouterSingle(Constants.UNI_V3_SWAP_ROUTER)
+            .exactInputSingle(
+                ISwapRouterSingle.ExactInputSingleParams({
+                    tokenIn: tokenIn,
+                    tokenOut: tokenOut,
+                    fee: 3000,
+                    recipient: recipient,
+                    deadline: block.timestamp + 300,
+                    amountIn: amountIn,
+                    amountOutMinimum: 0,
+                    sqrtPriceLimitX96: 0
+                })
+            );
+    }
+
     /// @notice Generate trading fees by dumping ETH through the V3 pool
-    /// @dev Creates a whale, wraps ETH, swaps through WETH/USDC 0.3% pool (where alice's position sits)
     function _generateTradingFees(uint256 ethAmount) internal {
         address whale = makeAddr("feeWhale");
         vm.deal(whale, ethAmount + 1 ether);
         vm.startPrank(whale);
-
-        // Wrap ETH
         IWETH(Constants.WETH).deposit{value: ethAmount}();
         IWETH(Constants.WETH).approve(Constants.UNI_V3_SWAP_ROUTER, ethAmount);
-
-        // Swap WETH → USDC (generates fees for LP positions in the 0.3% pool)
-        ISwapRouterSingle(Constants.UNI_V3_SWAP_ROUTER)
-            .exactInputSingle(
-                ISwapRouterSingle.ExactInputSingleParams({
-                    tokenIn: Constants.WETH,
-                    tokenOut: Constants.USDC,
-                    fee: 3000,
-                    recipient: whale,
-                    deadline: block.timestamp + 300,
-                    amountIn: ethAmount,
-                    amountOutMinimum: 0,
-                    sqrtPriceLimitX96: 0
-                })
-            );
-
+        _swapExact(Constants.WETH, Constants.USDC, ethAmount, whale);
         vm.stopPrank();
 
         // Advance time so TWAP absorbs the price change

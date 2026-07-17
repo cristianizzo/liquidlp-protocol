@@ -642,42 +642,26 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
 
     /// @notice Collect fees and reinvest as liquidity (called by LPCompounder)
     /// @dev Permissionless via LPCompounder. PositionManager mediates adapter access.
-    /// @param positionId The position to compound
-    /// @param protocolFeeRecipient Where to send protocol fee (FeeCollector)
-    /// @param protocolFeeBps Protocol fee in basis points (e.g., 200 = 2%)
-    /// @param callerRewardRecipient Where to send caller reward
-    /// @param callerRewardBps Caller reward in basis points (e.g., 50 = 0.5%)
-    /// @param minFeeThreshold Minimum fee per token to proceed (gas optimization)
-    /// @param dustRefundTo Where to send unused tokens (position owner)
-    /// @param maxSlippageBps Maximum slippage on reinvestment (e.g., 200 = 2%)
+    /// @param params CompoundFeesParams struct with positionId, fee recipients, bps, threshold, etc.
     /// @return fees0 Total fees collected in token0
     /// @return fees1 Total fees collected in token1
     /// @return addedLiquidity Liquidity added back to position
-    function compoundFees(
-        uint256 positionId,
-        address protocolFeeRecipient,
-        uint256 protocolFeeBps,
-        address callerRewardRecipient,
-        uint256 callerRewardBps,
-        uint256 minFeeThreshold,
-        address dustRefundTo,
-        uint256 maxSlippageBps
-    )
+    function compoundFees(IPositionManager.CompoundFeesParams calldata params)
         external
         whenNotPaused
         nonReentrant
-        positionExists(positionId)
+        positionExists(params.positionId)
         returns (uint256 fees0, uint256 fees1, uint256 addedLiquidity)
     {
         // Access: only keeper or pool admin (LPCompounder has KEEPER role)
         require(_acl().isKeeper(msg.sender) || _acl().isPoolAdmin(msg.sender), "NOT_AUTHORIZED");
 
         // Validate inputs
-        require(protocolFeeBps + callerRewardBps <= 5000, "FEES_TOO_HIGH"); // max 50% total
-        require(protocolFeeBps == 0 || protocolFeeRecipient != address(0), "ZERO_FEE_RECIPIENT");
-        require(dustRefundTo != address(0), "ZERO_REFUND_ADDRESS");
+        require(params.protocolFeeBps + params.callerRewardBps <= 5000, "FEES_TOO_HIGH"); // max 50% total
+        require(params.protocolFeeBps == 0 || params.protocolFeeRecipient != address(0), "ZERO_FEE_RECIPIENT");
+        require(params.dustRefundTo != address(0), "ZERO_REFUND_ADDRESS");
 
-        Position storage pos = _positions[positionId];
+        Position storage pos = _positions[params.positionId];
         require(pos.status == PositionStatus.Active || pos.status == PositionStatus.Borrowed, "POSITION_NOT_ACTIVE");
 
         address adapterAddr = core.adapters(pos.lpType);
@@ -689,29 +673,27 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         if (fees0 == 0 && fees1 == 0) return (0, 0, 0);
 
         // Step 1b: Threshold check — revert so fee collection is rolled back when not worth compounding
-        require(fees0 >= minFeeThreshold || fees1 >= minFeeThreshold, "BELOW_MIN_FEE_THRESHOLD");
+        require(fees0 >= params.minFeeThreshold || fees1 >= params.minFeeThreshold, "BELOW_MIN_FEE_THRESHOLD");
 
-        // Distribute fees and reinvest (separate frame to avoid stack-too-deep)
-        {
-            CompoundParams memory cp = CompoundParams({
-                token0: pos.token0,
-                token1: pos.token1,
-                lpToken: pos.lpToken,
-                tokenId: pos.tokenId,
-                adapterAddr: adapterAddr,
-                fees0: fees0,
-                fees1: fees1,
-                protocolFeeRecipient: protocolFeeRecipient,
-                protocolFeeBps: protocolFeeBps,
-                callerRewardRecipient: callerRewardRecipient,
-                callerRewardBps: callerRewardBps,
-                dustRefundTo: dustRefundTo,
-                maxSlippageBps: maxSlippageBps
-            });
-            addedLiquidity = _distributeFees(adapter, cp);
-        }
+        // Distribute fees and reinvest
+        CompoundParams memory cp = CompoundParams({
+            token0: pos.token0,
+            token1: pos.token1,
+            lpToken: pos.lpToken,
+            tokenId: pos.tokenId,
+            adapterAddr: adapterAddr,
+            fees0: fees0,
+            fees1: fees1,
+            protocolFeeRecipient: params.protocolFeeRecipient,
+            protocolFeeBps: params.protocolFeeBps,
+            callerRewardRecipient: params.callerRewardRecipient,
+            callerRewardBps: params.callerRewardBps,
+            dustRefundTo: params.dustRefundTo,
+            maxSlippageBps: params.maxSlippageBps
+        });
+        addedLiquidity = _distributeFees(adapter, cp);
 
-        emit FeesCompoundedInternal(positionId, fees0, fees1, addedLiquidity);
+        emit FeesCompoundedInternal(params.positionId, fees0, fees1, addedLiquidity);
     }
 
     /// @dev Internal: distribute protocol fee + caller reward, reinvest remainder.

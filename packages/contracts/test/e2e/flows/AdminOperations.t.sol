@@ -3,6 +3,7 @@ pragma solidity ^0.8.26;
 
 import "../E2EBase.t.sol";
 import {Market} from "../../../src/markets/Market.sol";
+import {IPositionManager} from "../../../src/interfaces/IPositionManager.sol";
 
 /// @title AdminOperations
 /// @notice E2E tests for admin/governance operations on forked mainnet.
@@ -261,6 +262,17 @@ contract AdminOperations is E2EBase {
 
         vm.prank(alice); // alice is not keeper or pool admin
         vm.expectRevert("NOT_AUTHORIZED");
-        positionManager.compoundFees(positionId, address(feeCollector), 200, alice, 50, 0, alice, 0);
+        positionManager.compoundFees(
+            IPositionManager.CompoundFeesParams({
+                positionId: positionId,
+                protocolFeeRecipient: address(feeCollector),
+                protocolFeeBps: 200,
+                callerRewardRecipient: alice,
+                callerRewardBps: 50,
+                minFeeThreshold: 0,
+                dustRefundTo: alice,
+                maxSlippageBps: 0
+            })
+        );
     }
 }

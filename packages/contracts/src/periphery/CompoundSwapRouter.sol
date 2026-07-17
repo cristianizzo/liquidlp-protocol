@@ -78,14 +78,16 @@ contract CompoundSwapRouter {
 
         // Step 1: Compound fees — dust comes to this contract
         (fees0, fees1, addedLiquidity) = positionManager.compoundFees(
-            params.positionId,
-            address(feeCollector),
-            PROTOCOL_FEE_BPS,
-            params.callerRewardRecipient,
-            CALLER_REWARD_BPS,
-            params.minFeeThreshold,
-            address(this), // dust refund here for swap
-            params.maxSlippageBps
+            IPositionManager.CompoundFeesParams({
+                positionId: params.positionId,
+                protocolFeeRecipient: address(feeCollector),
+                protocolFeeBps: PROTOCOL_FEE_BPS,
+                callerRewardRecipient: params.callerRewardRecipient,
+                callerRewardBps: CALLER_REWARD_BPS,
+                minFeeThreshold: params.minFeeThreshold,
+                dustRefundTo: address(this), // dust refund here for swap
+                maxSlippageBps: params.maxSlippageBps
+            })
         );
 
         // Step 2: Swap dust if path provided
