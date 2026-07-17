@@ -16,9 +16,8 @@ contract LiquidationCascade is E2EBase {
         (bool isLiq, uint256 maxRepay) = liquidationEngine.isLiquidatable(positionId);
         if (isLiq && maxRepay > 0) {
             _fundUsdc(liquidator, maxRepay);
-            address mktAddr = core.markets(ethUsdcMarketId);
             vm.startPrank(liquidator);
-            IERC20(Constants.USDC).approve(mktAddr, maxRepay);
+            IERC20(Constants.USDC).approve(address(liquidationEngine), type(uint256).max);
             liquidationEngine.liquidate(positionId, maxRepay, block.timestamp + 300, 0, 0);
             vm.stopPrank();
             return (true, maxRepay);

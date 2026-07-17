@@ -134,10 +134,10 @@ contract MockLPAdapter is ILPAdapter {
             out1 = unwindAmount1;
         }
         if (out0 > 0 && token0Return != address(0)) {
-            IERC20(token0Return).transfer(recipient, out0);
+            require(IERC20(token0Return).transfer(recipient, out0), "TRANSFER_FAILED");
         }
         if (out1 > 0 && token1Return != address(0)) {
-            IERC20(token1Return).transfer(recipient, out1);
+            require(IERC20(token1Return).transfer(recipient, out1), "TRANSFER_FAILED");
         }
     }
 

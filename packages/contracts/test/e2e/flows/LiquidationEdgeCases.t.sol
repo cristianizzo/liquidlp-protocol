@@ -119,9 +119,8 @@ contract LiquidationEdgeCases is E2EBase {
 
         // Try to liquidate -- should fail
         _fundUsdc(liquidator, 1000e6);
-        address mktAddr = core.markets(ethUsdcMarketId);
         vm.startPrank(liquidator);
-        IERC20(Constants.USDC).approve(mktAddr, 1000e6);
+        IERC20(Constants.USDC).approve(address(liquidationEngine), 1000e6);
         vm.expectRevert("NOT_LIQUIDATABLE");
         liquidationEngine.liquidate(positionId, 1000e6, block.timestamp + 300, 0, 0);
         vm.stopPrank();
@@ -140,9 +139,8 @@ contract LiquidationEdgeCases is E2EBase {
         _crashEthPrice(2000 ether);
 
         _fundUsdc(liquidator, 1000e6);
-        address mktAddr = core.markets(ethUsdcMarketId);
         vm.startPrank(liquidator);
-        IERC20(Constants.USDC).approve(mktAddr, 1000e6);
+        IERC20(Constants.USDC).approve(address(liquidationEngine), 1000e6);
         // Use expired deadline
         vm.expectRevert("EXPIRED");
         liquidationEngine.liquidate(positionId, 1000e6, block.timestamp - 1, 0, 0);

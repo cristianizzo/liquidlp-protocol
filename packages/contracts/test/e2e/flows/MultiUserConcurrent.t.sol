@@ -26,10 +26,8 @@ contract MultiUserConcurrent is E2EBase {
         (bool isLiq, uint256 maxRepay) = liquidationEngine.isLiquidatable(positionId);
         if (isLiq && maxRepay > 0) {
             _fundUsdc(liquidator, maxRepay);
-            PositionManager.Position memory pos = positionManager.getPosition(positionId);
-            address mktAddr = core.markets(pos.marketId);
             vm.startPrank(liquidator);
-            IERC20(Constants.USDC).approve(mktAddr, type(uint256).max);
+            IERC20(Constants.USDC).approve(address(liquidationEngine), type(uint256).max);
             liquidationEngine.liquidate(positionId, maxRepay, block.timestamp + 300, 0, 0);
             vm.stopPrank();
             return (true, maxRepay);
