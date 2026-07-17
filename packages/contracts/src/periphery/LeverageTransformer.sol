@@ -77,6 +77,7 @@ contract LeverageTransformer is IUniswapV3FlashCallback {
         uint128 liquidityToRemove;
     }
 
+    /// @param borrowed Additional amount borrowed in this transaction (0 if existing balance covered flash repayment)
     event LeverageIncreased(uint256 indexed positionId, uint256 flashAmount, uint256 borrowed);
     event LeverageDecreased(uint256 indexed positionId, uint256 flashAmount, uint256 repaid);
 
@@ -243,8 +244,9 @@ contract LeverageTransformer is IUniswapV3FlashCallback {
         // Step 3: Borrow against increased collateral (authorized via transformedPositionId)
         uint256 totalOwed = flashBalance + flashFee;
         uint256 currentBorrowAsset = IERC20(ctx.borrowAsset).balanceOf(address(this));
+        uint256 borrowNeeded;
         if (currentBorrowAsset < totalOwed) {
-            uint256 borrowNeeded = totalOwed - currentBorrowAsset;
+            borrowNeeded = totalOwed - currentBorrowAsset;
             lendingEngine.borrow(ctx.positionId, borrowNeeded);
         }
 
@@ -257,7 +259,7 @@ contract LeverageTransformer is IUniswapV3FlashCallback {
         _refundAll(ctx.token0, ctx.positionOwner);
         _refundAll(ctx.token1, ctx.positionOwner);
 
-        emit LeverageIncreased(ctx.positionId, flashBalance, totalOwed - flashBalance);
+        emit LeverageIncreased(ctx.positionId, flashBalance, borrowNeeded);
     }
 
     function _handleLeverageDown(FlashContext memory ctx, uint256 flashFee) internal {

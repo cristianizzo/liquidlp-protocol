@@ -108,7 +108,7 @@ contract PositionManagerTest is Test {
     function test_initialize_setsCorrectState() public view {
         assertEq(address(pm.core()), address(core));
         assertEq(address(pm.oracleHub()), address(oracleHub));
-        assertEq(pm.nextPositionId(), 0);
+        assertEq(pm.nextPositionId(), 1);
     }
 
     function test_initialize_cannotReinitialize() public {
@@ -147,16 +147,16 @@ contract PositionManagerTest is Test {
 
     function test_deposit_success() public {
         vm.expectEmit(true, true, false, false);
-        emit PositionCreated(0, alice, lpToken, 1, ILPAdapter.LPType.UniswapV3, 50_000e18);
+        emit PositionCreated(1, alice, lpToken, 1, ILPAdapter.LPType.UniswapV3, 50_000e18);
 
         vm.prank(alice);
         uint256 posId = pm.deposit(lpToken, 1, 100e18, marketId);
 
-        assertEq(posId, 0);
-        assertEq(pm.nextPositionId(), 1);
+        assertEq(posId, 1);
+        assertEq(pm.nextPositionId(), 2);
 
         IPositionManager.Position memory pos = pm.getPosition(posId);
-        assertEq(pos.id, 0);
+        assertEq(pos.id, 1);
         assertEq(pos.owner, alice);
         assertEq(pos.lpToken, lpToken);
         assertEq(pos.tokenId, 1);
@@ -173,14 +173,14 @@ contract PositionManagerTest is Test {
         uint256 id2 = pm.deposit(lpToken, 2, 200e18, marketId);
         vm.stopPrank();
 
-        assertEq(id1, 0);
-        assertEq(id2, 1);
-        assertEq(pm.nextPositionId(), 2);
+        assertEq(id1, 1);
+        assertEq(id2, 2);
+        assertEq(pm.nextPositionId(), 3);
 
         uint256[] memory positions = pm.getPositionsByOwner(alice);
         assertEq(positions.length, 2);
-        assertEq(positions[0], 0);
-        assertEq(positions[1], 1);
+        assertEq(positions[0], 1);
+        assertEq(positions[1], 2);
     }
 
     function test_deposit_differentUsers() public {
@@ -612,7 +612,7 @@ contract PositionManagerTest is Test {
         IPositionManager.Position memory pos = pm.getPosition(posId);
         assertEq(pos.owner, alice);
         assertEq(pos.amount, 100e18);
-        assertEq(pm.nextPositionId(), 1);
+        assertEq(pm.nextPositionId(), 2);
     }
 
     // ========== Storage Gap (PM-1) ==========
@@ -632,7 +632,7 @@ contract PositionManagerTest is Test {
         assertEq(pos.owner, alice);
         assertEq(pos.amount, 100e18);
         assertEq(pos.lpToken, lpToken);
-        assertEq(pm.nextPositionId(), 1);
+        assertEq(pm.nextPositionId(), 2);
         assertTrue(aclManager.isLendingEngine(lendingEngine));
         assertTrue(aclManager.isLiquidationEngine(liquidationEngine));
     }
