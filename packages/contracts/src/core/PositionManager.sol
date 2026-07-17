@@ -128,7 +128,7 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         require(_core != address(0) && _oracleHub != address(0), "ZERO_ADDRESS");
         core = ProtocolCore(_core);
         oracleHub = ILPOracleHub(_oracleHub);
-        nextPositionId = 1; // Reserve 0 as sentinel for transformedPositionId
+        nextPositionId = 1; // Reserve 0 as sentinel for transformedPositionId (pre-production — no migration needed)
     }
 
     function _authorizeUpgrade(address) internal override onlyPoolAdmin {}

@@ -111,6 +111,16 @@ contract CompoundSwapRouterE2E is E2EBase {
 
         uint256 valueAfter = _getPositionValue(positionId);
         console.log("Value before: $%s, after: $%s", valueBefore / 1e18, valueAfter / 1e18);
+
+        // Verify adapter has no lingering token balances or approvals
+        assertEq(IERC20(Constants.USDC).balanceOf(address(swapAdapter)), 0, "Adapter should have no USDC");
+        assertEq(IERC20(Constants.WETH).balanceOf(address(swapAdapter)), 0, "Adapter should have no WETH");
+        assertEq(
+            IERC20(Constants.USDC).allowance(address(swapAdapter), Constants.UNI_V3_SWAP_ROUTER),
+            0,
+            "Adapter should clear USDC approval"
+        );
+
         console.log("=== Compound (with dust swap via adapter) Complete ===");
     }
 
@@ -136,7 +146,7 @@ contract CompoundSwapRouterE2E is E2EBase {
         // Reverts with STF — real Uniswap V3 SwapRouter callback pulls tokens via transferFrom
         // which fails because the callback context doesn't align with the approval
         vm.prank(alice);
-        vm.expectRevert();
+        vm.expectRevert(bytes("STF"));
         positionManager.transform(positionId, address(compoundRouter), calldata_);
     }
 
