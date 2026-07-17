@@ -129,6 +129,10 @@ contract CompoundSwapRouter {
                 if (reinvest1 > 0) IERC20(pos.token1).forceApprove(address(positionManager), reinvest1);
                 positionManager.addCollateral(params.positionId, reinvest0, reinvest1, 0, 0);
             }
+
+            // Refund any remaining dust to position owner (addCollateral may not use all tokens)
+            _refundAll(pos.token0, pos.owner);
+            _refundAll(pos.token1, pos.owner);
         } else {
             // No swap — refund dust to position owner
             _refundAll(pos.token0, pos.owner);
