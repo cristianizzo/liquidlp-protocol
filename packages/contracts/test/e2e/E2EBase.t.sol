@@ -272,15 +272,15 @@ abstract contract E2EBase is ForkTestBase {
         return ISwapRouterSingle(Constants.UNI_V3_SWAP_ROUTER)
             .exactInputSingle(
                 ISwapRouterSingle.ExactInputSingleParams({
-                    tokenIn: tokenIn,
-                    tokenOut: tokenOut,
-                    fee: fee,
-                    recipient: recipient,
-                    deadline: block.timestamp + 300,
-                    amountIn: amountIn,
-                    amountOutMinimum: 0,
-                    sqrtPriceLimitX96: 0
-                })
+                tokenIn: tokenIn,
+                tokenOut: tokenOut,
+                fee: fee,
+                recipient: recipient,
+                deadline: block.timestamp + 300,
+                amountIn: amountIn,
+                amountOutMinimum: 0,
+                sqrtPriceLimitX96: 0
+            })
             );
     }
 
