@@ -41,7 +41,7 @@ contract ProtocolInvariantE2E is E2EBase {
             // Fresh position for each test
             uint256 tid = _createV3Position(alice, 1 ether, 2500e6);
             uint256 pid = _depositV3(alice, tid);
-            vm.roll(block.number + 2);
+            vm.roll(block.number + 5); // clear borrow cooldown
 
             uint256 mb = lendingEngine.getMaxBorrow(pid);
             uint256 borrowAmt = (mb * fractions[i]) / 100;
