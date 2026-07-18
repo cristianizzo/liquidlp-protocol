@@ -379,18 +379,19 @@ contract CompoundFeesTest is Test {
 
     // ========== Max Fee Boundary ==========
 
-    function test_compoundFees_maxFee5000Bps() public {
+    function test_compoundFees_maxFee500Bps() public {
         _setupFees(1e18, 2000e6);
-        // Exactly 50% total — should work
+        // Exactly 5% total (300 protocol + 200 caller) — should work
         vm.prank(keeper);
-        pm.compoundFees(_cfParams(positionId, address(feeCollector), 2500, keeper, 2500, 0, alice, 0));
+        pm.compoundFees(_cfParams(positionId, address(feeCollector), 300, keeper, 200, 0, alice, 0));
     }
 
     function test_compoundFees_exceedsMaxFeeReverts() public {
         _setupFees(1e18, 2000e6);
+        // 501 bps total exceeds the 5% cap
         vm.prank(keeper);
         vm.expectRevert("FEES_TOO_HIGH");
-        pm.compoundFees(_cfParams(positionId, address(feeCollector), 2501, keeper, 2500, 0, alice, 0));
+        pm.compoundFees(_cfParams(positionId, address(feeCollector), 301, keeper, 200, 0, alice, 0));
     }
 
     // ========== LPCompounder Integration ==========
@@ -597,16 +598,15 @@ contract CompoundFeesTest is Test {
     }
 
     function test_distributeFees_maxProtocolAndCallerFee() public {
-        // 25% protocol + 25% caller = 50% total (max allowed)
+        // 3% protocol + 2% caller = 5% total (max allowed)
         _setupFees(10_000e18, 10_000e6);
 
         vm.prank(keeper);
-        (,, uint256 liq) =
-            pm.compoundFees(_cfParams(positionId, address(feeCollector), 2500, keeper, 2500, 0, alice, 0));
+        (,, uint256 liq) = pm.compoundFees(_cfParams(positionId, address(feeCollector), 300, keeper, 200, 0, alice, 0));
 
-        // 50% reinvested
-        uint256 expectedReinvest0 = 10_000e18 / 2;
-        uint256 expectedReinvest1 = 10_000e6 / 2;
+        // 95% reinvested (5% total fee taken)
+        uint256 expectedReinvest0 = (10_000e18 * 9500) / 10_000;
+        uint256 expectedReinvest1 = (10_000e6 * 9500) / 10_000;
         assertEq(liq, expectedReinvest0 + expectedReinvest1);
     }
 

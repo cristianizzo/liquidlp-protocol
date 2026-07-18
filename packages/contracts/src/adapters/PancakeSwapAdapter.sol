@@ -53,16 +53,19 @@ contract PancakeSwapAdapter is ILPAdapter {
     }
 
     /// @inheritdoc ILPAdapter
-    function unlock(address, uint256, uint256, address) external onlyProtocol {}
+    /// @dev Fail closed — unimplemented exit path must revert (never silently no-op on collateral).
+    function unlock(address, uint256, uint256, address) external onlyProtocol {
+        revert("NOT_IMPLEMENTED");
+    }
 
     /// @inheritdoc ILPAdapter
     function unwind(address, uint256, uint128) external onlyProtocol returns (uint256, uint256) {
-        return (0, 0);
+        revert("NOT_IMPLEMENTED");
     }
 
     /// @inheritdoc ILPAdapter
     function collectFees(address, uint256) external onlyProtocol returns (uint256, uint256) {
-        return (0, 0);
+        revert("NOT_IMPLEMENTED");
     }
 
     /// @inheritdoc ILPAdapter

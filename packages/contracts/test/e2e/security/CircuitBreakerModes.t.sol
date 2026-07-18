@@ -111,13 +111,12 @@ contract CircuitBreakerModes is E2EBase {
         console.log("=== freezeMarket: liquidation still works ===");
     }
 
-    // ========== 4. pauseMarket sets flag, isOperationAllowed returns false ==========
+    // ========== 4. global core.pause() blocks all operations ==========
 
-    /// @notice pauseMarket sets the mapping and isOperationAllowed returns false.
-    /// @dev Note: The core contracts (PositionManager/LendingEngine) check marketFrozen and poolPaused
-    ///      directly, not isOperationAllowed. pauseMarket is an informational/governance signal.
-    ///      For a full protocol halt, use core.pause() which blocks all operations via whenNotPaused.
-    function test_pauseMarket_blocksEverything() public {
+    /// @notice The full protocol halt is core.pause() (whenNotPaused). There is deliberately no
+    ///         per-market "block-everything" switch — a per-market halt that blocked withdraw/repay
+    ///         would trap user funds. Per-market risk halts use freezeMarket (tested above).
+    function test_globalPause_blocksEverything() public {
         // Create position and borrow before pause
         uint256 tokenId = _createV3Position(alice, 2 ether, 4000e6);
         uint256 positionId = _depositV3(alice, tokenId);
@@ -127,15 +126,7 @@ contract CircuitBreakerModes is E2EBase {
         vm.prank(alice);
         lendingEngine.borrow(positionId, maxBorrow / 4);
 
-        // Pause market via circuit breaker
-        vm.prank(guardian);
-        circuitBreaker.pauseMarket(ethUsdcMarketId, "Exploit detected");
-
-        // Verify isOperationAllowed returns false
-        assertFalse(circuitBreaker.isOperationAllowed(ethUsdcMarketId), "isOperationAllowed should return false");
-        assertTrue(circuitBreaker.marketPaused(ethUsdcMarketId), "Market should be paused");
-
-        // Now also apply global pause to actually block all operations
+        // Global pause halts all operations
         vm.prank(guardian);
         core.pause();
 
@@ -168,17 +159,15 @@ contract CircuitBreakerModes is E2EBase {
         lendingEngine.repay(positionId, 100e6);
         vm.stopPrank();
 
-        // Unpause: deployer (poolAdmin) unpauses core
+        // Unpause: deployer (poolAdmin) unpauses core, operations resume
         vm.prank(deployer);
         core.unpause();
 
-        // Also unpause market
-        vm.prank(deployer);
-        circuitBreaker.unpauseMarket(ethUsdcMarketId);
+        // A borrow now succeeds (position still healthy with capacity)
+        vm.prank(alice);
+        lendingEngine.borrow(positionId, 100e6);
 
-        assertFalse(circuitBreaker.marketPaused(ethUsdcMarketId), "Market should be unpaused");
-
-        console.log("=== pauseMarket + core.pause: all operations blocked ===");
+        console.log("=== core.pause: all operations blocked, resume after unpause ===");
     }
 
     // ========== 5. pausePool blocks pool-specific operations ==========

@@ -36,6 +36,10 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
     mapping(address => uint256[]) internal _ownerPositions;
     uint256 public nextPositionId;
     mapping(uint256 => uint256) public positionDebt;
+
+    /// @dev Max total fee (protocol + caller reward) that compoundFees may take from a
+    ///      position's collected fees. Bounds KEEPER griefing on arbitrary positions.
+    uint256 public constant MAX_COMPOUND_FEE_BPS = 500; // 5%
     /// @dev Deprecated — was `authorized` mapping. Kept for UUPS storage layout compatibility.
     mapping(address => bool) private __deprecated_authorized;
 
@@ -552,6 +556,22 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         emit PositionLiquidated(positionId, liquidator, debtRepaid);
     }
 
+    /// @inheritdoc IPositionManager
+    function recordCollateralSeized(
+        uint256 positionId,
+        uint256 valueUsd
+    )
+        external
+        onlyLiquidationEngine
+        positionExists(positionId)
+    {
+        if (valueUsd == 0) return;
+        address rmAddr = core.riskManagerAddr();
+        if (rmAddr != address(0)) {
+            RiskManager(rmAddr).recordWithdraw(valueUsd, _positions[positionId].marketId);
+        }
+    }
+
     // --- View Functions ---
 
     /// @inheritdoc IPositionManager
@@ -657,8 +677,10 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         // Access: only keeper or pool admin (LPCompounder has KEEPER role)
         require(_acl().isKeeper(msg.sender) || _acl().isPoolAdmin(msg.sender), "NOT_AUTHORIZED");
 
-        // Validate inputs
-        require(params.protocolFeeBps + params.callerRewardBps <= 5000, "FEES_TOO_HIGH"); // max 50% total
+        // Validate inputs. Total fee is bounded to 5% to limit how much a KEEPER can
+        // redirect from an arbitrary position's collected fees (griefing/theft bound).
+        // Legitimate callers (LPCompounder, CompoundSwapRouter) use 2.5% total.
+        require(params.protocolFeeBps + params.callerRewardBps <= MAX_COMPOUND_FEE_BPS, "FEES_TOO_HIGH");
         require(params.protocolFeeBps == 0 || params.protocolFeeRecipient != address(0), "ZERO_FEE_RECIPIENT");
         require(params.dustRefundTo != address(0), "ZERO_REFUND_ADDRESS");
 

@@ -149,12 +149,6 @@ contract AccessControlNegativeTest is Test {
 
     // ========== CircuitBreaker — onlyGuardianOrKeeper ==========
 
-    function test_pauseMarket_revertsUnauthorized() public {
-        vm.prank(attacker);
-        vm.expectRevert("NOT_AUTHORIZED");
-        cb.pauseMarket(0, "test");
-    }
-
     function test_pausePool_revertsUnauthorized() public {
         vm.prank(attacker);
         vm.expectRevert("NOT_AUTHORIZED");
@@ -168,12 +162,6 @@ contract AccessControlNegativeTest is Test {
     }
 
     // ========== CircuitBreaker — onlyPoolAdmin ==========
-
-    function test_unpauseMarket_revertsUnauthorized() public {
-        vm.prank(attacker);
-        vm.expectRevert("NOT_POOL_ADMIN");
-        cb.unpauseMarket(0);
-    }
 
     function test_unpausePool_revertsUnauthorized() public {
         vm.prank(attacker);

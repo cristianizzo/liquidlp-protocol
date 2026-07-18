@@ -85,6 +85,11 @@ interface IPositionManager {
     /// @notice Mark position as liquidated (called by LiquidationEngine)
     function markLiquidated(uint256 positionId, address liquidator, uint256 debtRepaid) external;
 
+    /// @notice Record collateral value (18-dec USD) leaving the market on liquidation, for supply-cap tracking
+    /// @dev Called by LiquidationEngine; forwards to RiskManager.recordWithdraw so marketCurrentSupply
+    ///      does not drift upward as liquidations remove collateral.
+    function recordCollateralSeized(uint256 positionId, uint256 valueUsd) external;
+
     /// @notice Parameters for fee compounding
     struct CompoundFeesParams {
         uint256 positionId;
