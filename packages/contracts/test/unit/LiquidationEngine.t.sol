@@ -316,6 +316,34 @@ contract LiquidationEngineTest is Test {
         liq.liquidate(posId, maxRepay + 1, block.timestamp + 1 hours, 0, 0);
     }
 
+    function test_liquidate_revertsSlippageAmount0() public {
+        uint256 posId = _createLiquidatablePosition();
+        (, uint256 maxRepay) = liq.isLiquidatable(posId);
+
+        usdc.mint(liquidator, maxRepay);
+        vm.prank(liquidator);
+        usdc.approve(address(liq), maxRepay);
+
+        // minAmount0 set impossibly high → slippage revert on token0
+        vm.prank(liquidator);
+        vm.expectRevert("SLIPPAGE_AMOUNT0");
+        liq.liquidate(posId, maxRepay, block.timestamp + 1 hours, type(uint256).max, 0);
+    }
+
+    function test_liquidate_revertsSlippageAmount1() public {
+        uint256 posId = _createLiquidatablePosition();
+        (, uint256 maxRepay) = liq.isLiquidatable(posId);
+
+        usdc.mint(liquidator, maxRepay);
+        vm.prank(liquidator);
+        usdc.approve(address(liq), maxRepay);
+
+        // minAmount1 set impossibly high → slippage revert on token1
+        vm.prank(liquidator);
+        vm.expectRevert("SLIPPAGE_AMOUNT1");
+        liq.liquidate(posId, maxRepay, block.timestamp + 1 hours, 0, type(uint256).max);
+    }
+
     function test_liquidate_revertsWhenPaused() public {
         uint256 posId = _createLiquidatablePosition();
 
