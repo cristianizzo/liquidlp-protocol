@@ -3,6 +3,8 @@ pragma solidity ^0.8.26;
 
 import "../E2EBase.t.sol";
 import {CompoundSwapRouter} from "../../../src/periphery/CompoundSwapRouter.sol";
+import {SwapRouterAdapter} from "../../../src/periphery/SwapRouterAdapter.sol";
+import {ISwapRouter} from "../../../src/interfaces/ISwapRouter.sol";
 import {INonfungiblePositionManager} from "../../../src/interfaces/external/IUniswapV3.sol";
 
 /// @title CompoundSwapRouterE2E
@@ -10,24 +12,37 @@ import {INonfungiblePositionManager} from "../../../src/interfaces/external/IUni
 /// @dev Tests against real Uniswap V3 positions on forked mainnet.
 ///
 ///      Flows tested:
-///        1. compound with no swap — basic fee collection + reinvestment (works)
-///        2. compound with dust swap — reverts with real Uniswap SwapRouter (needs adapter)
-///        3. Security — unauthorized caller, direct call blocked
+///        1. compound with no swap — basic fee collection + reinvestment
+///        2. compound with dust swap via SwapRouterAdapter
+///        3. compound with dust swap fails against raw Uniswap SwapRouter (needs adapter)
+///        4. Security — unauthorized caller, direct call blocked
 contract CompoundSwapRouterE2E is E2EBase {
     CompoundSwapRouter public compoundRouter;
+    CompoundSwapRouter public compoundRouterWithAdapter;
+    SwapRouterAdapter public swapAdapter;
 
     function setUp() public override {
         super.setUp();
 
-        // Deploy CompoundSwapRouter with real Uniswap V3 SwapRouter
+        // Deploy CompoundSwapRouter with real Uniswap V3 SwapRouter (for no-swap + security tests)
         compoundRouter = new CompoundSwapRouter(
             address(core), address(positionManager), Constants.UNI_V3_SWAP_ROUTER, address(feeCollector)
         );
 
-        // Grant TRANSFORMER + KEEPER roles (needed for compoundFees access)
+        // Deploy SwapRouterAdapter wrapping the real Uniswap V3 SwapRouter
+        swapAdapter = new SwapRouterAdapter(Constants.UNI_V3_SWAP_ROUTER);
+
+        // Deploy CompoundSwapRouter using the adapter (for dust swap tests)
+        compoundRouterWithAdapter = new CompoundSwapRouter(
+            address(core), address(positionManager), address(swapAdapter), address(feeCollector)
+        );
+
+        // Grant TRANSFORMER + KEEPER roles
         vm.startPrank(deployer);
         aclManager.addTransformer(address(compoundRouter));
         aclManager.addKeeper(address(compoundRouter));
+        aclManager.addTransformer(address(compoundRouterWithAdapter));
+        aclManager.addKeeper(address(compoundRouterWithAdapter));
         vm.stopPrank();
     }
 
@@ -69,14 +84,47 @@ contract CompoundSwapRouterE2E is E2EBase {
         console.log("=== Compound (no swap) Complete ===");
     }
 
-    /// @notice Dust swap path reverts because Uniswap V3 SwapRouter uses safeTransferFrom
-    ///         in its callback — CompoundSwapRouter approves correctly but the real SwapRouter's
-    ///         callback pulls tokens at a point where the approval may be consumed or the
-    ///         contract context differs. This needs an ISwapRouter wrapper contract for production.
-    /// @dev Documents the issue: CompoundSwapRouter.compound() with a swap path fails
-    ///      against the real Uniswap V3 SwapRouter. Fix: deploy a SwapRouterAdapter that
-    ///      wraps the Uniswap V3 SwapRouter and handles the callback internally.
-    function test_compoundFees_withDustSwap_reverts_needsWrapper() public {
+    /// @notice SwapRouterAdapter works for real Uniswap V3 swaps (standalone, not via compound)
+    /// @dev Tests the adapter's pull-approve-forward pattern against the real SwapRouter.
+    function test_swapRouterAdapter_realSwap() public {
+        uint256 swapAmount = 1000e6; // 1000 USDC
+
+        // Fund alice with USDC
+        _fundUsdc(alice, swapAmount);
+
+        uint256 wethBefore = IERC20(Constants.WETH).balanceOf(alice);
+
+        // Swap USDC → WETH via adapter
+        bytes memory swapPath = abi.encodePacked(Constants.USDC, uint24(3000), Constants.WETH);
+
+        vm.startPrank(alice);
+        IERC20(Constants.USDC).approve(address(swapAdapter), swapAmount);
+        uint256 amountOut = swapAdapter.exactInput(
+            ISwapRouter.ExactInputParams({
+                path: swapPath, recipient: alice, deadline: block.timestamp, amountIn: swapAmount, amountOutMinimum: 0
+            })
+        );
+        vm.stopPrank();
+
+        uint256 wethAfter = IERC20(Constants.WETH).balanceOf(alice);
+
+        assertGt(amountOut, 0, "Should receive WETH");
+        assertEq(wethAfter - wethBefore, amountOut, "WETH balance should match output");
+
+        // Verify adapter has no lingering token balances or approvals
+        assertEq(IERC20(Constants.USDC).balanceOf(address(swapAdapter)), 0, "Adapter should have no USDC");
+        assertEq(IERC20(Constants.WETH).balanceOf(address(swapAdapter)), 0, "Adapter should have no WETH");
+        assertEq(
+            IERC20(Constants.USDC).allowance(address(swapAdapter), Constants.UNI_V3_SWAP_ROUTER),
+            0,
+            "Adapter should clear USDC approval"
+        );
+
+        console.log("Swapped %s USDC -> %s WETH via adapter", swapAmount / 1e6, amountOut / 1e15);
+    }
+
+    /// @notice Raw Uniswap V3 SwapRouter fails with STF — documents why SwapRouterAdapter is needed
+    function test_compoundFees_withDustSwap_rawRouter_reverts() public {
         uint256 tokenId = _createV3Position(alice, 2 ether, 5000e6);
         uint256 positionId = _depositV3(alice, tokenId);
 
@@ -94,8 +142,8 @@ contract CompoundSwapRouterE2E is E2EBase {
 
         bytes memory calldata_ = abi.encodeWithSelector(CompoundSwapRouter.compound.selector, params);
 
-        // Reverts with STF — Uniswap V3 SwapRouter callback pulls tokens via transferFrom
-        // which fails because the approval context doesn't survive the callback
+        // Reverts — either STF (callback context mismatch) or COMPOUND_SLIPPAGE
+        // depending on fork state. The point is: raw router + dust swap = broken.
         vm.prank(alice);
         vm.expectRevert();
         positionManager.transform(positionId, address(compoundRouter), calldata_);
