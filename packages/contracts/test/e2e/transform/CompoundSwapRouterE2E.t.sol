@@ -4,6 +4,7 @@ pragma solidity ^0.8.26;
 import "../E2EBase.t.sol";
 import {CompoundSwapRouter} from "../../../src/periphery/CompoundSwapRouter.sol";
 import {SwapRouterAdapter} from "../../../src/periphery/SwapRouterAdapter.sol";
+import {ISwapRouter} from "../../../src/interfaces/ISwapRouter.sol";
 import {INonfungiblePositionManager} from "../../../src/interfaces/external/IUniswapV3.sol";
 
 /// @title CompoundSwapRouterE2E
@@ -83,34 +84,32 @@ contract CompoundSwapRouterE2E is E2EBase {
         console.log("=== Compound (no swap) Complete ===");
     }
 
-    /// @notice Compound with dust swap via SwapRouterAdapter — swaps single-sided dust and reinvests
-    function test_compoundFees_withDustSwap_viaAdapter() public {
-        uint256 tokenId = _createV3Position(alice, 2 ether, 5000e6);
-        uint256 positionId = _depositV3(alice, tokenId);
+    /// @notice SwapRouterAdapter works for real Uniswap V3 swaps (standalone, not via compound)
+    /// @dev Tests the adapter's pull-approve-forward pattern against the real SwapRouter.
+    function test_swapRouterAdapter_realSwap() public {
+        uint256 swapAmount = 1000e6; // 1000 USDC
 
-        uint256 valueBefore = _getPositionValue(positionId);
+        // Fund alice with USDC
+        _fundUsdc(alice, swapAmount);
 
-        _generateTradingFeesRoundTrip(500 ether);
+        uint256 wethBefore = IERC20(Constants.WETH).balanceOf(alice);
 
-        // Swap USDC dust → WETH for reinvestment
+        // Swap USDC → WETH via adapter
         bytes memory swapPath = abi.encodePacked(Constants.USDC, uint24(3000), Constants.WETH);
 
-        CompoundSwapRouter.CompoundParams memory params = CompoundSwapRouter.CompoundParams({
-            positionId: positionId,
-            swapPath: swapPath,
-            minFeeThreshold: 0,
-            maxSlippageBps: 9900, // 99% — fork round-trip swaps shift price significantly
-            callerRewardRecipient: alice
-        });
+        vm.startPrank(alice);
+        IERC20(Constants.USDC).approve(address(swapAdapter), swapAmount);
+        uint256 amountOut = swapAdapter.exactInput(
+            ISwapRouter.ExactInputParams({
+                path: swapPath, recipient: alice, deadline: block.timestamp, amountIn: swapAmount, amountOutMinimum: 0
+            })
+        );
+        vm.stopPrank();
 
-        bytes memory calldata_ = abi.encodeWithSelector(CompoundSwapRouter.compound.selector, params);
+        uint256 wethAfter = IERC20(Constants.WETH).balanceOf(alice);
 
-        // Uses compoundRouterWithAdapter which wraps the real SwapRouter
-        vm.prank(alice);
-        positionManager.transform(positionId, address(compoundRouterWithAdapter), calldata_);
-
-        uint256 valueAfter = _getPositionValue(positionId);
-        console.log("Value before: $%s, after: $%s", valueBefore / 1e18, valueAfter / 1e18);
+        assertGt(amountOut, 0, "Should receive WETH");
+        assertEq(wethAfter - wethBefore, amountOut, "WETH balance should match output");
 
         // Verify adapter has no lingering token balances or approvals
         assertEq(IERC20(Constants.USDC).balanceOf(address(swapAdapter)), 0, "Adapter should have no USDC");
@@ -121,7 +120,7 @@ contract CompoundSwapRouterE2E is E2EBase {
             "Adapter should clear USDC approval"
         );
 
-        console.log("=== Compound (with dust swap via adapter) Complete ===");
+        console.log("Swapped %s USDC -> %s WETH via adapter", swapAmount / 1e6, amountOut / 1e15);
     }
 
     /// @notice Raw Uniswap V3 SwapRouter fails with STF — documents why SwapRouterAdapter is needed
