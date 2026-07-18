@@ -136,6 +136,9 @@ contract MarketShareInvariantTest is Test {
         vm.prank(lender);
         uint256 withdrawn = market.withdraw(shares);
 
+        // The returned amount must actually reach the lender's balance
+        assertEq(usdc.balanceOf(lender) - balBefore, withdrawn, "Withdrawn tokens must reach the lender");
+
         // Virtual offset in share math may cause tiny rounding loss
         uint256 diff = amount > withdrawn ? amount - withdrawn : withdrawn - amount;
         assertLe(diff, amount / 1000 + 1, "Full withdraw must return ~original amount (within 0.1%)");
@@ -183,7 +186,7 @@ contract MarketShareInvariantTest is Test {
         vm.prank(lender);
         usdc.approve(address(market), supplyAmt);
         vm.prank(lender);
-        uint256 shares = market.supply(supplyAmt);
+        market.supply(supplyAmt);
 
         // Borrower creates demand for interest — bound to available liquidity
         uint256 maxBorrowable = supplyAmt / 2; // at most 50% of supply

@@ -233,9 +233,9 @@ contract LiquidationInvariantTest is Test {
         vm.prank(user);
         le.borrow(posId, borrowAmt);
 
+        // Must equal the configured market bonus (500 bps = 5%) — catches misconfiguration/regressions
         uint256 bonus = liq.getLiquidationBonus(posId);
-        // Bonus is in bps (500 = 5%)
-        assertLe(bonus, 10_000, "Liquidation bonus must be <= 100%");
+        assertEq(bonus, 500, "Liquidation bonus must match configured market bonus");
     }
 
     // ================================================================

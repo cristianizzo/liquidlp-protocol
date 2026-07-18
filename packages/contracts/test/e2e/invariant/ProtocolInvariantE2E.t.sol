@@ -29,14 +29,8 @@ contract ProtocolInvariantE2E is E2EBase {
     // ================================================================
 
     function test_invariant_healthyAfterBorrow() public {
-        uint256 tokenId = _createV3Position(alice, 2 ether, 5000e6);
-        uint256 posId = _depositV3(alice, tokenId);
-        vm.roll(block.number + 2);
-
-        uint256 maxBorrow = lendingEngine.getMaxBorrow(posId);
-        require(maxBorrow > 0, "No borrow capacity");
-
-        // Borrow at 25%, 50%, 75%, 100% of max
+        // Each iteration mints its own fresh position and recomputes max borrow,
+        // so no throwaway setup position is needed here.
         uint256[] memory fractions = new uint256[](4);
         fractions[0] = 25;
         fractions[1] = 50;

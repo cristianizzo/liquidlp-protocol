@@ -157,9 +157,9 @@ contract LiquidationInvariantE2E is E2EBase {
         uint256 usdcAfter = IERC20(Constants.USDC).balanceOf(liquidator);
         uint256 wethAfter = IERC20(Constants.WETH).balanceOf(liquidator);
 
-        // Liquidator spent USDC to repay debt but received collateral tokens
-        // Net position should be positive (repay < collateral value due to bonus)
-        bool receivedSomething = (wethAfter > wethBefore) || (usdcAfter > usdcBefore - repayAmt);
+        // Liquidator spent USDC to repay debt but received collateral tokens.
+        // Addition-based comparison to avoid 0.8 underflow if pre-balance < repayAmt.
+        bool receivedSomething = (wethAfter > wethBefore) || (usdcAfter + repayAmt > usdcBefore);
         assertTrue(receivedSomething, "Liquidator must receive collateral tokens");
     }
 
@@ -212,6 +212,9 @@ contract LiquidationInvariantE2E is E2EBase {
         (bool isLiq, uint256 maxRepay) = liquidationEngine.isLiquidatable(posId);
         if (!isLiq || maxRepay == 0) return;
 
+        // Snapshot HF before the partial liquidation
+        uint256 hfBefore = _getHealthFactor(posId);
+
         // Partial liquidation (half of max)
         uint256 repayAmt = maxRepay / 2;
 
@@ -221,13 +224,12 @@ contract LiquidationInvariantE2E is E2EBase {
         liquidationEngine.liquidate(posId, repayAmt, block.timestamp + 300, 0, 0);
         vm.stopPrank();
 
-        IPositionManager.Position memory pos = positionManager.getPosition(posId);
-        if (pos.amount > 0 && _getDebt(posId) > 0) {
-            // Position still active with debt — HF should have improved
-            // (debt reduced more than collateral reduced due to bonus)
-            uint256 hf = _getHealthFactor(posId);
-            console.log("Post-liquidation HF: %s", hf / 1e16);
-            // HF may still be < 1.0 if only partially liquidated, but should be higher than before
+        // If the position survives with debt, HF must have strictly improved:
+        // repaid debt is worth more, proportionally, than the bonus-discounted collateral seized.
+        if (positionManager.getPosition(posId).amount > 0 && _getDebt(posId) > 0) {
+            uint256 hfAfter = _getHealthFactor(posId);
+            console.log("HF before: %s, after: %s", hfBefore / 1e16, hfAfter / 1e16);
+            assertGt(hfAfter, hfBefore, "Partial liquidation must improve the position's health factor");
         }
     }
 }
