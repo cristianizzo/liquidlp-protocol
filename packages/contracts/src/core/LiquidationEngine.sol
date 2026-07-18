@@ -58,6 +58,9 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
     event MaxLiquidationPortionUpdated(uint256 oldValue, uint256 newValue);
     event FeeCollectorUpdated(address oldCollector, address newCollector);
     event TokensRescued(address indexed token, address indexed to, uint256 amount);
+    /// @notice Emitted when a capped partial liquidation leaves a position still in debt with
+    ///         collateral above the dust threshold — latent under-collateralization to monitor.
+    event ResidualInsolvency(uint256 indexed positionId, uint256 remainingDebt, uint256 remainingValue);
 
     function _acl() internal view returns (ACLManager) {
         return core.aclManager();
@@ -298,6 +301,11 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
                 lendingEngine.writeOffDebt(positionId);
                 supplyRemovedUsd = positionValue; // full position value leaves the market
                 positionManager.markLiquidated(positionId, msg.sender, repayAmount);
+            } else {
+                // Position still has debt AND collateral above dust after a capped partial
+                // liquidation. Surface it so monitoring can catch latent under-collateralization
+                // rather than letting it accrue silently until the next liquidation.
+                emit ResidualInsolvency(positionId, remainingDebt, remainingValue);
             }
         }
 

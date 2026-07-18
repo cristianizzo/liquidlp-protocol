@@ -49,6 +49,7 @@ contract CompoundSwapRouter {
         uint256 minFeeThreshold;
         uint256 maxSlippageBps;
         address callerRewardRecipient; // Who receives the 0.5% reward
+        uint256 minSwapOut; // Min output of the dust swap — sandwich protection (0 = no bound)
     }
 
     event Compounded(uint256 indexed positionId, uint256 fees0, uint256 fees1, uint256 swapped, uint256 addedLiquidity);
@@ -107,7 +108,7 @@ contract CompoundSwapRouter {
                         recipient: address(this),
                         deadline: block.timestamp,
                         amountIn: dust0,
-                        amountOutMinimum: 0 // Protected by post-transform health check
+                        amountOutMinimum: params.minSwapOut // caller-set sandwich protection
                     })
                 );
             } else if (dust1 > 0) {
@@ -118,7 +119,7 @@ contract CompoundSwapRouter {
                         recipient: address(this),
                         deadline: block.timestamp,
                         amountIn: dust1,
-                        amountOutMinimum: 0 // Protected by post-transform health check
+                        amountOutMinimum: params.minSwapOut // caller-set sandwich protection
                     })
                 );
             }

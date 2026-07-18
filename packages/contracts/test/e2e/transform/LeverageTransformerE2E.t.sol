@@ -63,7 +63,9 @@ contract LeverageTransformerE2E is E2EBase {
             flashLoanPool: FLASH_POOL,
             swapPath0: "", // USDC is borrowAsset and token0, no swap needed for token0 portion
             swapPath1: swapPathToWeth, // Swap USDC → WETH for token1 portion
-            swap0Portion: 5000 // 50/50 split — half stays as USDC (token0), half swaps to WETH (token1)
+            swap0Portion: 5000, // 50/50 split — half stays as USDC (token0), half swaps to WETH (token1)
+            minSwapOut0: 0,
+            minSwapOut1: 0
         });
 
         // 4. Execute leverage up via transform()
@@ -124,7 +126,9 @@ contract LeverageTransformerE2E is E2EBase {
             repayAmount: repayAmount,
             liquidityToRemove: liquidityToRemove,
             swapPath0: "", // USDC is borrowAsset, no swap needed
-            swapPath1: swapWethToUsdc // WETH → USDC
+            swapPath1: swapWethToUsdc, // WETH → USDC
+            minSwapOut0: 0,
+            minSwapOut1: 0
         });
 
         bytes memory calldata_ = abi.encodeWithSelector(LeverageTransformer.leverageDown.selector, params);
@@ -159,7 +163,9 @@ contract LeverageTransformerE2E is E2EBase {
             flashLoanPool: FLASH_POOL,
             swapPath0: "",
             swapPath1: "",
-            swap0Portion: 5000
+            swap0Portion: 5000,
+            minSwapOut0: 0,
+            minSwapOut1: 0
         });
 
         bytes memory calldata_ = abi.encodeWithSelector(LeverageTransformer.leverageUp.selector, params);
@@ -191,7 +197,9 @@ contract LeverageTransformerE2E is E2EBase {
                 flashLoanPool: FLASH_POOL,
                 swapPath0: "",
                 swapPath1: "",
-                swap0Portion: 5000
+                swap0Portion: 5000,
+                minSwapOut0: 0,
+                minSwapOut1: 0
             })
         );
 
@@ -208,7 +216,9 @@ contract LeverageTransformerE2E is E2EBase {
             flashLoanPool: FLASH_POOL,
             swapPath0: "",
             swapPath1: "",
-            swap0Portion: 5000
+            swap0Portion: 5000,
+            minSwapOut0: 0,
+            minSwapOut1: 0
         });
 
         vm.prank(alice);
@@ -231,7 +241,9 @@ contract LeverageTransformerE2E is E2EBase {
             flashLoanPool: address(fake),
             swapPath0: "",
             swapPath1: "",
-            swap0Portion: 5000
+            swap0Portion: 5000,
+            minSwapOut0: 0,
+            minSwapOut1: 0
         });
 
         bytes memory calldata_ = abi.encodeWithSelector(LeverageTransformer.leverageUp.selector, params);

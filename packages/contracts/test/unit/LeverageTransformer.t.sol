@@ -185,7 +185,9 @@ contract LeverageTransformerTest is Test {
             flashLoanPool: address(flashPool),
             swapPath0: "",
             swapPath1: "",
-            swap0Portion: 5000
+            swap0Portion: 5000,
+            minSwapOut0: 0,
+            minSwapOut1: 0
         });
 
         vm.prank(alice);
@@ -201,7 +203,9 @@ contract LeverageTransformerTest is Test {
             repayAmount: 500e18,
             liquidityToRemove: 1000,
             swapPath0: "",
-            swapPath1: ""
+            swapPath1: "",
+            minSwapOut0: 0,
+            minSwapOut1: 0
         });
 
         vm.prank(alice);
@@ -225,7 +229,9 @@ contract LeverageTransformerTest is Test {
             flashLoanPool: address(fakePool),
             swapPath0: "",
             swapPath1: "",
-            swap0Portion: 5000
+            swap0Portion: 5000,
+            minSwapOut0: 0,
+            minSwapOut1: 0
         });
 
         bytes memory calldata_ = abi.encodeWithSelector(LeverageTransformer.leverageUp.selector, params);
@@ -246,7 +252,9 @@ contract LeverageTransformerTest is Test {
             flashLoanPool: address(0),
             swapPath0: "",
             swapPath1: "",
-            swap0Portion: 5000
+            swap0Portion: 5000,
+            minSwapOut0: 0,
+            minSwapOut1: 0
         });
 
         bytes memory calldata_ = abi.encodeWithSelector(LeverageTransformer.leverageUp.selector, params);
@@ -267,7 +275,9 @@ contract LeverageTransformerTest is Test {
             flashLoanPool: address(flashPool),
             swapPath0: "",
             swapPath1: "",
-            swap0Portion: 5000
+            swap0Portion: 5000,
+            minSwapOut0: 0,
+            minSwapOut1: 0
         });
 
         bytes memory calldata_ = abi.encodeWithSelector(LeverageTransformer.leverageUp.selector, params);

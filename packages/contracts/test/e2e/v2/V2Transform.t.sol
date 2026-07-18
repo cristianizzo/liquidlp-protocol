@@ -65,7 +65,9 @@ contract V2Transform is E2EBase {
             flashLoanPool: FLASH_POOL,
             swapPath0: "",
             swapPath1: swapPathToWeth,
-            swap0Portion: 5000
+            swap0Portion: 5000,
+            minSwapOut0: 0,
+            minSwapOut1: 0
         });
 
         bytes memory calldata_ = abi.encodeWithSelector(LeverageTransformer.leverageUp.selector, params);
@@ -113,7 +115,9 @@ contract V2Transform is E2EBase {
             repayAmount: repayAmount,
             liquidityToRemove: liquidityToRemove,
             swapPath0: "",
-            swapPath1: swapWethToUsdc
+            swapPath1: swapWethToUsdc,
+            minSwapOut0: 0,
+            minSwapOut1: 0
         });
 
         bytes memory calldata_ = abi.encodeWithSelector(LeverageTransformer.leverageDown.selector, params);
@@ -137,7 +141,9 @@ contract V2Transform is E2EBase {
             flashLoanPool: FLASH_POOL,
             swapPath0: "",
             swapPath1: "",
-            swap0Portion: 5000
+            swap0Portion: 5000,
+            minSwapOut0: 0,
+            minSwapOut1: 0
         });
 
         vm.prank(alice);

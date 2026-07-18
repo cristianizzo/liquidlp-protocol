@@ -66,7 +66,8 @@ contract CompoundSwapRouterE2E is E2EBase {
             swapPath: "", // no dust swap
             minFeeThreshold: 0, // accept any fees
             maxSlippageBps: 5000, // 50% tolerance — round-trip swaps shift price significantly on fork
-            callerRewardRecipient: alice // alice gets caller reward
+            callerRewardRecipient: alice, // alice gets caller reward
+            minSwapOut: 0
         });
 
         bytes memory calldata_ = abi.encodeWithSelector(CompoundSwapRouter.compound.selector, params);
@@ -137,7 +138,8 @@ contract CompoundSwapRouterE2E is E2EBase {
             swapPath: swapPath,
             minFeeThreshold: 0,
             maxSlippageBps: 500,
-            callerRewardRecipient: alice
+            callerRewardRecipient: alice,
+            minSwapOut: 0
         });
 
         bytes memory calldata_ = abi.encodeWithSelector(CompoundSwapRouter.compound.selector, params);
@@ -154,7 +156,12 @@ contract CompoundSwapRouterE2E is E2EBase {
     /// @notice Direct call to compound (not via transform) is rejected
     function test_revert_directCall_blocked() public {
         CompoundSwapRouter.CompoundParams memory params = CompoundSwapRouter.CompoundParams({
-            positionId: 0, swapPath: "", minFeeThreshold: 0, maxSlippageBps: 500, callerRewardRecipient: alice
+            positionId: 0,
+            swapPath: "",
+            minFeeThreshold: 0,
+            maxSlippageBps: 500,
+            callerRewardRecipient: alice,
+            minSwapOut: 0
         });
 
         vm.prank(alice);
@@ -168,7 +175,12 @@ contract CompoundSwapRouterE2E is E2EBase {
         uint256 positionId = _depositV3(alice, tokenId);
 
         CompoundSwapRouter.CompoundParams memory params = CompoundSwapRouter.CompoundParams({
-            positionId: positionId, swapPath: "", minFeeThreshold: 0, maxSlippageBps: 500, callerRewardRecipient: bob
+            positionId: positionId,
+            swapPath: "",
+            minFeeThreshold: 0,
+            maxSlippageBps: 500,
+            callerRewardRecipient: bob,
+            minSwapOut: 0
         });
 
         bytes memory calldata_ = abi.encodeWithSelector(CompoundSwapRouter.compound.selector, params);

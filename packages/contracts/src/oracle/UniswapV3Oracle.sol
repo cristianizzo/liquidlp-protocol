@@ -358,7 +358,9 @@ contract UniswapV3Oracle is ILPOracle {
         internal
         view
     {
-        if (price0 == 0 || price1 == 0) return;
+        // Fail closed: a zero Chainlink price is a broken invariant (PriceFeedRegistry reverts on
+        // non-positive answers), so never silently skip the TWAP-vs-Chainlink deviation guard.
+        require(price0 > 0 && price1 > 0, "ZERO_REF_PRICE");
 
         // TWAP ratio: sqrtPrice^2 / 2^192 gives token1/token0 in raw pool units
         // For a pool with token0=WETH(18dec) and token1=USDC(6dec),

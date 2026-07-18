@@ -49,7 +49,9 @@ contract TransformSecurityE2E is E2EBase {
                 flashLoanPool: FLASH_POOL,
                 swapPath0: "",
                 swapPath1: swapPath,
-                swap0Portion: 5000
+                swap0Portion: 5000,
+                minSwapOut0: 0,
+                minSwapOut1: 0
             })
         );
 
@@ -78,7 +80,9 @@ contract TransformSecurityE2E is E2EBase {
                 flashLoanPool: FLASH_POOL,
                 swapPath0: "",
                 swapPath1: "",
-                swap0Portion: 5000
+                swap0Portion: 5000,
+                minSwapOut0: 0,
+                minSwapOut1: 0
             })
         );
 
@@ -112,7 +116,9 @@ contract TransformSecurityE2E is E2EBase {
                 flashLoanPool: FLASH_POOL,
                 swapPath0: "",
                 swapPath1: "",
-                swap0Portion: 5000
+                swap0Portion: 5000,
+                minSwapOut0: 0,
+                minSwapOut1: 0
             })
         );
 
@@ -147,7 +153,9 @@ contract TransformSecurityE2E is E2EBase {
                 flashLoanPool: FLASH_POOL,
                 swapPath0: "",
                 swapPath1: swapPath,
-                swap0Portion: 5000
+                swap0Portion: 5000,
+                minSwapOut0: 0,
+                minSwapOut1: 0
             })
         );
 

@@ -51,6 +51,8 @@ contract LeverageTransformer is IUniswapV3FlashCallback {
         bytes swapPath0; // borrowAsset → token0 (empty if borrowAsset IS token0)
         bytes swapPath1; // borrowAsset → token1 (empty if borrowAsset IS token1)
         uint256 swap0Portion; // Portion of flash to swap to token0 (bps, rest → token1)
+        uint256 minSwapOut0; // Min token0 out of swapPath0 — sandwich protection (0 = no bound)
+        uint256 minSwapOut1; // Min token1 out of swapPath1 — sandwich protection (0 = no bound)
     }
 
     struct LeverageDownParams {
@@ -61,6 +63,8 @@ contract LeverageTransformer is IUniswapV3FlashCallback {
         uint128 liquidityToRemove; // Amount of LP liquidity to withdraw after repaying debt
         bytes swapPath0; // token0 → borrowAsset
         bytes swapPath1; // token1 → borrowAsset
+        uint256 minSwapOut0; // Min borrowAsset out of swapPath0 — sandwich protection (0 = no bound)
+        uint256 minSwapOut1; // Min borrowAsset out of swapPath1 — sandwich protection (0 = no bound)
     }
 
     /// @dev Internal flash callback context
@@ -76,6 +80,8 @@ contract LeverageTransformer is IUniswapV3FlashCallback {
         uint256 swap0Portion;
         uint256 repayAmount;
         uint128 liquidityToRemove;
+        uint256 minSwapOut0;
+        uint256 minSwapOut1;
     }
 
     /// @param borrowed Additional amount borrowed in this transaction (0 if existing balance covered flash repayment)
@@ -129,7 +135,9 @@ contract LeverageTransformer is IUniswapV3FlashCallback {
             swapPath1: params.swapPath1,
             swap0Portion: params.swap0Portion,
             repayAmount: 0,
-            liquidityToRemove: 0
+            liquidityToRemove: 0,
+            minSwapOut0: params.minSwapOut0,
+            minSwapOut1: params.minSwapOut1
         });
 
         _executeFlash(params.flashLoanPool, params.flashAmount, config.borrowAsset, ctx);
@@ -159,7 +167,9 @@ contract LeverageTransformer is IUniswapV3FlashCallback {
             swapPath1: params.swapPath1,
             swap0Portion: 0,
             repayAmount: params.repayAmount,
-            liquidityToRemove: params.liquidityToRemove
+            liquidityToRemove: params.liquidityToRemove,
+            minSwapOut0: params.minSwapOut0,
+            minSwapOut1: params.minSwapOut1
         });
 
         _executeFlash(params.flashLoanPool, params.flashAmount, config.borrowAsset, ctx);
@@ -229,7 +239,7 @@ contract LeverageTransformer is IUniswapV3FlashCallback {
                     recipient: address(this),
                     deadline: block.timestamp,
                     amountIn: forToken0,
-                    amountOutMinimum: 0 // Protected by post-transform health check
+                    amountOutMinimum: ctx.minSwapOut0 // caller-set sandwich protection
                 })
             );
         }
@@ -242,7 +252,7 @@ contract LeverageTransformer is IUniswapV3FlashCallback {
                     recipient: address(this),
                     deadline: block.timestamp,
                     amountIn: forToken1,
-                    amountOutMinimum: 0 // Protected by post-transform health check
+                    amountOutMinimum: ctx.minSwapOut1 // caller-set sandwich protection
                 })
             );
         }
@@ -289,8 +299,8 @@ contract LeverageTransformer is IUniswapV3FlashCallback {
         positionManager.removeCollateral(ctx.positionId, ctx.liquidityToRemove, 0, 0);
 
         // Step 3: Swap received tokens to borrow asset for flash repayment
-        _swapIfNeeded(ctx.token0, ctx.borrowAsset, ctx.swapPath0);
-        _swapIfNeeded(ctx.token1, ctx.borrowAsset, ctx.swapPath1);
+        _swapIfNeeded(ctx.token0, ctx.borrowAsset, ctx.swapPath0, ctx.minSwapOut0);
+        _swapIfNeeded(ctx.token1, ctx.borrowAsset, ctx.swapPath1, ctx.minSwapOut1);
 
         // Step 4: Repay flash loan (flashBalance + fee, not repayAmount)
         uint256 totalOwed = flashBalance + flashFee;
@@ -305,7 +315,7 @@ contract LeverageTransformer is IUniswapV3FlashCallback {
         emit LeverageDecreased(ctx.positionId, flashBalance, ctx.repayAmount);
     }
 
-    function _swapIfNeeded(address tokenIn, address tokenOut, bytes memory path) internal {
+    function _swapIfNeeded(address tokenIn, address tokenOut, bytes memory path, uint256 minOut) internal {
         if (tokenIn == tokenOut || path.length == 0) return;
         uint256 balance = IERC20(tokenIn).balanceOf(address(this));
         if (balance == 0) return;
@@ -316,7 +326,7 @@ contract LeverageTransformer is IUniswapV3FlashCallback {
                 recipient: address(this),
                 deadline: block.timestamp,
                 amountIn: balance,
-                amountOutMinimum: 0 // Protected by post-transform health check
+                amountOutMinimum: minOut // caller-set sandwich protection
             })
         );
     }
