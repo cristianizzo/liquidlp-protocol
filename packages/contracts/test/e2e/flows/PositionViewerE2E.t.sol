@@ -154,11 +154,11 @@ contract PositionViewerE2E is E2EBase {
         (bool canLiq, uint256 maxRepay) = liquidationEngine.isLiquidatable(positionId);
         assertTrue(canLiq, "Position must be liquidatable");
 
-        // Step 3: Liquidate directly (not flash)
-        address v3MarketAddr = core.markets(ethUsdcMarketId);
+        // Step 3: Liquidate directly (not flash) — approve the LiquidationEngine (it pulls via transferFrom)
+        _fundUsdc(liquidator, maxRepay);
         vm.startPrank(liquidator);
-        IERC20(Constants.USDC).approve(v3MarketAddr, maxRepay);
-        liquidationEngine.liquidate(positionId, maxRepay, block.timestamp, 0, 0);
+        IERC20(Constants.USDC).approve(address(liquidationEngine), maxRepay);
+        liquidationEngine.liquidate(positionId, maxRepay, block.timestamp + 300, 0, 0);
         vm.stopPrank();
 
         // Step 4: Verify viewer returns correct post-liquidation state

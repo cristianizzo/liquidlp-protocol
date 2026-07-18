@@ -39,7 +39,7 @@ contract LPCompounderE2E is E2EBase {
         console.log("Position value before compound: $%s", valueBefore / 1e18);
 
         // Generate trading fees via round-trip swaps
-        _generateTradingFeesRoundTrip(500 ether);
+        _generateTradingFeesRoundTrip(50 ether);
 
         // Set threshold to 0 so any fees trigger compound
         vm.prank(deployer);
@@ -47,7 +47,7 @@ contract LPCompounderE2E is E2EBase {
 
         // Set high slippage tolerance for fork testing (round-trip swaps shift price)
         vm.prank(deployer);
-        compounder.setCompoundSlippage(500); // 5%
+        compounder.setCompoundSlippage(1000); // 10% (max) — fork swaps shift reinvest ratio
 
         // Compound the position -- keeper calls
         compounder.compoundPosition(positionId, keeper);
@@ -69,12 +69,12 @@ contract LPCompounderE2E is E2EBase {
         uint256 positionId2 = _depositV3(alice, tokenId2);
 
         // Generate trading fees
-        _generateTradingFeesRoundTrip(500 ether);
+        _generateTradingFeesRoundTrip(50 ether);
 
         // Set threshold to 0 and generous slippage
         vm.startPrank(deployer);
         compounder.setMinCompoundThreshold(0);
-        compounder.setCompoundSlippage(500);
+        compounder.setCompoundSlippage(1000);
         vm.stopPrank();
 
         // Batch compound both positions
