@@ -196,6 +196,8 @@ contract LeverageTransformer is IUniswapV3FlashCallback {
     /// @dev Verify flash pool is a real Uniswap V3 pool via factory lookup
     function _validateFlashPool(address flashPool, address borrowAsset) internal view {
         require(flashPool != address(0), "ZERO_FLASH_POOL");
+        // Must be a real contract before we call into it (clear revert vs low-level decode error)
+        require(flashPool.code.length > 0, "INVALID_FLASH_POOL");
         address poolToken0 = IUniswapV3Pool(flashPool).token0();
         address poolToken1 = IUniswapV3Pool(flashPool).token1();
         require(borrowAsset == poolToken0 || borrowAsset == poolToken1, "BORROW_ASSET_NOT_IN_POOL");

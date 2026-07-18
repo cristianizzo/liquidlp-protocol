@@ -27,7 +27,9 @@ contract LPCompounder {
     uint256 public compoundFeeBps = 250;
     /// @notice Caller reward portion (basis points). Default 50 = 0.5%.
     uint256 public callerRewardBps = 50;
-    uint256 public constant MAX_COMPOUND_FEE = 1000; // 10% max total
+    /// @dev Must not exceed PositionManager.MAX_COMPOUND_FEE_BPS (5%): compoundPosition forwards
+    ///      the full compoundFeeBps as the total fee to compoundFees, which reverts above that cap.
+    uint256 public constant MAX_COMPOUND_FEE = 500; // 5% max total
 
     /// @notice Minimum fee per token to justify compounding
     uint256 public minCompoundThreshold = 1000;
