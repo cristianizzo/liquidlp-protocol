@@ -15,6 +15,15 @@ contract LPCompounderE2E is E2EBase {
     address public keeper = makeAddr("keeper");
     address public treasury = makeAddr("treasury");
 
+    /// @dev Mirror of LPCompounder.FeesCompounded for vm.expectEmit
+    event FeesCompounded(
+        uint256 indexed positionId,
+        uint256 fees0,
+        uint256 fees1,
+        uint256 addedLiquidity,
+        address indexed rewardRecipient
+    );
+
     function setUp() public override {
         super.setUp();
 
@@ -49,7 +58,10 @@ contract LPCompounderE2E is E2EBase {
         vm.prank(deployer);
         compounder.setCompoundSlippage(1000); // 10% (max) — fork swaps shift reinvest ratio
 
-        // Compound the position -- keeper calls
+        // Compound the position -- keeper calls.
+        // Assert FeesCompounded fires (only emitted when fees > 0 were collected + reinvested).
+        vm.expectEmit(true, true, false, false, address(compounder));
+        emit FeesCompounded(positionId, 0, 0, 0, keeper);
         compounder.compoundPosition(positionId, keeper);
 
         uint256 valueAfter = _getPositionValue(positionId);
@@ -77,11 +89,15 @@ contract LPCompounderE2E is E2EBase {
         compounder.setCompoundSlippage(1000);
         vm.stopPrank();
 
-        // Batch compound both positions
+        // Batch compound both positions — assert each emits FeesCompounded (fees > 0 reinvested)
         uint256[] memory ids = new uint256[](2);
         ids[0] = positionId1;
         ids[1] = positionId2;
 
+        vm.expectEmit(true, false, false, false, address(compounder));
+        emit FeesCompounded(positionId1, 0, 0, 0, address(0));
+        vm.expectEmit(true, false, false, false, address(compounder));
+        emit FeesCompounded(positionId2, 0, 0, 0, address(0));
         compounder.batchCompound(ids);
 
         console.log("=== batchCompound Passed ===");

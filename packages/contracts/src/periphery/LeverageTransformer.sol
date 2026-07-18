@@ -118,7 +118,6 @@ contract LeverageTransformer is IUniswapV3FlashCallback {
 
         _validateFlashPool(params.flashLoanPool, config.borrowAsset);
 
-        IUniswapV3Pool pool = IUniswapV3Pool(params.flashLoanPool);
         FlashContext memory ctx = FlashContext({
             isLeverageUp: true,
             positionId: params.positionId,

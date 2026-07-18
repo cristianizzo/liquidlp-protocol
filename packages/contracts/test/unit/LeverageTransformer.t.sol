@@ -231,7 +231,7 @@ contract LeverageTransformerTest is Test {
         bytes memory calldata_ = abi.encodeWithSelector(LeverageTransformer.leverageUp.selector, params);
 
         vm.prank(alice);
-        vm.expectRevert();
+        vm.expectRevert("INVALID_FLASH_POOL");
         pm.transform(posId, address(lt), calldata_);
     }
 
@@ -252,7 +252,7 @@ contract LeverageTransformerTest is Test {
         bytes memory calldata_ = abi.encodeWithSelector(LeverageTransformer.leverageUp.selector, params);
 
         vm.prank(alice);
-        vm.expectRevert();
+        vm.expectRevert("ZERO_FLASH_POOL");
         pm.transform(posId, address(lt), calldata_);
     }
 
@@ -273,7 +273,7 @@ contract LeverageTransformerTest is Test {
         bytes memory calldata_ = abi.encodeWithSelector(LeverageTransformer.leverageUp.selector, params);
 
         vm.prank(alice);
-        vm.expectRevert();
+        vm.expectRevert("ZERO_FLASH");
         pm.transform(posId, address(lt), calldata_);
     }
 

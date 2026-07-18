@@ -192,7 +192,7 @@ contract TransformReentrancyTest is Test {
 
         // During transform of attackerPos, it tries addCollateral on victimPos → not authorized
         vm.prank(address(attacker));
-        vm.expectRevert();
+        vm.expectRevert("NOT_POSITION_OWNER");
         pm.transform(attackerPos, address(attacker), data);
     }
 

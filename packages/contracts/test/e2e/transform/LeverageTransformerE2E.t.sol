@@ -237,7 +237,7 @@ contract LeverageTransformerE2E is E2EBase {
         bytes memory calldata_ = abi.encodeWithSelector(LeverageTransformer.leverageUp.selector, params);
 
         vm.prank(alice);
-        vm.expectRevert(); // INVALID_FLASH_POOL
+        vm.expectRevert("INVALID_FLASH_POOL");
         positionManager.transform(positionId, address(leverageTransformer), calldata_);
     }
 }
