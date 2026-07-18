@@ -78,6 +78,11 @@ contract FlashloanLiquidator is IUniswapV3FlashCallback {
                 && _swapRouter != address(0) && _v3Factory != address(0),
             "ZERO_ADDRESS"
         );
+        require(
+            _core.code.length > 0 && _positionManager.code.length > 0 && _liquidationEngine.code.length > 0
+                && _swapRouter.code.length > 0 && _v3Factory.code.length > 0,
+            "NOT_CONTRACT"
+        );
         core = ProtocolCore(_core);
         positionManager = PositionManager(_positionManager);
         liquidationEngine = LiquidationEngine(_liquidationEngine);
@@ -115,6 +120,9 @@ contract FlashloanLiquidator is IUniswapV3FlashCallback {
             caller: msg.sender,
             flashLoanPool: params.flashLoanPool
         });
+
+        // Flash pool must be a real contract before we call into it (clear revert vs low-level decode)
+        require(params.flashLoanPool.code.length > 0, "INVALID_FLASH_POOL");
 
         // Verify flash pool contains the borrow asset and determine flash amounts
         address poolToken0 = IUniswapV3PoolMinimal(params.flashLoanPool).token0();

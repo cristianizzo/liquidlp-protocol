@@ -252,10 +252,10 @@ contract AdminOpsExtended is E2EBase {
         uint256 positionId = _depositV3(alice, tokenId);
         vm.roll(block.number + 2);
 
-        // Borrow a large amount that exceeds the cap — should revert
+        // Borrow a large amount that exceeds the cap — should revert with the bubbled RiskManager reason
         uint256 maxBorrow = lendingEngine.getMaxBorrow(positionId);
         vm.prank(alice);
-        vm.expectRevert(); // LP_TYPE_CAP_REACHED or similar
+        vm.expectRevert("LP_TYPE_CAP_REACHED");
         lendingEngine.borrow(positionId, maxBorrow / 2);
 
         // Raise the cap so borrowing succeeds
