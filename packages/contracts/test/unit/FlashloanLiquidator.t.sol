@@ -25,6 +25,7 @@ import {MockSwapRouter} from "../mocks/MockSwapRouter.sol";
 contract MockFlashPool {
     address public token0;
     address public token1;
+    uint24 public fee = 3000;
     uint256 public flashFee = 100; // small fee in absolute terms
 
     constructor(address _token0, address _token1) {
@@ -65,6 +66,21 @@ contract MockFlashPool {
     }
 }
 
+/// @notice Mock Uniswap V3 factory that maps token pairs to pools
+contract MockV3Factory {
+    mapping(bytes32 => address) public pools;
+
+    function registerPool(address tokenA, address tokenB, uint24 fee, address pool) external {
+        pools[keccak256(abi.encodePacked(tokenA, tokenB, fee))] = pool;
+    }
+
+    function getPool(address tokenA, address tokenB, uint24 fee) external view returns (address) {
+        address pool = pools[keccak256(abi.encodePacked(tokenA, tokenB, fee))];
+        if (pool != address(0)) return pool;
+        return pools[keccak256(abi.encodePacked(tokenB, tokenA, fee))];
+    }
+}
+
 contract FlashloanLiquidatorTest is Test {
     ProtocolCore public core;
     ACLManager public aclManager;
@@ -81,6 +97,7 @@ contract FlashloanLiquidatorTest is Test {
     MockSwapRouter public swapRouter;
     FlashloanLiquidator public flashLiquidator;
     MockFlashPool public flashPool;
+    MockV3Factory public v3Factory;
 
     address public owner = makeAddr("owner");
     address public guardian = makeAddr("guardian");
@@ -156,8 +173,13 @@ contract FlashloanLiquidatorTest is Test {
         // Order tokens to match what the liquidator expects
         flashPool = new MockFlashPool(address(usdc), address(weth));
 
+        // Factory that recognizes the flash pool as genuine
+        v3Factory = new MockV3Factory();
+        v3Factory.registerPool(address(usdc), address(weth), 3000, address(flashPool));
+
         // Deploy FlashloanLiquidator
-        flashLiquidator = new FlashloanLiquidator(address(core), address(pm), address(liq), address(swapRouter));
+        flashLiquidator =
+            new FlashloanLiquidator(address(core), address(pm), address(liq), address(swapRouter), address(v3Factory));
 
         // Register and grant roles
         vm.startPrank(owner);
@@ -206,16 +228,42 @@ contract FlashloanLiquidatorTest is Test {
 
     function test_constructor_revertsZeroAddress() public {
         vm.expectRevert("ZERO_ADDRESS");
-        new FlashloanLiquidator(address(0), address(pm), address(liq), address(swapRouter));
+        new FlashloanLiquidator(address(0), address(pm), address(liq), address(swapRouter), address(v3Factory));
 
         vm.expectRevert("ZERO_ADDRESS");
-        new FlashloanLiquidator(address(core), address(0), address(liq), address(swapRouter));
+        new FlashloanLiquidator(address(core), address(0), address(liq), address(swapRouter), address(v3Factory));
 
         vm.expectRevert("ZERO_ADDRESS");
-        new FlashloanLiquidator(address(core), address(pm), address(0), address(swapRouter));
+        new FlashloanLiquidator(address(core), address(pm), address(0), address(swapRouter), address(v3Factory));
 
         vm.expectRevert("ZERO_ADDRESS");
-        new FlashloanLiquidator(address(core), address(pm), address(liq), address(0));
+        new FlashloanLiquidator(address(core), address(pm), address(liq), address(0), address(v3Factory));
+
+        vm.expectRevert("ZERO_ADDRESS");
+        new FlashloanLiquidator(address(core), address(pm), address(liq), address(swapRouter), address(0));
+    }
+
+    function test_liquidate_revertsFakeFlashPool() public {
+        uint256 posId = _createLiquidatablePosition();
+
+        // A fake pool with correct tokens/fee but NOT registered in the factory
+        MockFlashPool fakePool = new MockFlashPool(address(usdc), address(weth));
+        usdc.mint(address(fakePool), 1_000_000e18);
+
+        bytes memory swapPath = abi.encodePacked(address(weth), uint24(3000), address(usdc));
+
+        vm.prank(caller);
+        vm.expectRevert("INVALID_FLASH_POOL");
+        flashLiquidator.liquidate(
+            FlashloanLiquidator.LiquidateParams({
+                positionId: posId,
+                repayAmount: 10_000e18,
+                flashLoanPool: address(fakePool),
+                swapPath0: "",
+                swapPath1: swapPath,
+                minProfit: 0
+            })
+        );
     }
 
     // ========== Flash Liquidation Success ==========

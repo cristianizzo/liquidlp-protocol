@@ -3,7 +3,7 @@ pragma solidity ^0.8.26;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {IUniswapV3FlashCallback} from "../interfaces/external/IUniswapV3.sol";
+import {IUniswapV3FlashCallback, IUniswapV3Factory} from "../interfaces/external/IUniswapV3.sol";
 import {ISwapRouter} from "../interfaces/ISwapRouter.sol";
 import {ProtocolCore} from "../core/ProtocolCore.sol";
 import {PositionManager} from "../core/PositionManager.sol";
@@ -26,6 +26,7 @@ contract FlashloanLiquidator is IUniswapV3FlashCallback {
     PositionManager public immutable positionManager;
     LiquidationEngine public immutable liquidationEngine;
     ISwapRouter public immutable swapRouter;
+    IUniswapV3Factory public immutable v3Factory;
 
     /// @dev Active flash context — set before flash, verified in callback, cleared after.
     ///      Also serves as reentrancy guard (non-zero = flash in progress).
@@ -65,16 +66,23 @@ contract FlashloanLiquidator is IUniswapV3FlashCallback {
         uint256 indexed positionId, address indexed liquidator, address borrowAsset, uint256 repayAmount, uint256 profit
     );
 
-    constructor(address _core, address _positionManager, address _liquidationEngine, address _swapRouter) {
+    constructor(
+        address _core,
+        address _positionManager,
+        address _liquidationEngine,
+        address _swapRouter,
+        address _v3Factory
+    ) {
         require(
             _core != address(0) && _positionManager != address(0) && _liquidationEngine != address(0)
-                && _swapRouter != address(0),
+                && _swapRouter != address(0) && _v3Factory != address(0),
             "ZERO_ADDRESS"
         );
         core = ProtocolCore(_core);
         positionManager = PositionManager(_positionManager);
         liquidationEngine = LiquidationEngine(_liquidationEngine);
         swapRouter = ISwapRouter(_swapRouter);
+        v3Factory = IUniswapV3Factory(_v3Factory);
     }
 
     /// @notice Execute a flash loan liquidation
@@ -112,6 +120,10 @@ contract FlashloanLiquidator is IUniswapV3FlashCallback {
         address poolToken0 = IUniswapV3PoolMinimal(params.flashLoanPool).token0();
         address poolToken1 = IUniswapV3PoolMinimal(params.flashLoanPool).token1();
         require(poolToken0 == borrowAsset || poolToken1 == borrowAsset, "POOL_MISSING_BORROW_ASSET");
+
+        // Verify the pool is a genuine Uniswap V3 pool (prevents fake zero-fee flash pools)
+        uint24 poolFee = IUniswapV3PoolMinimal(params.flashLoanPool).fee();
+        require(v3Factory.getPool(poolToken0, poolToken1, poolFee) == params.flashLoanPool, "INVALID_FLASH_POOL");
         uint256 flashAmount0 = poolToken0 == borrowAsset ? params.repayAmount : 0;
         uint256 flashAmount1 = poolToken0 == borrowAsset ? 0 : params.repayAmount;
 
@@ -203,4 +215,5 @@ interface IUniswapV3PoolMinimal {
     function flash(address recipient, uint256 amount0, uint256 amount1, bytes calldata data) external;
     function token0() external view returns (address);
     function token1() external view returns (address);
+    function fee() external view returns (uint24);
 }

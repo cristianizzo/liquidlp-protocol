@@ -4,6 +4,9 @@ pragma solidity ^0.8.26;
 import "../E2EBase.t.sol";
 import {InterestRateModel} from "../../../src/markets/InterestRateModel.sol";
 import {Market} from "../../../src/markets/Market.sol";
+import {ILPAdapter} from "../../../src/interfaces/ILPAdapter.sol";
+import {FeeCollector} from "../../../src/core/FeeCollector.sol";
+import {RiskManager} from "../../../src/security/RiskManager.sol";
 
 /// @title AdminOpsExtended
 /// @notice E2E fork tests for admin operations not covered in AdminOperations.t.sol.
@@ -229,5 +232,103 @@ contract AdminOpsExtended is E2EBase {
         }
 
         console.log("=== Deficit Elimination Test Passed ===");
+    }
+
+    // ========== 5. setLPTypeBorrowCap ==========
+
+    /// @notice Set a per-LP-type borrow cap. Borrow within cap succeeds. Borrow exceeding cap reverts.
+    function test_setLPTypeBorrowCap() public {
+        // Set a tight V3 borrow cap (small enough that a normal borrow will exceed it)
+        uint256 capAmount = 50e18; // $50 in 18-dec USD — very tight
+        vm.prank(deployer);
+        riskManager.setLPTypeBorrowCap(ILPAdapter.LPType.UniswapV3, capAmount);
+
+        assertEq(
+            riskManager.lpTypeBorrowCap(ILPAdapter.LPType.UniswapV3), capAmount, "LP type borrow cap should be set"
+        );
+
+        // Alice deposits a V3 position
+        uint256 tokenId = _createV3Position(alice, 2 ether, 4000e6);
+        uint256 positionId = _depositV3(alice, tokenId);
+        vm.roll(block.number + 2);
+
+        // Borrow a large amount that exceeds the cap — should revert
+        uint256 maxBorrow = lendingEngine.getMaxBorrow(positionId);
+        vm.prank(alice);
+        vm.expectRevert(); // LP_TYPE_CAP_REACHED or similar
+        lendingEngine.borrow(positionId, maxBorrow / 2);
+
+        // Raise the cap so borrowing succeeds
+        vm.prank(deployer);
+        riskManager.setLPTypeBorrowCap(ILPAdapter.LPType.UniswapV3, 100_000_000e18); // $100M
+
+        vm.prank(alice);
+        lendingEngine.borrow(positionId, 100e6); // small borrow within cap
+
+        assertGt(_getDebt(positionId), 0, "Borrow should succeed within cap");
+
+        console.log("=== setLPTypeBorrowCap Test Passed ===");
+    }
+
+    // ========== 6. getLiquidationBonus ==========
+
+    /// @notice Deposit, borrow, verify getLiquidationBonus returns the configured bonus (500 bps = 5%).
+    function test_getLiquidationBonus() public {
+        uint256 tokenId = _createV3Position(alice, 2 ether, 4000e6);
+        uint256 positionId = _depositV3(alice, tokenId);
+
+        uint256 bonus = liquidationEngine.getLiquidationBonus(positionId);
+        assertEq(bonus, 500, "Liquidation bonus should be 500 bps (5%)");
+
+        console.log("Liquidation bonus: %s bps", bonus);
+        console.log("=== getLiquidationBonus Test Passed ===");
+    }
+
+    // ========== 7. feeCollector_setInsuranceFundShare ==========
+
+    /// @notice Set insurance fund share, verify getter.
+    function test_feeCollector_setInsuranceFundShare() public {
+        // Default is 1000 bps (10%)
+        assertEq(feeCollector.insuranceFundShareBps(), 1000, "Default insurance share should be 1000 bps");
+
+        // Set new value
+        vm.prank(deployer);
+        feeCollector.setInsuranceFundShare(2000); // 20%
+
+        assertEq(feeCollector.insuranceFundShareBps(), 2000, "Insurance share should be updated to 2000 bps");
+
+        console.log("=== feeCollector setInsuranceFundShare Test Passed ===");
+    }
+
+    // ========== 8. feeCollector_setLiquidationFee ==========
+
+    /// @notice Set liquidation fee, verify getter.
+    function test_feeCollector_setLiquidationFee() public {
+        // Default is 7000 bps (70% of bonus -> protocol)
+        assertEq(feeCollector.liquidationFeeBps(), 7000, "Default liquidation fee should be 7000 bps");
+
+        // Set new value
+        vm.prank(deployer);
+        feeCollector.setLiquidationFee(5000); // 50%
+
+        assertEq(feeCollector.liquidationFeeBps(), 5000, "Liquidation fee should be updated to 5000 bps");
+
+        console.log("=== feeCollector setLiquidationFee Test Passed ===");
+    }
+
+    // ========== 9. feeCollector_setDefaultReserveFactor ==========
+
+    /// @notice Set default reserve factor, verify getter.
+    function test_feeCollector_setDefaultReserveFactor() public {
+        // Default is 2000 bps (20%)
+        assertEq(feeCollector.defaultReserveFactorBps(), 2000, "Default reserve factor should be 2000 bps");
+
+        // Set new value
+        vm.prank(deployer);
+        feeCollector.setDefaultReserveFactor(3000); // 30%
+
+        assertEq(feeCollector.defaultReserveFactorBps(), 3000, "Default reserve factor should be updated to 3000 bps");
+
+        console.log("=== feeCollector setDefaultReserveFactor Test Passed ===");
     }
 }
