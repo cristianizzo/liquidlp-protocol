@@ -47,6 +47,10 @@ contract ProtocolInvariantE2E is E2EBase {
             uint256 borrowAmt = (mb * fractions[i]) / 100;
             if (borrowAmt == 0) continue;
 
+            IPositionManager.Position memory dbg = positionManager.getPosition(pid);
+            console.log("DBG i=%s blk=%s depBlk=%s", i, block.number, dbg.depositBlock);
+            console.log("DBG cooldown=%s pid=%s", lendingEngine.borrowCooldownBlocks(), pid);
+
             vm.prank(alice);
             lendingEngine.borrow(pid, borrowAmt);
 
