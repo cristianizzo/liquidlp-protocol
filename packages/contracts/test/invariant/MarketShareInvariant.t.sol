@@ -2,6 +2,7 @@
 pragma solidity ^0.8.26;
 
 import "forge-std/Test.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ProtocolCore} from "../../src/core/ProtocolCore.sol";
 import {ACLManager} from "../../src/core/ACLManager.sol";
@@ -239,11 +240,17 @@ contract MarketShareInvariantTest is Test {
 
         // totalSupply should equal amt1 + amt2 (no interest yet)
         assertEq(s.totalSupply, amt1 + amt2, "totalSupply must equal sum of deposits");
-        // Shares approximate deposits (virtual offset may cause tiny deviation)
-        uint256 diff1 = shares1 > amt1 ? shares1 - amt1 : amt1 - shares1;
-        uint256 diff2 = shares2 > amt2 ? shares2 - amt2 : amt2 - shares2;
-        assertLe(diff1, amt1 / 1000 + 1, "First depositor shares must be ~1:1");
-        assertLe(diff2, amt2 / 1000 + 1, "Second depositor shares must be ~1:1");
+
+        // Share accounting: every minted share is accounted for (both users + dead shares)
+        uint256 ts = market.totalShares();
+        assertEq(ts, shares1 + shares2 + market.DEAD_SHARES(), "totalShares must equal minted + dead shares");
+
+        // Exchange-rate consistency: each depositor's shares priced at the current rate
+        // (totalSupply / totalShares) redeem back to ~their original deposit.
+        uint256 aliceAssets = Math.mulDiv(shares1, s.totalSupply, ts);
+        uint256 bobAssets = Math.mulDiv(shares2, s.totalSupply, ts);
+        assertApproxEqAbs(aliceAssets, amt1, amt1 / 1000 + 1, "Alice's shares must redeem to ~her deposit");
+        assertApproxEqAbs(bobAssets, amt2, amt2 / 1000 + 1, "Bob's shares must redeem to ~his deposit");
     }
 
     // ================================================================

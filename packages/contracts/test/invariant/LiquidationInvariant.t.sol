@@ -281,6 +281,8 @@ contract LiquidationInvariantTest is Test {
         (bool liquidatable, uint256 maxRepay) = liq.isLiquidatable(posId);
         if (!liquidatable || maxRepay == 0) return;
 
+        uint256 debtBefore = le.getDebt(posId);
+
         address liquidator = makeAddr("liquidator");
         usdc.mint(liquidator, maxRepay);
         vm.prank(liquidator);
@@ -289,7 +291,12 @@ contract LiquidationInvariantTest is Test {
         liq.liquidate(posId, maxRepay, block.timestamp + 300, 0, 0);
 
         IPositionManager.Position memory pos = pm.getPosition(posId);
-        // Either fully liquidated (amount = 0) or position still has some collateral
+        bool closed = uint8(pos.status) == uint8(IPositionManager.PositionStatus.Liquidated);
+        bool debtReduced = le.getDebt(posId) < debtBefore;
+        // A max-allowed liquidation must either fully close the position or measurably reduce its debt.
+        assertTrue(closed || debtReduced, "Liquidation must close the position or reduce its debt");
+
+        // A fully-drained position (no collateral left) must be marked Liquidated.
         if (pos.amount == 0) {
             assertEq(
                 uint8(pos.status),
