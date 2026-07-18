@@ -39,10 +39,12 @@ contract InterestStressE2E is E2EBase {
         console.log("Interest earned: %s USDC", (debtAfterYear - debtAtStart) / 1e6);
 
         assertGt(debtAfterYear, debtAtStart, "Debt must grow over time");
+        // Solvency incl. protocol reserves: cash + outstanding borrows must cover
+        // lender obligations (totalSupply) plus the protocol's accrued reserves.
         assertGe(
             IERC20(Constants.USDC).balanceOf(marketAddr) + s.totalBorrow,
-            s.totalSupply,
-            "Market must remain solvent after 1 year"
+            s.totalSupply + Market(marketAddr).protocolReserves(),
+            "Market must remain solvent after 1 year (incl. reserves)"
         );
     }
 
@@ -72,10 +74,13 @@ contract InterestStressE2E is E2EBase {
         assertGt(indexAfter, indexBefore, "Borrow index must increase over 5 years");
         assertGt(debtAfter, 0, "Debt must still be trackable after 5 years");
 
-        // Market solvency
+        // Market solvency after 5 years: cash + borrows cover lender obligations + reserves
         IMarket.MarketState memory s = IMarket(marketAddr).getMarketState();
-        assertGe(s.totalSupply, 0, "totalSupply must not underflow");
-        assertGe(s.totalBorrow, 0, "totalBorrow must not underflow");
+        assertGe(
+            IERC20(Constants.USDC).balanceOf(marketAddr) + s.totalBorrow,
+            s.totalSupply + Market(marketAddr).protocolReserves(),
+            "Market must remain solvent after 5 years (incl. reserves)"
+        );
     }
 
     /// @notice High utilization interest — borrow 80% of supply, verify rates spike

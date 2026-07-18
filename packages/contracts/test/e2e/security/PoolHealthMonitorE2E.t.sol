@@ -109,7 +109,7 @@ contract PoolHealthMonitorE2E is E2EBase {
         uint256 tokenId = _createV3Position(alice, 1 ether, 2000e6);
         vm.startPrank(alice);
         nftManager.approve(address(v3Adapter), tokenId);
-        vm.expectRevert();
+        vm.expectRevert("POOL_CIRCUIT_BREAKER");
         positionManager.deposit(Constants.UNI_V3_NFT_MANAGER, tokenId, 0, ethUsdcMarketId);
         vm.stopPrank();
     }
@@ -117,7 +117,7 @@ contract PoolHealthMonitorE2E is E2EBase {
     /// @notice Non-keeper cannot call checkPoolHealth
     function test_revert_nonKeeper() public {
         vm.prank(alice);
-        vm.expectRevert();
+        vm.expectRevert("NOT_KEEPER");
         monitor.checkPoolHealth(Constants.UNI_V3_WETH_USDC_3000, 100_000_000e18);
     }
 }
