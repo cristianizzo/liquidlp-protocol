@@ -32,7 +32,11 @@ contract V2Transform is E2EBase {
 
         // Deploy LeverageTransformer
         leverageTransformer = new LeverageTransformer(
-            address(core), address(positionManager), address(lendingEngine), Constants.UNI_V3_SWAP_ROUTER
+            address(core),
+            address(positionManager),
+            address(lendingEngine),
+            Constants.UNI_V3_SWAP_ROUTER,
+            Constants.UNI_V3_FACTORY
         );
 
         vm.prank(deployer);

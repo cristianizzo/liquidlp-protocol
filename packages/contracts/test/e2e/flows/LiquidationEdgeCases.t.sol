@@ -94,7 +94,11 @@ contract LiquidationEdgeCases is E2EBase {
 
         // Deploy a LeverageTransformer
         LeverageTransformer lt = new LeverageTransformer(
-            address(core), address(positionManager), address(lendingEngine), Constants.UNI_V3_SWAP_ROUTER
+            address(core),
+            address(positionManager),
+            address(lendingEngine),
+            Constants.UNI_V3_SWAP_ROUTER,
+            Constants.UNI_V3_FACTORY
         );
 
         // Try spoofing a flash callback

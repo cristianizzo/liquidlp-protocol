@@ -24,7 +24,11 @@ contract LeverageTransformerE2E is E2EBase {
 
         // Deploy LeverageTransformer with real Uniswap V3 SwapRouter
         leverageTransformer = new LeverageTransformer(
-            address(core), address(positionManager), address(lendingEngine), Constants.UNI_V3_SWAP_ROUTER
+            address(core),
+            address(positionManager),
+            address(lendingEngine),
+            Constants.UNI_V3_SWAP_ROUTER,
+            Constants.UNI_V3_FACTORY
         );
 
         // Grant TRANSFORMER role
@@ -172,7 +176,11 @@ contract LeverageTransformerE2E is E2EBase {
 
         // Deploy a second transformer that's NOT whitelisted
         LeverageTransformer rogue = new LeverageTransformer(
-            address(core), address(positionManager), address(lendingEngine), Constants.UNI_V3_SWAP_ROUTER
+            address(core),
+            address(positionManager),
+            address(lendingEngine),
+            Constants.UNI_V3_SWAP_ROUTER,
+            Constants.UNI_V3_FACTORY
         );
 
         bytes memory calldata_ = abi.encodeWithSelector(
@@ -206,5 +214,49 @@ contract LeverageTransformerE2E is E2EBase {
         vm.prank(alice);
         vm.expectRevert("ONLY_POSITION_MANAGER");
         leverageTransformer.leverageUp(params);
+    }
+
+    /// @notice Fake flash pool (not from Uniswap V3 factory) is rejected
+    function test_revert_fakeFlashPool() public {
+        uint256 tokenId = _createV3Position(alice, 1 ether, 2000e6);
+        uint256 positionId = _depositV3(alice, tokenId);
+        vm.roll(block.number + 2);
+
+        // Deploy a contract that mimics V3 pool interface but isn't registered in factory
+        FakeFlashPool fake = new FakeFlashPool(Constants.USDC, Constants.WETH);
+
+        LeverageTransformer.LeverageUpParams memory params = LeverageTransformer.LeverageUpParams({
+            positionId: positionId,
+            flashAmount: 1000e6,
+            flashLoanPool: address(fake),
+            swapPath0: "",
+            swapPath1: "",
+            swap0Portion: 5000
+        });
+
+        bytes memory calldata_ = abi.encodeWithSelector(LeverageTransformer.leverageUp.selector, params);
+
+        vm.prank(alice);
+        vm.expectRevert(); // INVALID_FLASH_POOL
+        positionManager.transform(positionId, address(leverageTransformer), calldata_);
+    }
+}
+
+/// @notice Minimal fake pool that returns correct token0/token1/fee but isn't in the factory
+contract FakeFlashPool {
+    address public token0;
+    address public token1;
+
+    constructor(address _t0, address _t1) {
+        token0 = _t0 < _t1 ? _t0 : _t1;
+        token1 = _t0 < _t1 ? _t1 : _t0;
+    }
+
+    function fee() external pure returns (uint24) {
+        return 3000;
+    }
+
+    function flash(address, uint256, uint256, bytes calldata) external pure {
+        revert("SHOULD_NOT_REACH");
     }
 }

@@ -3,7 +3,7 @@ pragma solidity ^0.8.26;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {IUniswapV3FlashCallback, IUniswapV3Pool} from "../interfaces/external/IUniswapV3.sol";
+import {IUniswapV3FlashCallback, IUniswapV3Pool, IUniswapV3Factory} from "../interfaces/external/IUniswapV3.sol";
 import {ISwapRouter} from "../interfaces/ISwapRouter.sol";
 import {ProtocolCore} from "../core/ProtocolCore.sol";
 import {PositionManager} from "../core/PositionManager.sol";
@@ -39,6 +39,7 @@ contract LeverageTransformer is IUniswapV3FlashCallback {
     PositionManager public immutable positionManager;
     LendingEngine public immutable lendingEngine;
     ISwapRouter public immutable swapRouter;
+    IUniswapV3Factory public immutable v3Factory;
 
     /// @dev Active flash pool — set before flash, verified in callback, cleared after.
     address private _activeFlashPool;
@@ -81,21 +82,28 @@ contract LeverageTransformer is IUniswapV3FlashCallback {
     event LeverageIncreased(uint256 indexed positionId, uint256 flashAmount, uint256 borrowed);
     event LeverageDecreased(uint256 indexed positionId, uint256 flashAmount, uint256 repaid);
 
-    constructor(address _core, address _positionManager, address _lendingEngine, address _swapRouter) {
+    constructor(
+        address _core,
+        address _positionManager,
+        address _lendingEngine,
+        address _swapRouter,
+        address _v3Factory
+    ) {
         require(
             _core != address(0) && _positionManager != address(0) && _lendingEngine != address(0)
-                && _swapRouter != address(0),
+                && _swapRouter != address(0) && _v3Factory != address(0),
             "ZERO_ADDRESS"
         );
         require(
             _core.code.length > 0 && _positionManager.code.length > 0 && _lendingEngine.code.length > 0
-                && _swapRouter.code.length > 0,
+                && _swapRouter.code.length > 0 && _v3Factory.code.length > 0,
             "NOT_CONTRACT"
         );
         core = ProtocolCore(_core);
         positionManager = PositionManager(_positionManager);
         lendingEngine = LendingEngine(_lendingEngine);
         swapRouter = ISwapRouter(_swapRouter);
+        v3Factory = IUniswapV3Factory(_v3Factory);
     }
 
     /// @notice Increase leverage — called by PositionManager.transform()
@@ -108,11 +116,9 @@ contract LeverageTransformer is IUniswapV3FlashCallback {
         address marketAddr = core.markets(pos.marketId);
         IMarket.MarketConfig memory config = IMarket(marketAddr).getConfig();
 
-        require(params.flashLoanPool != address(0), "ZERO_FLASH_POOL");
-        address poolToken0 = IUniswapV3Pool(params.flashLoanPool).token0();
-        address poolToken1 = IUniswapV3Pool(params.flashLoanPool).token1();
-        require(config.borrowAsset == poolToken0 || config.borrowAsset == poolToken1, "BORROW_ASSET_NOT_IN_POOL");
+        _validateFlashPool(params.flashLoanPool, config.borrowAsset);
 
+        IUniswapV3Pool pool = IUniswapV3Pool(params.flashLoanPool);
         FlashContext memory ctx = FlashContext({
             isLeverageUp: true,
             positionId: params.positionId,
@@ -141,10 +147,7 @@ contract LeverageTransformer is IUniswapV3FlashCallback {
         address marketAddr = core.markets(pos.marketId);
         IMarket.MarketConfig memory config = IMarket(marketAddr).getConfig();
 
-        require(params.flashLoanPool != address(0), "ZERO_FLASH_POOL");
-        address poolToken0 = IUniswapV3Pool(params.flashLoanPool).token0();
-        address poolToken1 = IUniswapV3Pool(params.flashLoanPool).token1();
-        require(config.borrowAsset == poolToken0 || config.borrowAsset == poolToken1, "BORROW_ASSET_NOT_IN_POOL");
+        _validateFlashPool(params.flashLoanPool, config.borrowAsset);
 
         FlashContext memory ctx = FlashContext({
             isLeverageUp: false,
@@ -180,6 +183,17 @@ contract LeverageTransformer is IUniswapV3FlashCallback {
     // ========================================================================
     // Internal
     // ========================================================================
+
+    /// @dev Verify flash pool is a real Uniswap V3 pool via factory lookup
+    function _validateFlashPool(address flashPool, address borrowAsset) internal view {
+        require(flashPool != address(0), "ZERO_FLASH_POOL");
+        address poolToken0 = IUniswapV3Pool(flashPool).token0();
+        address poolToken1 = IUniswapV3Pool(flashPool).token1();
+        require(borrowAsset == poolToken0 || borrowAsset == poolToken1, "BORROW_ASSET_NOT_IN_POOL");
+
+        uint24 fee = IUniswapV3Pool(flashPool).fee();
+        require(v3Factory.getPool(poolToken0, poolToken1, fee) == flashPool, "INVALID_FLASH_POOL");
+    }
 
     function _executeFlash(
         address flashPool,
