@@ -65,7 +65,6 @@ contract FeeCollector is ReentrancyGuard {
     event ReserveFactorUpdated(ILPAdapter.LPType indexed lpType, uint256 oldValue, uint256 newValue);
     event DefaultReserveFactorUpdated(uint256 oldValue, uint256 newValue);
     event LiquidationFeeUpdated(uint256 oldValue, uint256 newValue);
-    event ManagementFeeUpdated(uint256 oldValue, uint256 newValue);
     event InsuranceFundShareUpdated(uint256 oldValue, uint256 newValue);
     event TreasuryUpdated(address indexed oldAddr, address indexed newAddr);
     event InsuranceFundUpdated(address indexed oldAddr, address indexed newAddr);
