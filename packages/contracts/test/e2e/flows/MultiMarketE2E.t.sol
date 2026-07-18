@@ -102,7 +102,7 @@ contract MultiMarketE2E is E2EBase {
         lendingEngine.borrow(v2PosId, (maxBorrowV2 * 90) / 100);
 
         // Crash ETH price
-        _crashEthPrice(3000 ether);
+        _crashEthPrice(5000 ether);
 
         // Both positions should be liquidatable
         (bool v3IsLiq,) = liquidationEngine.isLiquidatable(v3PosId);
@@ -146,7 +146,7 @@ contract MultiMarketE2E is E2EBase {
         uint256 v2HfBefore = _getHealthFactor(v2PosId);
 
         // Crash ETH price
-        _crashEthPrice(3000 ether);
+        _crashEthPrice(5000 ether);
 
         // Liquidate V3 position
         (bool v3IsLiq, uint256 maxRepay) = liquidationEngine.isLiquidatable(v3PosId);

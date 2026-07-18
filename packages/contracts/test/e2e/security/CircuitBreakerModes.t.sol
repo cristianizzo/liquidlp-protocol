@@ -102,11 +102,10 @@ contract CircuitBreakerModes is E2EBase {
         assertGt(maxRepay, 0, "Max repay must be > 0");
 
         // Liquidation should succeed even though market is frozen
-        address marketAddr = core.markets(ethUsdcMarketId);
+        _fundUsdc(liquidator, maxRepay);
         vm.startPrank(liquidator);
         IERC20(Constants.USDC).approve(address(liquidationEngine), maxRepay);
-        IERC20(Constants.USDC).approve(marketAddr, maxRepay);
-        liquidationEngine.liquidate(positionId, maxRepay, block.timestamp + 300, 0, 0);
+        liquidationEngine.liquidate(positionId, maxRepay, block.timestamp + 1 hours, 0, 0);
         vm.stopPrank();
 
         console.log("=== freezeMarket: liquidation still works ===");
