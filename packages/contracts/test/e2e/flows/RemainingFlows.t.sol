@@ -178,6 +178,9 @@ contract RemainingFlows is E2EBase {
         // Check if bad debt was written off
         uint256 remainingDebt = lendingEngine.getDebt(positionId);
         uint256 deficitAfter = market.deficit();
+        // Repaying + writing off the remainder must reduce the market's total borrows.
+        uint256 totalBorrowAfter = market.getMarketState().totalBorrow;
+        assertLt(totalBorrowAfter, totalBorrowBefore, "totalBorrow must decrease after repay + writeoff");
 
         // Position should be liquidated
         pos = positionManager.getPosition(positionId);
