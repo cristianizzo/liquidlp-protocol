@@ -4,7 +4,6 @@ pragma solidity ^0.8.26;
 import {ILPOracle} from "../interfaces/ILPOracle.sol";
 import {ILPOracleHub} from "../interfaces/ILPOracleHub.sol";
 import {ProtocolCore} from "../core/ProtocolCore.sol";
-import {ACLManager} from "../core/ACLManager.sol";
 
 /// @title AerodromeOracle
 /// @notice Prices Aerodrome/Velodrome LP positions

@@ -2,7 +2,6 @@
 pragma solidity ^0.8.26;
 
 import {ProtocolCore} from "../core/ProtocolCore.sol";
-import {ACLManager} from "../core/ACLManager.sol";
 import {CircuitBreaker} from "./CircuitBreaker.sol";
 
 /// @title PoolHealthMonitor

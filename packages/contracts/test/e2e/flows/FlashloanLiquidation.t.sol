@@ -66,6 +66,10 @@ contract FlashloanLiquidation is E2EBase {
         lendingEngine.borrow(positionId, borrowAmount);
 
         uint256 aliceUsdcAfterBorrow = IERC20(Constants.USDC).balanceOf(alice);
+        // Borrowing must credit Alice exactly borrowAmount USDC (only the borrow happened since deposit).
+        assertEq(
+            aliceUsdcAfterBorrow, aliceUsdcAfterDeposit + borrowAmount, "borrow must credit Alice exactly borrowAmount"
+        );
 
         // Step 3: Mock price crash to make position liquidatable
         IPositionManager.Position memory pos = positionManager.getPosition(positionId);
@@ -120,6 +124,11 @@ contract FlashloanLiquidation is E2EBase {
         assertGt(callerUsdcAfter, callerUsdcBefore, "Caller must profit from flash liquidation");
         uint256 actualProfit = callerUsdcAfter - callerUsdcBefore;
         assertGt(actualProfit, 0, "Profit must be > 0");
+        // The value returned by liquidate() must match the observed USDC gain, and be positive.
+        assertGt(profit, 0, "liquidate() must report positive profit");
+        assertEq(profit, actualProfit, "returned profit must equal liquidator's USDC gain");
+        // Capital-free: the liquidator ends with at least its starting USDC (no net USDC outlay).
+        assertGe(callerUsdcAfter, liquidatorUsdcStart, "capital-free liquidation: no net USDC outlay");
 
         // The key: liquidator did NOT need to spend their own USDC
         // The flash loan provided the capital, profit comes from liquidation bonus
@@ -130,6 +139,9 @@ contract FlashloanLiquidation is E2EBase {
         uint256 valueAfter = _getPositionValue(positionId);
         uint256 aliceUsdcEnd = IERC20(Constants.USDC).balanceOf(alice);
         uint256 aliceWethEnd = IERC20(Constants.WETH).balanceOf(alice);
+        // Liquidation returns any residual collateral to the borrower — Alice's WETH can only
+        // go up (or stay flat if fully seized) relative to her post-deposit balance.
+        assertGe(aliceWethEnd, aliceWethAfterDeposit, "borrower must not lose WETH beyond what was deposited");
         uint256 protocolUsdcEnd = IERC20(Constants.USDC).balanceOf(address(feeCollector));
         uint256 protocolWethEnd = IERC20(Constants.WETH).balanceOf(address(feeCollector));
         uint256 marketUsdcEnd = IERC20(Constants.USDC).balanceOf(marketAddr);

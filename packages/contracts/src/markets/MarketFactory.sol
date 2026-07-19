@@ -6,7 +6,6 @@ import {IMarket} from "../interfaces/IMarket.sol";
 import {ILPAdapter} from "../interfaces/ILPAdapter.sol";
 import {Market} from "./Market.sol";
 import {ProtocolCore} from "../core/ProtocolCore.sol";
-import {ACLManager} from "../core/ACLManager.sol";
 
 /// @title MarketFactory
 /// @notice Deploys new isolated lending markets as UUPS proxies
