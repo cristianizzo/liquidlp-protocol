@@ -127,7 +127,7 @@ contract FlashloanLiquidation is E2EBase {
         // The value returned by liquidate() must match the observed USDC gain, and be positive.
         assertGt(profit, 0, "liquidate() must report positive profit");
         assertEq(profit, actualProfit, "returned profit must equal liquidator's USDC gain");
-        // Capital-free: the liquidator never dips below its starting USDC across the whole flow.
+        // Capital-free: the liquidator ends with at least its starting USDC (no net USDC outlay).
         assertGe(callerUsdcAfter, liquidatorUsdcStart, "capital-free liquidation: no net USDC outlay");
 
         // The key: liquidator did NOT need to spend their own USDC
