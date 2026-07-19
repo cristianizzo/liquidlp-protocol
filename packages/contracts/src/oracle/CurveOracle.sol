@@ -62,7 +62,8 @@ contract CurveOracle is ILPOracle {
     }
 
     /// @inheritdoc ILPOracle
-    function isHealthy() external view returns (bool) {
-        return (block.timestamp - lastUpdateTimestamp) < 3600;
+    /// @dev Stub — pricing not implemented, so report unhealthy (fail-closed) until it is.
+    function isHealthy() external pure returns (bool) {
+        return false;
     }
 }

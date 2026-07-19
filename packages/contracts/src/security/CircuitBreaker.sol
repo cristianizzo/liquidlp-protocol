@@ -74,27 +74,9 @@ contract CircuitBreaker {
         emit MarketUnfrozen(marketId);
     }
 
-    /// @notice Check if risk-taking operations are allowed for a market
-    /// @dev Returns false if globally paused or the market is frozen.
-    ///      Does NOT check pool-level pause — use isFullyAllowed() when a pool is involved.
-    function isOperationAllowed(uint256 marketId) external view returns (bool) {
-        if (core.paused()) return false;
-        if (marketFrozen[marketId]) return false;
-        return true;
-    }
-
-    /// @notice Check if a pool's positions can be managed
+    /// @notice Check if a pool's positions can be managed (global pause + pool pause)
     function isPoolOperationAllowed(address pool) external view returns (bool) {
         if (core.paused()) return false;
-        if (poolPaused[pool]) return false;
-        return true;
-    }
-
-    /// @notice Combined check — market + pool level (single call for callers that have both)
-    /// @dev Checks global pause, market freeze, AND pool pause.
-    function isFullyAllowed(uint256 marketId, address pool) external view returns (bool) {
-        if (core.paused()) return false;
-        if (marketFrozen[marketId]) return false;
         if (poolPaused[pool]) return false;
         return true;
     }

@@ -99,6 +99,28 @@ contract DepositValidationTest is Test {
         pm.deposit(lpToken, 0, 100e18, v3MarketId);
     }
 
+    // ========== Fee-only (zero principal) rejection ==========
+
+    /// @notice A position whose oracle reports principalValue == 0 (fee-only / liquidity-less)
+    ///         is rejected as fresh collateral, even though totalValue > 0.
+    function test_deposit_revertsWhenNoPrincipal() public {
+        oracle.setPrice(100e18); // totalValue > 0
+        oracle.setPrincipalValue(0); // but no principal (fee-only)
+
+        vm.prank(alice);
+        vm.expectRevert("NO_PRINCIPAL");
+        pm.deposit(lpToken, 0, 100e18, marketId);
+    }
+
+    /// @notice A normal position (principal > 0) still deposits fine.
+    function test_deposit_succeedsWithPrincipal() public {
+        oracle.setPrice(100e18);
+        oracle.setPrincipalValue(100e18);
+
+        vm.prank(alice);
+        pm.deposit(lpToken, 0, 100e18, marketId);
+    }
+
     // ========== CircuitBreaker Warning ==========
 
     function test_deposit_emitsCircuitBreakerNotConfigured() public {

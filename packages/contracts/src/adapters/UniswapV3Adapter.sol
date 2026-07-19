@@ -285,6 +285,10 @@ contract UniswapV3Adapter is ILPAdapter {
             })
         );
 
+        // Uniswap tracks owed amounts as uint128, so these already fit — assert it explicitly
+        // rather than silently truncating the collect() caps below.
+        require(decreased0 <= type(uint128).max && decreased1 <= type(uint128).max, "COLLECT_OVERFLOW");
+
         // Collect ONLY the decreased amounts — leave accumulated fees in the position.
         // tokensOwed includes both decreased liquidity + accumulated fees, but we cap
         // amount0Max/amount1Max to only collect what was decreased. Remaining fees stay

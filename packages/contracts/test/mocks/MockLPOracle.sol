@@ -9,6 +9,10 @@ contract MockLPOracle is ILPOracle {
     uint256 public mockPrice = 50_000e18; // Default $50,000
     bool public healthy = true;
 
+    // Optional override to simulate a fee-only position (principalValue == 0, totalValue > 0).
+    uint256 public mockPrincipal;
+    bool public principalOverride;
+
     function setPrice(uint256 _price) external {
         mockPrice = _price;
     }
@@ -17,10 +21,16 @@ contract MockLPOracle is ILPOracle {
         healthy = _healthy;
     }
 
+    /// @notice Force principalValue independently of totalValue (e.g. fee-only positions)
+    function setPrincipalValue(uint256 _principal) external {
+        mockPrincipal = _principal;
+        principalOverride = true;
+    }
+
     function getPrice(address, uint256, uint256) external view override returns (ILPOracleHub.PriceResult memory) {
         return ILPOracleHub.PriceResult({
             totalValue: mockPrice,
-            principalValue: mockPrice,
+            principalValue: principalOverride ? mockPrincipal : mockPrice,
             feeValue: 0,
             confidence: 10_000,
             timestamp: block.timestamp
