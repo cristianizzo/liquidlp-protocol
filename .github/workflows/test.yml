@@ -161,9 +161,11 @@ jobs:
         run: forge test --match-path 'test/fork/**' --skip 'test/unit/**' --skip 'test/integration/**' --skip 'test/invariant/**' --skip 'test/security/**' --skip 'test/e2e/**' --fork-url http://localhost:8545 -v
         timeout-minutes: 10
 
+      # viaIR compilation of the e2e suite is memory-heavy and can take ~15+ min on the
+      # runner (compile time, not test time). Give it headroom above the previous 15-min cap.
       - name: Run E2E tests
         run: forge test --match-path 'test/e2e/**' --skip 'test/unit/**' --skip 'test/integration/**' --skip 'test/invariant/**' --skip 'test/security/**' --skip 'test/fork/**' --fork-url http://localhost:8545 -v
-        timeout-minutes: 15
+        timeout-minutes: 30
 
   lint:
     name: Lint & Format
