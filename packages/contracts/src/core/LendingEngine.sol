@@ -7,7 +7,6 @@ import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/Reentrancy
 import {ILendingEngine} from "../interfaces/ILendingEngine.sol";
 import {IPositionManager} from "../interfaces/IPositionManager.sol";
 import {IMarket} from "../interfaces/IMarket.sol";
-import {IERC20} from "../interfaces/IERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ProtocolCore} from "./ProtocolCore.sol";
 import {ACLManager} from "./ACLManager.sol";
