@@ -5,15 +5,14 @@ import {ProtocolCore} from "../core/ProtocolCore.sol";
 import {ACLManager} from "../core/ACLManager.sol";
 
 /// @title CircuitBreaker
-/// @notice Granular pause mechanism for individual markets and pools
-/// @dev EmergencyAdmin/Keeper can pause. Only PoolAdmin can unpause.
+/// @notice Granular halt mechanism for individual markets and pools.
+/// @dev EmergencyAdmin/Keeper can freeze/pause. Only PoolAdmin can unfreeze/unpause.
+///      Per-market halts use `marketFrozen` (Aave-style: blocks new risk, always allows
+///      withdraw/repay/liquidate so users can exit). Per-pool halts use `poolPaused`.
+///      A full protocol stop is `ProtocolCore.pause()`. There is deliberately NO per-market
+///      "block-everything" switch: halting user exits (withdraw/repay) would trap funds.
 contract CircuitBreaker {
     ProtocolCore public immutable core;
-
-    // Per-market pause state
-    mapping(uint256 => bool) public marketPaused;
-    mapping(uint256 => string) public pauseReason;
-    mapping(uint256 => uint256) public pausedAt;
 
     // Per-pool pause state
     mapping(address => bool) public poolPaused;
@@ -22,8 +21,6 @@ contract CircuitBreaker {
     mapping(uint256 => bool) public marketFrozen;
 
     // --- Events ---
-    event MarketPaused(uint256 indexed marketId, string reason);
-    event MarketUnpaused(uint256 indexed marketId);
     event MarketFrozen(uint256 indexed marketId, string reason);
     event MarketUnfrozen(uint256 indexed marketId);
     event PoolPaused(address indexed pool, string reason);
@@ -52,21 +49,6 @@ contract CircuitBreaker {
         core = ProtocolCore(_core);
     }
 
-    /// @notice Pause a specific market
-    function pauseMarket(uint256 marketId, string calldata reason) external onlyGuardianOrKeeper {
-        marketPaused[marketId] = true;
-        pauseReason[marketId] = reason;
-        pausedAt[marketId] = block.timestamp;
-        emit MarketPaused(marketId, reason);
-    }
-
-    /// @notice Unpause a market (guardian/owner only, after investigation)
-    function unpauseMarket(uint256 marketId) external onlyPoolAdmin {
-        marketPaused[marketId] = false;
-        pauseReason[marketId] = "";
-        emit MarketUnpaused(marketId);
-    }
-
     /// @notice Pause all operations for a specific pool
     function pausePool(address pool, string calldata reason) external onlyGuardianOrKeeper {
         poolPaused[pool] = true;
@@ -93,11 +75,10 @@ contract CircuitBreaker {
     }
 
     /// @notice Check if risk-taking operations are allowed for a market
-    /// @dev Returns false if globally paused, market-paused, or frozen.
+    /// @dev Returns false if globally paused or the market is frozen.
     ///      Does NOT check pool-level pause — use isFullyAllowed() when a pool is involved.
     function isOperationAllowed(uint256 marketId) external view returns (bool) {
         if (core.paused()) return false;
-        if (marketPaused[marketId]) return false;
         if (marketFrozen[marketId]) return false;
         return true;
     }
@@ -110,10 +91,9 @@ contract CircuitBreaker {
     }
 
     /// @notice Combined check — market + pool level (single call for callers that have both)
-    /// @dev Checks global pause, market pause, market freeze, AND pool pause.
+    /// @dev Checks global pause, market freeze, AND pool pause.
     function isFullyAllowed(uint256 marketId, address pool) external view returns (bool) {
         if (core.paused()) return false;
-        if (marketPaused[marketId]) return false;
         if (marketFrozen[marketId]) return false;
         if (poolPaused[pool]) return false;
         return true;

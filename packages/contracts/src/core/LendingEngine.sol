@@ -264,13 +264,17 @@ contract LendingEngine is ILendingEngine, Initializable, UUPSUpgradeable, Reentr
     }
 
     /// @notice Convert borrow asset amount to 18-dec USD
+    /// @dev DEPLOY INVARIANT: when core.priceFeedRegistryAddr() is unset, every market's
+    ///      borrowAsset MUST be a USD-pegged stablecoin (the decimal-only fallback prices it at
+    ///      $1). To use a non-pegged borrow asset (e.g. WETH), a PriceFeedRegistry with a feed for
+    ///      that asset MUST be configured first, otherwise debt/LTV/health-factor are mispriced.
     function _toUsd(uint256 amount, address borrowAsset) internal view returns (uint256) {
         uint8 dec = TokenUtils.safeDecimals(borrowAsset);
         PriceFeedRegistry registry = PriceFeedRegistry(core.priceFeedRegistryAddr());
         if (address(registry) != address(0)) {
             return registry.getUsdValue(borrowAsset, amount, dec);
         }
-        // Fallback: normalize to 18 dec (assumes USD-pegged)
+        // Fallback: normalize to 18 dec (assumes USD-pegged — see DEPLOY INVARIANT above)
         if (dec < 18) return Math.mulDiv(amount, 10 ** (18 - dec), 1);
         if (dec > 18) return amount / (10 ** (dec - 18));
         return amount;

@@ -47,8 +47,10 @@ jobs:
           key: forge-build-${{ hashFiles('packages/contracts/src/**/*.sol', 'packages/contracts/foundry.toml') }}
           restore-keys: forge-build-
 
+      # Compile src only (via_ir on the full project + all tests OOMs the runner).
+      # Test jobs compile their own test subset on top of this cached src artifact.
       - name: Build
-        run: forge build --sizes
+        run: forge build --sizes --skip "test/**" --skip "script/**"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -93,8 +95,9 @@ jobs:
         with:
           name: forge-build
 
+      # Skip compiling the fork/e2e suites here to keep peak viaIR compile memory in budget.
       - name: Run unit + integration + invariant + security tests
-        run: forge test --match-path 'test/{unit,integration,invariant,security}/**' -v
+        run: forge test --match-path 'test/{unit,integration,invariant,security}/**' --skip 'test/e2e/**' --skip 'test/fork/**' -v
 
   test-fork:
     name: Fork + E2E Tests
@@ -153,12 +156,13 @@ jobs:
           echo "Anvil failed to start"
           exit 1
 
+      # Skip compiling the non-fork suites here to keep peak viaIR compile memory in budget.
       - name: Run fork tests
-        run: forge test --match-path 'test/fork/**' --fork-url http://localhost:8545 -v
+        run: forge test --match-path 'test/fork/**' --skip 'test/unit/**' --skip 'test/integration/**' --skip 'test/invariant/**' --skip 'test/security/**' --skip 'test/e2e/**' --fork-url http://localhost:8545 -v
         timeout-minutes: 10
 
       - name: Run E2E tests
-        run: forge test --match-path 'test/e2e/**' --fork-url http://localhost:8545 -v
+        run: forge test --match-path 'test/e2e/**' --skip 'test/unit/**' --skip 'test/integration/**' --skip 'test/invariant/**' --skip 'test/security/**' --skip 'test/fork/**' --fork-url http://localhost:8545 -v
         timeout-minutes: 15
 
   lint:

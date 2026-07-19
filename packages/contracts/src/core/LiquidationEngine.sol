@@ -58,6 +58,9 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
     event MaxLiquidationPortionUpdated(uint256 oldValue, uint256 newValue);
     event FeeCollectorUpdated(address oldCollector, address newCollector);
     event TokensRescued(address indexed token, address indexed to, uint256 amount);
+    /// @notice Emitted when a capped partial liquidation leaves a position still in debt with
+    ///         collateral above the dust threshold — latent under-collateralization to monitor.
+    event ResidualInsolvency(uint256 indexed positionId, uint256 remainingDebt, uint256 remainingValue);
 
     function _acl() internal view returns (ACLManager) {
         return core.aclManager();
@@ -266,6 +269,9 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
         require(amount1 >= minAmount1, "SLIPPAGE_AMOUNT1");
 
         // Step 10: Handle full debt repayment — return remaining LP to borrower
+        // Track how much collateral value leaves the market for RiskManager supply-cap accounting:
+        // a full close removes the whole position value; a partial removes only the seized value.
+        uint256 supplyRemovedUsd = collateralToSeizeNormalized;
         uint256 remainingDebt = lendingEngine.getDebt(positionId);
         if (remainingDebt == 0) {
             IPositionManager.Position memory freshPos = positionManager.getPosition(positionId);
@@ -283,6 +289,7 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
                 }
             }
 
+            supplyRemovedUsd = positionValue; // full pre-seizure position value leaves the market
             positionManager.markLiquidated(positionId, msg.sender, repayAmount);
         } else {
             // Step 11: Bad debt writeoff — position underwater, no collateral left to seize
@@ -292,9 +299,18 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
                 // No meaningful collateral left — write off remaining debt as bad debt.
                 // Dust threshold prevents tiny residual values from blocking writeoff.
                 lendingEngine.writeOffDebt(positionId);
+                supplyRemovedUsd = positionValue; // full position value leaves the market
                 positionManager.markLiquidated(positionId, msg.sender, repayAmount);
+            } else {
+                // Position still has debt AND collateral above dust after a capped partial
+                // liquidation. Surface it so monitoring can catch latent under-collateralization
+                // rather than letting it accrue silently until the next liquidation.
+                emit ResidualInsolvency(positionId, remainingDebt, remainingValue);
             }
         }
+
+        // Credit the market's supply-cap tracker for the collateral value that left the protocol.
+        positionManager.recordCollateralSeized(positionId, supplyRemovedUsd);
 
         // profit is not directly calculable here since liquidator receives two tokens.
         // The event emits collateralSeized in USD for off-chain profit tracking.

@@ -21,7 +21,11 @@ contract FlashloanLiquidation is E2EBase {
 
         // Deploy FlashloanLiquidator with real Uniswap V3 SwapRouter
         flashLiquidator = new FlashloanLiquidator(
-            address(core), address(positionManager), address(liquidationEngine), Constants.UNI_V3_SWAP_ROUTER
+            address(core),
+            address(positionManager),
+            address(liquidationEngine),
+            Constants.UNI_V3_SWAP_ROUTER,
+            Constants.UNI_V3_FACTORY
         );
 
         // Wire FeeCollector to LiquidationEngine so protocol earns liquidation fees
@@ -419,5 +423,61 @@ contract FlashloanLiquidation is E2EBase {
     function test_scenario_aggressiveBorrow() public {
         // 95% borrow, moderate dump → barely liquidatable
         _runScenario("AGGRESSIVE BORROW", 95, 4100 ether);
+    }
+
+    // ========================================================================
+    // 8. SECURITY — fake flash pool (not from Uniswap V3 factory) is rejected
+    // ========================================================================
+
+    function test_revert_fakeFlashPool() public {
+        // Setup a liquidatable position
+        uint256 tokenId = _createV3Position(alice, 1 ether, 2000e6);
+        uint256 positionId = _depositV3(alice, tokenId);
+        vm.roll(block.number + 2);
+
+        uint256 maxBorrow = lendingEngine.getMaxBorrow(positionId);
+        vm.prank(alice);
+        lendingEngine.borrow(positionId, (maxBorrow * 90) / 100);
+
+        IPositionManager.Position memory pos = positionManager.getPosition(positionId);
+        uint256 crashedValue = (_getPositionValue(positionId) * 40) / 100;
+        _mockOraclePrice(pos.lpToken, pos.tokenId, pos.amount, pos.lpType, crashedValue);
+
+        // Deploy a fake pool with correct tokens/fee but not registered in the V3 factory
+        FakeFlashPoolLiq fake = new FakeFlashPoolLiq(Constants.USDC, Constants.WETH);
+
+        bytes memory swapPathWeth = abi.encodePacked(Constants.WETH, uint24(3000), Constants.USDC);
+
+        vm.prank(liquidator);
+        vm.expectRevert("INVALID_FLASH_POOL");
+        flashLiquidator.liquidate(
+            FlashloanLiquidator.LiquidateParams({
+                positionId: positionId,
+                repayAmount: 1000e6,
+                flashLoanPool: address(fake),
+                swapPath0: "",
+                swapPath1: swapPathWeth,
+                minProfit: 0
+            })
+        );
+    }
+}
+
+/// @notice Minimal fake pool that returns correct token0/token1/fee but isn't in the factory
+contract FakeFlashPoolLiq {
+    address public token0;
+    address public token1;
+
+    constructor(address _t0, address _t1) {
+        token0 = _t0 < _t1 ? _t0 : _t1;
+        token1 = _t0 < _t1 ? _t1 : _t0;
+    }
+
+    function fee() external pure returns (uint24) {
+        return 3000;
+    }
+
+    function flash(address, uint256, uint256, bytes calldata) external pure {
+        revert("SHOULD_NOT_REACH");
     }
 }

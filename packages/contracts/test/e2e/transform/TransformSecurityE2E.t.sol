@@ -16,7 +16,11 @@ contract TransformSecurityE2E is E2EBase {
         super.setUp();
 
         leverageTransformer = new LeverageTransformer(
-            address(core), address(positionManager), address(lendingEngine), Constants.UNI_V3_SWAP_ROUTER
+            address(core),
+            address(positionManager),
+            address(lendingEngine),
+            Constants.UNI_V3_SWAP_ROUTER,
+            Constants.UNI_V3_FACTORY
         );
 
         vm.prank(deployer);
@@ -45,7 +49,9 @@ contract TransformSecurityE2E is E2EBase {
                 flashLoanPool: FLASH_POOL,
                 swapPath0: "",
                 swapPath1: swapPath,
-                swap0Portion: 5000
+                swap0Portion: 5000,
+                minSwapOut0: 0,
+                minSwapOut1: 0
             })
         );
 
@@ -74,7 +80,9 @@ contract TransformSecurityE2E is E2EBase {
                 flashLoanPool: FLASH_POOL,
                 swapPath0: "",
                 swapPath1: "",
-                swap0Portion: 5000
+                swap0Portion: 5000,
+                minSwapOut0: 0,
+                minSwapOut1: 0
             })
         );
 
@@ -108,7 +116,9 @@ contract TransformSecurityE2E is E2EBase {
                 flashLoanPool: FLASH_POOL,
                 swapPath0: "",
                 swapPath1: "",
-                swap0Portion: 5000
+                swap0Portion: 5000,
+                minSwapOut0: 0,
+                minSwapOut1: 0
             })
         );
 
@@ -143,7 +153,9 @@ contract TransformSecurityE2E is E2EBase {
                 flashLoanPool: FLASH_POOL,
                 swapPath0: "",
                 swapPath1: swapPath,
-                swap0Portion: 5000
+                swap0Portion: 5000,
+                minSwapOut0: 0,
+                minSwapOut1: 0
             })
         );
 

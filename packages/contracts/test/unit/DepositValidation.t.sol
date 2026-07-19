@@ -84,6 +84,21 @@ contract DepositValidationTest is Test {
         vm.stopPrank();
     }
 
+    // ========== LP Type Mismatch ==========
+
+    /// @notice Depositing an LP whose detected type differs from the market's configured type reverts.
+    function test_deposit_revertsLpTypeMismatch() public {
+        // lpToken is detected as UniswapV2 (adapter). Register a market configured for UniswapV3.
+        MockMarket v3Market = new MockMarket(makeAddr("borrowAsset"), makeAddr("irm2"));
+        v3Market.setLpType(ILPAdapter.LPType.UniswapV3);
+        vm.prank(owner);
+        uint256 v3MarketId = core.registerMarket(address(v3Market));
+
+        vm.prank(alice);
+        vm.expectRevert("LP_TYPE_MISMATCH");
+        pm.deposit(lpToken, 0, 100e18, v3MarketId);
+    }
+
     // ========== CircuitBreaker Warning ==========
 
     function test_deposit_emitsCircuitBreakerNotConfigured() public {
