@@ -180,6 +180,12 @@ contract PriceFeedRegistryTest is Test {
         registry.setPriceBounds(token, 3000e18, 1000e18); // min >= max
     }
 
+    function test_setPriceBounds_revertsZeroToken() public {
+        vm.prank(owner);
+        vm.expectRevert("ZERO_ADDRESS");
+        registry.setPriceBounds(address(0), 1000e18, 3000e18);
+    }
+
     function test_setSequencerUptimeFeed_allowsZeroToDisable() public {
         vm.prank(owner);
         registry.setSequencerUptimeFeed(address(0)); // no revert — disables the check

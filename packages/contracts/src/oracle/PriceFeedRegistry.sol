@@ -110,6 +110,7 @@ contract PriceFeedRegistry {
     /// @dev Set just inside the underlying aggregator's minAnswer/maxAnswer to reject a feed
     ///      pinned at its floor/ceiling during an extreme price move.
     function setPriceBounds(address token, uint256 _minPrice, uint256 _maxPrice) external onlyPoolAdmin {
+        require(token != address(0), "ZERO_ADDRESS");
         require(_maxPrice == 0 || _minPrice < _maxPrice, "INVALID_BOUNDS");
         minPrice[token] = _minPrice;
         maxPrice[token] = _maxPrice;
