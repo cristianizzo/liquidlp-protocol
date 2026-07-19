@@ -161,14 +161,34 @@ contract RiskManager {
     }
 
     /// @notice Record a deposit for supply cap tracking (18-dec USD)
+    /// @dev Enforces the market supply cap at the single choke point so EVERY value-in path
+    ///      (deposit + addCollateral) is capped by construction — a caller cannot record a
+    ///      supply increase that breaches the cap. cap == 0 means uncapped (Aave-style default).
+    ///
+    ///      DESIGN DECISION: addCollateral is INTENTIONALLY subject to this cap (it flows through
+    ///      recordDeposit). This matches Aave V3, where supply() — the collateral-add path — is
+    ///      blocked at the supply cap with no top-up exemption. Rationale: an at-cap market is at
+    ///      its liquidatable-exposure budget; letting a single position grow past it via
+    ///      addCollateral would reintroduce unbounded exposure. A borrower needing to restore
+    ///      health in an at-cap market can always repay() (never blocked), so this is not a trap.
     function recordDeposit(uint256 valueUsd, uint256 marketId) external onlyPositionManager {
-        marketCurrentSupply[marketId] += valueUsd;
-        emit DepositRecorded(valueUsd, marketId, marketCurrentSupply[marketId]);
+        uint256 cap = marketSupplyCap[marketId];
+        uint256 newSupply = marketCurrentSupply[marketId] + valueUsd;
+        require(cap == 0 || newSupply <= cap, "SUPPLY_CAP_REACHED");
+        marketCurrentSupply[marketId] = newSupply;
+        emit DepositRecorded(valueUsd, marketId, newSupply);
     }
 
     event SupplyTrackingDrift(uint256 tracked, uint256 withdrawn, uint256 indexed marketId);
 
     /// @notice Record a withdrawal for supply cap tracking (18-dec USD)
+    /// @dev ACCEPTED TRADEOFF (drift): deposits/withdrawals are recorded at the LIVE oracle USD
+    ///      value at the time of each action. If collateral appreciates between deposit and
+    ///      withdraw, the withdraw value exceeds the recorded deposit value and the counter is
+    ///      clamped to 0 (drift surfaced via SupplyTrackingDrift). This only affects a SOFT risk
+    ///      cap — never user funds — and self-corrects as positions fully close. A drift-free
+    ///      design would require per-position recorded-value bookkeeping (deferred; not worth the
+    ///      added storage/complexity for a soft limit).
     function recordWithdraw(uint256 valueUsd, uint256 marketId) external onlyPositionManager {
         if (valueUsd > marketCurrentSupply[marketId]) {
             emit SupplyTrackingDrift(marketCurrentSupply[marketId], valueUsd, marketId);

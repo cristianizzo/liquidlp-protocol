@@ -164,6 +164,32 @@ contract RiskManagerIntegrationTest is Test {
         pm.deposit(lpToken, 3, 100e18, marketId);
     }
 
+    /// @notice recordDeposit itself enforces the cap (choke point) — protects EVERY value-in path.
+    function test_recordDeposit_enforcesSupplyCapAtChokePoint() public {
+        vm.prank(owner);
+        rm.setMarketSupplyCap(marketId, 10_000e18);
+
+        vm.prank(address(pm));
+        rm.recordDeposit(6000e18, marketId);
+
+        // Exceeding the cap reverts...
+        vm.prank(address(pm));
+        vm.expectRevert("SUPPLY_CAP_REACHED");
+        rm.recordDeposit(5000e18, marketId);
+
+        // ...but filling exactly to the cap is allowed.
+        vm.prank(address(pm));
+        rm.recordDeposit(4000e18, marketId);
+        assertEq(rm.marketCurrentSupply(marketId), 10_000e18);
+    }
+
+    /// @notice cap == 0 means uncapped (Aave-style default) — recordDeposit never reverts.
+    function test_recordDeposit_uncappedWhenCapZero() public {
+        vm.prank(address(pm));
+        rm.recordDeposit(1_000_000_000e18, marketId);
+        assertEq(rm.marketCurrentSupply(marketId), 1_000_000_000e18);
+    }
+
     function test_withdraw_freesSupplyCapacity() public {
         vm.prank(owner);
         rm.setMarketSupplyCap(marketId, 100_000e18);

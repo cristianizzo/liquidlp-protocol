@@ -39,8 +39,20 @@ contract PriceFeedRegistry {
     mapping(address => uint8) public feedDecimals; // feed → cached decimals
     uint256 public maxStaleness = 3600; // 1 hour
 
+    // --- L2 sequencer uptime (address(0) = disabled, e.g. on L1 / in tests) ---
+    address public sequencerUptimeFeed;
+    uint256 public sequencerGracePeriod = 3600; // 1h buffer after a sequencer restart
+
+    // --- Optional per-token sanity bounds (0 = disabled) ---
+    // Guards against a Chainlink feed pinned at its minAnswer/maxAnswer during an extreme move.
+    mapping(address => uint256) public minPrice; // 18-dec USD lower bound (exclusive)
+    mapping(address => uint256) public maxPrice; // 18-dec USD upper bound (exclusive)
+
     event PriceFeedUpdated(address indexed token, address indexed feed);
     event MaxStalenessUpdated(uint256 oldValue, uint256 newValue);
+    event SequencerUptimeFeedUpdated(address indexed oldFeed, address indexed newFeed);
+    event SequencerGracePeriodUpdated(uint256 oldValue, uint256 newValue);
+    event PriceBoundsUpdated(address indexed token, uint256 minPrice, uint256 maxPrice);
 
     modifier onlyPoolAdmin() {
         require(core.aclManager().isPoolAdmin(msg.sender), "NOT_POOL_ADMIN");
@@ -79,10 +91,49 @@ contract PriceFeedRegistry {
         maxStaleness = _maxStaleness;
     }
 
+    /// @notice Set the Chainlink L2 Sequencer Uptime Feed (address(0) disables the check)
+    /// @dev Required on L2s (Base/Arbitrum/Optimism). Leave unset on L1 Ethereum.
+    function setSequencerUptimeFeed(address feed) external onlyPoolAdmin {
+        require(feed == address(0) || feed.code.length > 0, "NOT_CONTRACT");
+        emit SequencerUptimeFeedUpdated(sequencerUptimeFeed, feed);
+        sequencerUptimeFeed = feed;
+    }
+
+    /// @notice Set the grace period after a sequencer restart before prices are trusted again
+    function setSequencerGracePeriod(uint256 _gracePeriod) external onlyPoolAdmin {
+        require(_gracePeriod >= 300 && _gracePeriod <= 86_400, "OUT_OF_BOUNDS");
+        emit SequencerGracePeriodUpdated(sequencerGracePeriod, _gracePeriod);
+        sequencerGracePeriod = _gracePeriod;
+    }
+
+    /// @notice Set optional 18-dec USD sanity bounds for a token (0 = disabled)
+    /// @dev Set just inside the underlying aggregator's minAnswer/maxAnswer to reject a feed
+    ///      pinned at its floor/ceiling during an extreme price move.
+    function setPriceBounds(address token, uint256 _minPrice, uint256 _maxPrice) external onlyPoolAdmin {
+        require(_maxPrice == 0 || _minPrice < _maxPrice, "INVALID_BOUNDS");
+        minPrice[token] = _minPrice;
+        maxPrice[token] = _maxPrice;
+        emit PriceBoundsUpdated(token, _minPrice, _maxPrice);
+    }
+
+    /// @notice Revert if the L2 sequencer is down or within the grace period after a restart
+    function _checkSequencer() internal view {
+        address seq = sequencerUptimeFeed;
+        if (seq == address(0)) return; // disabled (L1 / tests)
+        (, int256 up, uint256 startedAt,,) = IAggregatorV3(seq).latestRoundData();
+        // up == 0 → sequencer is up; up == 1 → down
+        require(up == 0, "SEQUENCER_DOWN");
+        // startedAt must be a valid, non-future round (avoids underflow → panic on a bad feed)
+        require(startedAt != 0 && startedAt <= block.timestamp, "SEQUENCER_INVALID_ROUND");
+        require(block.timestamp - startedAt > sequencerGracePeriod, "SEQUENCER_GRACE_PERIOD");
+    }
+
     /// @notice Get token price in USD (18 decimals)
     /// @param token Token address
     /// @return price USD price normalized to 18 decimals
     function getPrice(address token) public view returns (uint256 price) {
+        _checkSequencer();
+
         address feed = priceFeeds[token];
         require(feed != address(0), "NO_PRICE_FEED");
 
@@ -100,6 +151,12 @@ contract PriceFeedRegistry {
         } else {
             price = uint256(answer);
         }
+
+        // Optional sanity bounds: reject a feed pinned at its floor/ceiling (0 = disabled).
+        uint256 lower = minPrice[token];
+        uint256 upper = maxPrice[token];
+        require(lower == 0 || price > lower, "PRICE_BELOW_FLOOR");
+        require(upper == 0 || price < upper, "PRICE_ABOVE_CEIL");
     }
 
     /// @notice Convert a token amount to USD value (18 decimals)

@@ -83,24 +83,24 @@ contract PoolHealthMonitor {
     function checkPoolHealth(address pool, uint256 currentTvl) external onlyKeeper {
         PoolSnapshot memory prev = lastSnapshot[pool];
 
-        if (prev.tvl > 0 && prev.timestamp > 0) {
-            if (currentTvl < prev.tvl) {
-                uint256 dropBps = ((prev.tvl - currentTvl) * 10_000) / prev.tvl;
-                uint256 elapsed = block.timestamp - prev.timestamp;
+        // Relative-drop check needs a prior snapshot to compare against.
+        if (prev.tvl > 0 && prev.timestamp > 0 && currentTvl < prev.tvl) {
+            uint256 dropBps = ((prev.tvl - currentTvl) * 10_000) / prev.tvl;
+            uint256 elapsed = block.timestamp - prev.timestamp;
 
-                if (dropBps >= criticalTvlDropBps && elapsed <= 1 hours) {
-                    circuitBreaker.pausePool(pool, "CRITICAL_TVL_DROP");
-                    emit PoolHealthAlert(pool, currentTvl, prev.tvl, "CRITICAL");
-                } else if (dropBps >= tvlDropThresholdBps && elapsed <= 1 hours) {
-                    emit PoolHealthAlert(pool, currentTvl, prev.tvl, "WARNING");
-                }
+            if (dropBps >= criticalTvlDropBps && elapsed <= 1 hours) {
+                circuitBreaker.pausePool(pool, "CRITICAL_TVL_DROP");
+                emit PoolHealthAlert(pool, currentTvl, prev.tvl, "CRITICAL");
+            } else if (dropBps >= tvlDropThresholdBps && elapsed <= 1 hours) {
+                emit PoolHealthAlert(pool, currentTvl, prev.tvl, "WARNING");
             }
+        }
 
-            uint256 minTvl = minRequiredTvl[pool];
-            if (minTvl > 0 && currentTvl < minTvl) {
-                circuitBreaker.pausePool(pool, "BELOW_MIN_TVL");
-                emit PoolHealthAlert(pool, currentTvl, prev.tvl, "BELOW_MIN_TVL");
-            }
+        // Absolute floor is standalone — enforce on EVERY call, including the first snapshot.
+        uint256 minTvl = minRequiredTvl[pool];
+        if (minTvl > 0 && currentTvl < minTvl) {
+            circuitBreaker.pausePool(pool, "BELOW_MIN_TVL");
+            emit PoolHealthAlert(pool, currentTvl, prev.tvl, "BELOW_MIN_TVL");
         }
 
         lastSnapshot[pool] = PoolSnapshot(currentTvl, block.timestamp);
