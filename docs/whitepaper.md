@@ -243,7 +243,7 @@ Uses Chainlink prices (not pool reserves ratio), making it immune to reserve man
 4. Price tokens via Chainlink feeds
 5. Cross-validate: TWAP vs Chainlink must agree within 3%
 
-> **Uncollected fees are not collateral.** The oracle values the LP **principal only** — a position's uncollected trading fees (`tokensOwed`) are the borrower's yield, not collateral, and are priced at zero. This is deliberately conservative (Aave-like: value the collateral asset, not speculative uncollected yield) and removes the `tokensOwed` manipulation surface entirely. Fees still accrue to the borrower and are returned to them at liquidation; they only count toward collateral once compounded into principal.
+> **Uncollected fees are not collateral.** The oracle values the LP **principal only** — a position's uncollected trading fees (`tokensOwed`) are the borrower's yield, not collateral, and are priced at zero. This is deliberately conservative (Aave-like: value the collateral asset, not speculative uncollected yield) and removes the `tokensOwed` manipulation surface entirely. Fees still accrue to the borrower and are swept out at liquidation — returned to the borrower on a normal liquidation (to the protocol on a bad-debt writeoff; see §7 for the zero-liquidity edge case). They only count toward collateral once compounded into principal.
 
 ### 5-Layer Defense (PriceValidator)
 
@@ -287,7 +287,7 @@ The 50% default (`maxLiquidationPortion`) is configurable by POOL_ADMIN within 1
 3. **Pull repayment** from liquidator (borrow asset, e.g., USDC)
 4. **Repay debt** — full repayAmount goes to LendingEngine (no deduction)
 5. **Calculate** proportional liquidity to remove (normalized to 18 decimals for cross-decimal-token safety)
-6. **Sweep uncollected V3 fees to the borrower** — fees are the borrower's yield, not collateral, so they are collected and returned first. The unwind then seizes *principal only*, so a partial liquidation can never over-collect a position's fees. (On a bad-debt writeoff the swept fees go to the protocol instead of the defaulting borrower.)
+6. **Sweep uncollected V3 fees to the borrower** — fees are the borrower's yield, not collateral, so they are collected and returned first. The unwind then seizes *principal only*, so a partial liquidation can never over-collect a position's fees. Exceptions: on a bad-debt writeoff the swept fees go to the protocol instead of the defaulting borrower; in the zero-liquidity edge case (no principal to seize) they go to the liquidator — see "V3 Fee-Only Liquidation" below.
 7. **Unwind LP** — adapter calls DEX to remove liquidity → receives underlying **principal** tokens (e.g., ETH + USDC)
 8. **Update position amount** — reduce stored amount to reflect removed liquidity
 9. **Take protocol fee** — % of the bonus portion, deducted proportionally from both underlying tokens (Aave pattern). Fee goes to FeeCollector → treasury + insurance.
@@ -305,14 +305,12 @@ The protocol does NOT swap tokens during liquidation. The liquidator receives th
 
 A Uniswap V3 position can end up with zero liquidity (fully unwound by prior partial liquidations) but still hold uncollected trading fees and outstanding debt. The protocol handles this edge case explicitly:
 
-1. LiquidationEngine detects `totalLiquidity == 0 && pos.tokenId > 0` (V3 NFT with no liquidity)
-2. Adapter calls `collectFees()` on the NFT — no `decreaseLiquidity` needed
-3. Proportional seizure of collected fees based on debt ratio (if fees < total debt)
-4. Protocol fee deducted from the seized amount
-5. Remaining fees sent to liquidator
-6. Debt repaid, or written off as bad debt if fees are insufficient
+1. LiquidationEngine detects `totalLiquidity == 0` (V3 NFT with no principal liquidity)
+2. Adapter calls `collectFees()` on the NFT to sweep the uncollected fees into the engine
+3. With no principal to seize, the swept fees **are** the seizure — they go to the liquidator who repaid the debt (protocol fee still taken from the bonus portion)
+4. Debt repaid, or written off as bad debt if the fees are insufficient
 
-This ensures no position can avoid liquidation by having its liquidity removed through prior partial liquidations while leaving fees uncollected. The fees still have value and can be seized to cover (or partially cover) the remaining debt.
+Because uncollected fees are not counted as collateral, this path is unreachable while a position holds debt (a position can't be drawn down to zero liquidity below HF 1) — it is a defensive path. Handing the swept fees to the liquidator here (rather than the borrower) keeps liquidation incentive-compatible when there is no principal left to seize, and ensures no position can dodge liquidation by ending up fee-only.
 
 ### Protocol Fee on Liquidation (Aave Pattern)
 
