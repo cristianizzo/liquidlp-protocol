@@ -219,21 +219,12 @@ contract UniswapV3Oracle is ILPOracle {
     // --- Internal: Core Pricing Logic ---
 
     function _computePrice(uint256 tokenId) internal view returns (ILPOracleHub.PriceResult memory result) {
-        // Step 1: Read position data from NFT manager
-        (
-            ,,
-            address token0,
-            address token1,
-            uint24 fee,
-            int24 tickLower,
-            int24 tickUpper,
-            uint128 liquidity,,,
-            uint128 tokensOwed0,
-            uint128 tokensOwed1
-        ) = positionManager.positions(tokenId);
-
-        // Zero-liquidity positions may still have uncollected fees — price those fees
-        // instead of reverting (prevents blocking liquidation of fee-only positions)
+        // Step 1: Read position data from NFT manager.
+        // Uncollected fees (tokensOwed) are intentionally NOT read — they are not collateral.
+        // Only the LP principal (liquidity) is valued; fees are the borrower's yield and are
+        // swept to them at liquidation. This removes the fee-manipulation surface entirely.
+        (,, address token0, address token1, uint24 fee, int24 tickLower, int24 tickUpper, uint128 liquidity,,,,) =
+            positionManager.positions(tokenId);
 
         // Step 2: Get pool from Uniswap factory
         // Pool whitelist is enforced at deposit time (PositionManager), not here.
@@ -269,44 +260,16 @@ contract UniswapV3Oracle is ILPOracle {
         uint256 principalValue =
             Math.mulDiv(amount0Normalized, price0, 1e18) + Math.mulDiv(amount1Normalized, price1, 1e18);
 
-        // Step 7: Calculate fee value (50% discount + capped at 20% of principal)
-        //
-        // Fee valuation context:
-        //   - tokensOwed only reflects fees at last liquidity change or collect() call.
-        //     Newly accrued fees since then are NOT included (Uniswap V3 design).
-        //   - In practice, permissionless compoundFees() converts fees → principal frequently
-        //     (bots earn 0.5% caller reward). So tokensOwed rarely accumulates large values.
-        //   - The 50% discount is a safety margin for the window between fee accrual and
-        //     the next compound. It does NOT affect actual fee collection — compound and
-        //     liquidation both collect 100% of real fees regardless of oracle valuation.
-        //   - The 20% cap is the primary anti-manipulation defense: even with $1M in fake
-        //     fees from self-trades, only 20% of principal counts as collateral.
-        //   - Tradeoff: undervaluing fees can trigger earlier liquidation in edge cases.
-        //     Borrowers can prevent this by compounding (or bots do it automatically).
-        uint256 feeValue =
-            (Math.mulDiv(_normalizeTo18(uint256(tokensOwed0), dec0), price0, 1e18)
-                    + Math.mulDiv(_normalizeTo18(uint256(tokensOwed1), dec1), price1, 1e18)) / 2;
-        // Cap fees at 20% of principal value (prevents fee inflation via self-trades).
-        // Skip cap when principalValue == 0 (fee-only positions — fees ARE the value).
-        // @dev Accepted tradeoff: capping when principal=0 would value fee-only positions
-        //      at $0, blocking liquidation and creating unrecoverable bad debt.
-        //      Protection: 50% fee discount + LTV gap + pool whitelist with min TVL.
-        if (principalValue > 0) {
-            uint256 maxFee = principalValue / 5;
-            if (feeValue > maxFee) feeValue = maxFee;
-        }
-
-        // Step 8: Return real market value (matches Aave/Revert approach).
-        // Safety comes from LTV + liquidation threshold gap.
-        uint256 totalValue = principalValue + feeValue;
-
-        // Step 9: Compute confidence score
+        // Step 7: Value = LP principal only. Uncollected fees are deliberately NOT counted as
+        // collateral (they are the borrower's yield, swept to them at liquidation). This is
+        // conservative (Aave-like: value the collateral asset, not speculative uncollected yield)
+        // and removes the tokensOwed manipulation surface. Safety comes from LTV + threshold gap.
         uint256 confidence = _computeConfidence(tickLower, tickUpper, twapTick);
 
         result = ILPOracleHub.PriceResult({
-            totalValue: totalValue,
+            totalValue: principalValue,
             principalValue: principalValue,
-            feeValue: feeValue,
+            feeValue: 0,
             confidence: confidence,
             timestamp: block.timestamp
         });

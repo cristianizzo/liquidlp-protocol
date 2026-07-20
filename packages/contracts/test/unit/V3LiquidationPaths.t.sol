@@ -172,9 +172,12 @@ contract V3LiquidationPaths is Test {
         assertLt(le.getDebt(posId), 10_000e18, "Debt must decrease");
     }
 
-    // ========== 2. Fee-only partial — excess returned to borrower ==========
+    // ========== 2. Fee-only liquidation — fees go to the liquidator, not the borrower ==========
 
-    function test_v3_feeOnlyPartial_excessReturned() public {
+    /// @dev Under principal-only valuation a fee-only position (no liquidity) has no collateral
+    ///      for the borrower. The swept fees are the only value, so they go to the liquidator
+    ///      who repaid the debt — never back to the borrower.
+    function test_v3_feeOnly_liquidatorTakesFees() public {
         vm.prank(alice);
         uint256 posId = pm.deposit(lpToken, 42, 0, v3MarketId);
         vm.roll(block.number + 3);
@@ -183,14 +186,13 @@ contract V3LiquidationPaths is Test {
 
         v3Adapter.setMockLiquidity(0);
         v3Adapter.setMockFees(10e18, 10_000e18); // fees in adapter
-        oracle.setPrice(6000e18); // position worth $6K with $5K debt → HF < 1.0
+        oracle.setPrice(6000e18); // HF < 1.0
 
-        // Partial liquidation — repay a portion
         (, uint256 maxRepay) = liq.isLiquidatable(posId);
         uint256 partialRepay = maxRepay > 2 ? maxRepay / 2 : 1;
 
         uint256 aliceWethBefore = weth.balanceOf(alice);
-        uint256 aliceUsdcBefore = usdc.balanceOf(alice);
+        uint256 liqWethBefore = weth.balanceOf(liquidator);
 
         usdc.mint(liquidator, partialRepay);
         vm.startPrank(liquidator);
@@ -198,12 +200,47 @@ contract V3LiquidationPaths is Test {
         liq.liquidate(posId, partialRepay, block.timestamp, 0, 0);
         vm.stopPrank();
 
-        // Alice should receive excess fees back
-        uint256 aliceWethAfter = weth.balanceOf(alice);
-        uint256 aliceUsdcAfter = usdc.balanceOf(alice);
-        assertTrue(
-            aliceWethAfter > aliceWethBefore || aliceUsdcAfter > aliceUsdcBefore, "Alice should receive excess fees"
-        );
+        // Liquidator receives the swept fees; borrower receives nothing.
+        assertGt(weth.balanceOf(liquidator), liqWethBefore, "liquidator receives the fee tokens");
+        assertEq(weth.balanceOf(alice), aliceWethBefore, "borrower receives no fees in a fee-only liquidation");
+    }
+
+    // ========== 2b. Normal liquidation sweeps fees to the borrower ==========
+
+    /// @dev A V3 position with BOTH liquidity and uncollected fees: a partial liquidation must
+    ///      seize only principal for the liquidator and sweep ALL uncollected fees back to the
+    ///      borrower (fees are not collateral). This is the core security fix — a small partial
+    ///      liquidation can no longer skim the position's fees.
+    function test_v3_normalLiquidation_sweepsFeesToBorrower() public {
+        vm.prank(alice);
+        uint256 posId = pm.deposit(lpToken, 42, 0, v3MarketId);
+        vm.roll(block.number + 3);
+        vm.prank(alice);
+        le.borrow(posId, 30_000e18);
+
+        // Position keeps its liquidity (default 1_000_000) and has uncollected fees.
+        v3Adapter.setMockFees(3e18, 3000e18); // 3 WETH + 3000 USDC of fees
+        v3Adapter.setUnwindAmounts(25e18, 25_000e18);
+        oracle.setPrice(35_000e18); // HF < 1 → liquidatable
+
+        (, uint256 maxRepay) = liq.isLiquidatable(posId);
+        uint256 partialRepay = maxRepay / 2; // partial
+
+        uint256 aliceWethBefore = weth.balanceOf(alice);
+        uint256 aliceUsdcBefore = usdc.balanceOf(alice);
+        uint256 liqWethBefore = weth.balanceOf(liquidator);
+
+        usdc.mint(liquidator, partialRepay);
+        vm.startPrank(liquidator);
+        usdc.approve(address(liq), partialRepay);
+        liq.liquidate(posId, partialRepay, block.timestamp, 0, 0);
+        vm.stopPrank();
+
+        // Borrower receives ALL the swept fees (not a proportional slice, not the liquidator).
+        assertEq(weth.balanceOf(alice), aliceWethBefore + 3e18, "borrower receives all swept WETH fees");
+        assertEq(usdc.balanceOf(alice), aliceUsdcBefore + 3000e18, "borrower receives all swept USDC fees");
+        // Liquidator receives principal proceeds from the unwind.
+        assertGt(weth.balanceOf(liquidator), liqWethBefore, "liquidator receives principal proceeds");
     }
 
     // ========== 3. minAmount slippage revert ==========

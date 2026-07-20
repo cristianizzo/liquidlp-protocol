@@ -178,30 +178,38 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
         require(adapterAddr != address(0), "ADAPTER_NOT_SET");
         ILPAdapter adapter = ILPAdapter(adapterAddr);
 
+        // Step 6a: Sweep uncollected V3 fees out BEFORE seizing principal. Uncollected fees are
+        // the borrower's yield, NOT collateral (the oracle values principal only). Sweeping them
+        // here means unwind() seizes principal only and cannot over-collect fees on a partial
+        // liquidation. The swept fees are routed at the end: to the borrower on a normal
+        // liquidation, to the protocol on a bad-debt writeoff (policy b).
+        // Gated to UniswapV3 (the only V3-NFT adapter with an implemented collectFees). When
+        // PancakeSwapV3/Aerodrome NFT adapters ship, extend this condition to sweep their fees
+        // too — otherwise a partial liquidation would over-collect their uncollected fees.
+        uint256 sweptFee0;
+        uint256 sweptFee1;
+        if (pos.lpType == ILPAdapter.LPType.UniswapV3) {
+            (sweptFee0, sweptFee1) = adapter.collectFees(pos.lpToken, pos.tokenId);
+        }
+
         uint256 positionValue = positionManager.getPositionValue(positionId);
         uint256 totalLiquidity = uint256(adapter.getLiquidity(pos.lpToken, pos.tokenId, pos.amount));
 
         uint256 amount0;
         uint256 amount1;
 
-        if (totalLiquidity == 0 && pos.tokenId > 0) {
-            // V3 fee-only position: no liquidity to unwind, seize uncollected fees instead
-            require(positionValue > 0, "ZERO_LIQUIDITY");
-            (uint256 collected0, uint256 collected1) = adapter.collectFees(pos.lpToken, pos.tokenId);
-            amount0 = collected0;
-            amount1 = collected1;
-            // Scale to proportional seizure (don't take all fees for partial repay)
-            if (collateralToSeizeNormalized < positionValue) {
-                amount0 = Math.mulDiv(collected0, collateralToSeizeNormalized, positionValue);
-                amount1 = Math.mulDiv(collected1, collateralToSeizeNormalized, positionValue);
-                // Return excess fees to borrower
-                uint256 excess0 = collected0 - amount0;
-                uint256 excess1 = collected1 - amount1;
-                if (excess0 > 0) OZIERC20(pos.token0).safeTransfer(pos.owner, excess0);
-                if (excess1 > 0) OZIERC20(pos.token1).safeTransfer(pos.owner, excess1);
-            }
+        if (totalLiquidity == 0) {
+            // No principal liquidity to seize. The swept fees are the only value available, so
+            // hand them to the liquidator (who repaid the debt) instead of the borrower.
+            // Degenerate/defensive path: unreachable while a position holds debt under
+            // principal-only valuation (liquidity can't be drawn to zero below HF 1).
+            require(pos.tokenId > 0, "ZERO_LIQUIDITY");
+            amount0 = sweptFee0;
+            amount1 = sweptFee1;
+            sweptFee0 = 0; // consumed by the liquidator — do not double-route below
+            sweptFee1 = 0;
         } else {
-            // Normal path: proportional liquidity removal
+            // Proportional principal removal (fees already swept, so unwind seizes principal only)
             uint256 liquidityToRemove256;
             if (positionValue == 0 || collateralToSeizeNormalized >= positionValue) {
                 liquidityToRemove256 = totalLiquidity;
@@ -272,6 +280,7 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
         // Track how much collateral value leaves the market for RiskManager supply-cap accounting:
         // a full close removes the whole position value; a partial removes only the seized value.
         uint256 supplyRemovedUsd = collateralToSeizeNormalized;
+        bool badDebt = false;
         uint256 remainingDebt = lendingEngine.getDebt(positionId);
         if (remainingDebt == 0) {
             IPositionManager.Position memory freshPos = positionManager.getPosition(positionId);
@@ -301,11 +310,31 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
                 lendingEngine.writeOffDebt(positionId);
                 supplyRemovedUsd = positionValue; // full position value leaves the market
                 positionManager.markLiquidated(positionId, msg.sender, repayAmount);
+                badDebt = true; // route swept fees to the protocol, not the defaulting borrower
             } else {
                 // Position still has debt AND collateral above dust after a capped partial
                 // liquidation. Surface it so monitoring can catch latent under-collateralization
                 // rather than letting it accrue silently until the next liquidation.
                 emit ResidualInsolvency(positionId, remainingDebt, remainingValue);
+            }
+        }
+
+        // Route the swept V3 fees: to the borrower on a normal liquidation, to the protocol on a
+        // bad-debt writeoff (policy b — a defaulting borrower shouldn't keep fees while lenders
+        // take a loss). Falls back to the borrower if no FeeCollector is configured.
+        if (sweptFee0 > 0 || sweptFee1 > 0) {
+            if (badDebt && address(feeCollector) != address(0)) {
+                if (sweptFee0 > 0) {
+                    OZIERC20(pos.token0).forceApprove(address(feeCollector), sweptFee0);
+                    feeCollector.collectFee(pos.token0, sweptFee0, address(this), "liquidation_baddebt");
+                }
+                if (sweptFee1 > 0) {
+                    OZIERC20(pos.token1).forceApprove(address(feeCollector), sweptFee1);
+                    feeCollector.collectFee(pos.token1, sweptFee1, address(this), "liquidation_baddebt");
+                }
+            } else {
+                if (sweptFee0 > 0) OZIERC20(pos.token0).safeTransfer(pos.owner, sweptFee0);
+                if (sweptFee1 > 0) OZIERC20(pos.token1).safeTransfer(pos.owner, sweptFee1);
             }
         }
 
