@@ -99,12 +99,14 @@ contract DepositValidationTest is Test {
         pm.deposit(lpToken, 0, 100e18, v3MarketId);
     }
 
-    // ========== Zero-value (fee-only) rejection ==========
+    // ========== Zero-value deposit rejection ==========
 
-    /// @notice Under principal-only valuation a fee-only / liquidity-less position prices to 0,
-    ///         so it is rejected by the ZERO_VALUE check (no separate NO_PRINCIPAL guard needed).
+    /// @notice A position the oracle prices at 0 is rejected by the generic ZERO_VALUE guard.
+    ///         (Under principal-only valuation this is exactly what a fee-only / liquidity-less V3
+    ///         position prices to — no separate NO_PRINCIPAL guard needed.) Here we model that
+    ///         generically by forcing the mock oracle's totalValue to 0.
     function test_deposit_revertsZeroValue() public {
-        oracle.setPrice(0); // principal-only oracle → totalValue == 0 for a fee-only position
+        oracle.setPrice(0); // mock oracle → totalValue == 0
 
         vm.prank(alice);
         vm.expectRevert("ZERO_VALUE");

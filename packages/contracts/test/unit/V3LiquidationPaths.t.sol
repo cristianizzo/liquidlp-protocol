@@ -174,9 +174,11 @@ contract V3LiquidationPaths is Test {
 
     // ========== 2. Fee-only liquidation — fees go to the liquidator, not the borrower ==========
 
-    /// @dev Under principal-only valuation a fee-only position (no liquidity) has no collateral
-    ///      for the borrower. The swept fees are the only value, so they go to the liquidator
-    ///      who repaid the debt — never back to the borrower.
+    /// @dev Models a fee-only position via the mock: the adapter reports 0 liquidity
+    ///      (setMockLiquidity(0)) with fees available, and MockLPOracle assigns it a value. In
+    ///      production, principal-only valuation makes such a position's principal 0. The engine
+    ///      sweeps the fees and, with no principal to seize, hands them to the liquidator who
+    ///      repaid the debt — never back to the borrower.
     function test_v3_feeOnly_liquidatorTakesFees() public {
         vm.prank(alice);
         uint256 posId = pm.deposit(lpToken, 42, 0, v3MarketId);

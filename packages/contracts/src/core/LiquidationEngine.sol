@@ -298,6 +298,10 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
         // Step 10: Handle full debt repayment — return remaining LP to borrower
         // Track how much collateral value leaves the market for RiskManager supply-cap accounting:
         // a full close removes the whole position value; a partial removes only the seized value.
+        // Note: in the degenerate totalLiquidity==0 path positionValue==0, and BOTH terminal
+        // branches below (full-close and bad-debt writeoff) overwrite supplyRemovedUsd to
+        // positionValue (==0). The residual branch is unreachable there (remainingValue==0<=DUST),
+        // so the initial collateralToSeizeNormalized is never recorded — no supply-tracking drift.
         uint256 supplyRemovedUsd = collateralToSeizeNormalized;
         bool badDebt = false;
         uint256 remainingDebt = lendingEngine.getDebt(positionId);
