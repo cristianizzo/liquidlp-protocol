@@ -126,10 +126,14 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
     ///      PRINCIPAL ONLY — a partial liquidation can never over-collect fees.
     ///   5. Unwind liquidity proportional to collateralToSeize; take the protocol fee (% of the
     ///      bonus) to the FeeCollector; send the remaining principal to the liquidator.
+    ///      Degenerate case: if the position has NO principal liquidity (totalLiquidity == 0),
+    ///      the swept fees ARE the seizure and are paid to the liquidator (and zeroed), so the
+    ///      step-7 routing below is skipped for that path.
     ///   6. If debt is fully cleared: return the residual LP/NFT to the borrower. If underwater
     ///      with no collateral left: write the remaining debt off as bad debt.
-    ///   7. Route the swept fees: to the borrower on a normal liquidation, to the FeeCollector
-    ///      on a bad-debt writeoff (a defaulting borrower shouldn't keep fees while lenders lose).
+    ///   7. Route any REMAINING swept fees: to the borrower on a normal liquidation, to the
+    ///      FeeCollector on a bad-debt writeoff (a defaulting borrower shouldn't keep fees while
+    ///      lenders lose). Skipped entirely for the degenerate path in step 5 (fees already paid).
     /// @param positionId The position to liquidate
     /// @param repayAmount Borrow-asset amount the liquidator repays (<= maxRepay)
     /// @param deadline Unix timestamp after which the call reverts (EXPIRED)

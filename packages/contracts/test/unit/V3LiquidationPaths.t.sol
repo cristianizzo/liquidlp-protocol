@@ -194,7 +194,9 @@ contract V3LiquidationPaths is Test {
         uint256 partialRepay = maxRepay > 2 ? maxRepay / 2 : 1;
 
         uint256 aliceWethBefore = weth.balanceOf(alice);
+        uint256 aliceUsdcBefore = usdc.balanceOf(alice);
         uint256 liqWethBefore = weth.balanceOf(liquidator);
+        uint256 liqUsdcBefore = usdc.balanceOf(liquidator);
 
         usdc.mint(liquidator, partialRepay);
         vm.startPrank(liquidator);
@@ -202,9 +204,12 @@ contract V3LiquidationPaths is Test {
         liq.liquidate(posId, partialRepay, block.timestamp, 0, 0);
         vm.stopPrank();
 
-        // Liquidator receives the swept fees; borrower receives nothing.
-        assertGt(weth.balanceOf(liquidator), liqWethBefore, "liquidator receives the fee tokens");
-        assertEq(weth.balanceOf(alice), aliceWethBefore, "borrower receives no fees in a fee-only liquidation");
+        // Liquidator receives BOTH swept fee tokens; borrower receives nothing of either.
+        assertGt(weth.balanceOf(liquidator), liqWethBefore, "liquidator receives WETH fees");
+        // Net USDC = minted partialRepay - repaid partialRepay + swept USDC fees → strictly up by the fees.
+        assertGt(usdc.balanceOf(liquidator), liqUsdcBefore, "liquidator receives USDC fees");
+        assertEq(weth.balanceOf(alice), aliceWethBefore, "borrower receives no WETH fees");
+        assertEq(usdc.balanceOf(alice), aliceUsdcBefore, "borrower receives no USDC fees");
     }
 
     // ========== 2b. Normal liquidation sweeps fees to the borrower ==========
