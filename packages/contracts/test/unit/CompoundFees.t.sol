@@ -17,6 +17,7 @@ import {MockMarket} from "../mocks/MockMarket.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
 import {InterestRateModel} from "../../src/markets/InterestRateModel.sol";
 import {LPCompounder} from "../../src/periphery/LPCompounder.sol";
+import {RiskManager} from "../../src/security/RiskManager.sol";
 
 /// @title CompoundFeesTest
 /// @notice Unit tests for PositionManager.compoundFees and LPCompounder
@@ -152,6 +153,25 @@ contract CompoundFeesTest is Test {
     }
 
     // ========== Access Control ==========
+
+    /// @notice Compounding runs through a wired RiskManager (recording the reinvested delta) and
+    ///         is NOT blocked by the market supply cap — compounding a position's own fees is
+    ///         track-only, not cap-enforced.
+    function test_compoundFees_notBlockedBySupplyCap() public {
+        RiskManager rm = new RiskManager(address(core));
+        vm.startPrank(owner);
+        core.setRiskManager(address(rm));
+        rm.setMarketSupplyCap(marketId, 1); // effectively "at cap"
+        vm.stopPrank();
+
+        _setupFees(1e18, 1000e6);
+
+        // Must succeed despite the cap (would revert SUPPLY_CAP_REACHED if it were cap-enforced).
+        vm.prank(keeper);
+        (uint256 f0, uint256 f1,) =
+            pm.compoundFees(_cfParams(positionId, address(feeCollector), 200, keeper, 50, 0, alice, 0));
+        assertTrue(f0 > 0 || f1 > 0, "compound ran through the RiskManager path");
+    }
 
     function test_compoundFees_revertsNotAuthorized() public {
         _setupFees(1e18, 2000e6);

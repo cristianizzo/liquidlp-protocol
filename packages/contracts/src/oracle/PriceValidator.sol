@@ -11,6 +11,16 @@ import {LPMath} from "../libraries/LPMath.sol";
 /// @dev Implements defense layers against oracle manipulation.
 ///      Triggers CircuitBreaker.pausePool() — unified pause system with PositionManager.
 ///      All thresholds are configurable by RISK_ADMIN.
+///
+///      ENFORCEMENT MODEL — this is a KEEPER-DRIVEN tool, NOT a per-transaction gate:
+///        - validatePrice() is `onlyKeeper` and is called off-chain by monitoring bots (same trust
+///          model as Aave's Chaos Labs risk bots), not inside the deposit/borrow/liquidation path.
+///        - Its ENFORCED effect is `circuitBreaker.pausePool()` (deviation / low-TVL / TVL-drop),
+///          which IS consumed on-chain — a paused pool blocks deposits & borrows in PositionManager.
+///        - The returned `adjustedRiskBps` (volatility/staleness risk premiums) is ADVISORY: it is
+///          surfaced for off-chain keeper decision-making and is NOT applied as an on-chain haircut.
+///          On-chain collateral safety comes from the static LTV / liquidation-threshold gap plus
+///          the per-call staleness/sequencer/deviation checks in PriceFeedRegistry & the LP oracles.
 contract PriceValidator {
     ProtocolCore public immutable core;
     CircuitBreaker public immutable circuitBreaker;

@@ -190,6 +190,33 @@ contract RiskManagerIntegrationTest is Test {
         assertEq(rm.marketCurrentSupply(marketId), 1_000_000_000e18);
     }
 
+    /// @notice Compounding a position's own fees is TRACKED but NOT cap-blocked (organic growth).
+    ///         recordDeposit reverts at the cap; recordCompoundReinvest does not.
+    function test_recordCompoundReinvest_tracksWithoutCap() public {
+        vm.prank(owner);
+        rm.setMarketSupplyCap(marketId, 10_000e18);
+
+        // Fill the market to its cap.
+        vm.prank(address(pm));
+        rm.recordDeposit(10_000e18, marketId);
+
+        // A further deposit is blocked by the cap...
+        vm.prank(address(pm));
+        vm.expectRevert("SUPPLY_CAP_REACHED");
+        rm.recordDeposit(1, marketId);
+
+        // ...but compounding is tracked past the cap without reverting (fees aren't new capital).
+        vm.prank(address(pm));
+        rm.recordCompoundReinvest(500e18, marketId);
+        assertEq(rm.marketCurrentSupply(marketId), 10_500e18, "compound reinvest tracked past cap");
+    }
+
+    function test_recordCompoundReinvest_onlyPositionManager() public {
+        vm.prank(alice);
+        vm.expectRevert("NOT_POSITION_MANAGER");
+        rm.recordCompoundReinvest(1, marketId);
+    }
+
     function test_withdraw_freesSupplyCapacity() public {
         vm.prank(owner);
         rm.setMarketSupplyCap(marketId, 100_000e18);

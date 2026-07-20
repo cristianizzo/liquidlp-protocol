@@ -109,7 +109,12 @@ contract RiskManager {
     }
 
     /// @notice Record a repayment for cap tracking (18-dec USD)
-    /// @dev Clamped to prevent underflow when repay includes accrued interest
+    /// @dev Clamped to prevent underflow when repay includes accrued interest.
+    ///      ACCEPTED DRIFT: validateAndRecordBorrow records borrow PRINCIPAL, but repay/writeoff
+    ///      subtract PRINCIPAL + accrued interest. So the borrow counters drift DOWNWARD over time
+    ///      (caps only ever loosen, never trap a borrower). This is a soft risk limit — never a
+    ///      funds-safety check — so we accept the drift rather than thread the principal/interest
+    ///      split out of LendingEngine (same tradeoff as the supply-side drift in recordWithdraw).
     function recordRepay(uint256 amountUsd, ILPAdapter.LPType lpType) external onlyLendingEngine {
         if (amountUsd > currentGlobalBorrows) {
             emit BorrowTrackingDrift(currentGlobalBorrows, amountUsd, true);
@@ -177,6 +182,17 @@ contract RiskManager {
         require(cap == 0 || newSupply <= cap, "SUPPLY_CAP_REACHED");
         marketCurrentSupply[marketId] = newSupply;
         emit DepositRecorded(valueUsd, marketId, newSupply);
+    }
+
+    /// @notice Track supply added by compounding a position's own fees into principal (18-dec USD).
+    /// @dev Unlike recordDeposit this does NOT enforce the market supply cap. Compounding reinvests
+    ///      a position's OWN uncollected fees (permissionless, keeper-driven) — it is organic growth
+    ///      of existing exposure, not new external capital, so it is tracked for accounting accuracy
+    ///      but never blocked at the cap (blocking would strand fees and let anyone grief keepers by
+    ///      pinning a market at its cap). Analogous to interest accrual pushing borrows past borrowCap.
+    function recordCompoundReinvest(uint256 valueUsd, uint256 marketId) external onlyPositionManager {
+        marketCurrentSupply[marketId] += valueUsd;
+        emit DepositRecorded(valueUsd, marketId, marketCurrentSupply[marketId]);
     }
 
     event SupplyTrackingDrift(uint256 tracked, uint256 withdrawn, uint256 indexed marketId);
