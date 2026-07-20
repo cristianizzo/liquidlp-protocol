@@ -243,6 +243,8 @@ Uses Chainlink prices (not pool reserves ratio), making it immune to reserve man
 4. Price tokens via Chainlink feeds
 5. Cross-validate: TWAP vs Chainlink must agree within 3%
 
+> **Uncollected fees are not collateral.** The oracle values the LP **principal only** — a position's uncollected trading fees (`tokensOwed`) are the borrower's yield, not collateral, and are priced at zero. This is deliberately conservative (Aave-like: value the collateral asset, not speculative uncollected yield) and removes the `tokensOwed` manipulation surface entirely. Fees still accrue to the borrower and are returned to them at liquidation; they only count toward collateral once compounded into principal.
+
 ### 5-Layer Defense (PriceValidator)
 
 | Layer | Check | Action on Failure |
@@ -285,12 +287,13 @@ The 50% default (`maxLiquidationPortion`) is configurable by POOL_ADMIN within 1
 3. **Pull repayment** from liquidator (borrow asset, e.g., USDC)
 4. **Repay debt** — full repayAmount goes to LendingEngine (no deduction)
 5. **Calculate** proportional liquidity to remove (normalized to 18 decimals for cross-decimal-token safety)
-6. **Unwind LP** — adapter calls DEX to remove liquidity → receives underlying tokens (e.g., ETH + USDC)
-7. **Update position amount** — reduce stored amount to reflect removed liquidity
-8. **Take protocol fee** — % of the bonus portion, deducted proportionally from both underlying tokens (Aave pattern). Fee goes to FeeCollector → treasury + insurance.
-9. **Send remaining tokens** directly to liquidator (ETH + USDC minus fee)
-10. **Return remaining LP** to borrower (if fully liquidated with surplus)
-11. **Mark liquidated** — update position status
+6. **Sweep uncollected V3 fees to the borrower** — fees are the borrower's yield, not collateral, so they are collected and returned first. The unwind then seizes *principal only*, so a partial liquidation can never over-collect a position's fees. (On a bad-debt writeoff the swept fees go to the protocol instead of the defaulting borrower.)
+7. **Unwind LP** — adapter calls DEX to remove liquidity → receives underlying **principal** tokens (e.g., ETH + USDC)
+8. **Update position amount** — reduce stored amount to reflect removed liquidity
+9. **Take protocol fee** — % of the bonus portion, deducted proportionally from both underlying tokens (Aave pattern). Fee goes to FeeCollector → treasury + insurance.
+10. **Send remaining tokens** directly to liquidator (ETH + USDC minus fee)
+11. **Return remaining LP** to borrower (if fully liquidated with surplus)
+12. **Mark liquidated** — update position status
 
 ### No Swap in Liquidation
 
