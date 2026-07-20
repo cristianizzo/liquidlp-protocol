@@ -47,5 +47,7 @@ docker-compose.override.yml
 # Docs (local only, except whitepaper)
 docs/*
 !docs/whitepaper.md
+# Security/audit docs are strictly local — never track (attack vectors, audit findings, etc.)
+docs/security/
 
 CLAUDE.md
