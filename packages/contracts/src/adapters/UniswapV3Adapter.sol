@@ -14,8 +14,10 @@ import {ACLManager} from "../core/ACLManager.sol";
 ///      Uses ProtocolCore for ownership. Protocol address updatable if PositionManager migrates.
 ///
 ///      Design notes:
-///      - unwind() collects decreased liquidity + accumulated fees together (intentional).
-///        Fees are part of collateral value in the oracle, so they should be seized during liquidation.
+///      - unwind() decreases liquidity and collects whatever is owed. In the liquidation flow the
+///        LiquidationEngine sweeps uncollected fees FIRST (fees are not collateral — they are the
+///        borrower's yield), so by the time unwind() runs there are no fees left and it collects
+///        only the freshly-decreased principal.
 ///      - collectFees() calls decreaseLiquidity(1 wei) to trigger fee accounting update,
 ///        then collects all owed tokens. The 1 wei of liquidity loss is negligible.
 ///      - amount0Min/amount1Min are 0 in decreaseLiquidity because slippage protection is
@@ -116,8 +118,9 @@ contract UniswapV3Adapter is ILPAdapter {
     }
 
     /// @inheritdoc ILPAdapter
-    /// @dev Decreases liquidity, then collects all available tokens (decreased + fees).
-    ///      Fees are intentionally included — they're part of collateral value in the oracle.
+    /// @dev Decreases liquidity, then collects all owed tokens. In the liquidation flow the
+    ///      LiquidationEngine sweeps uncollected fees beforehand, so this collects only the
+    ///      freshly-decreased principal (there are no fees left to collect).
     ///      Slippage on decreaseLiquidity is 0 because protection is at the LiquidationEngine
     ///      level via oracle-based post-swap validation (SWAP_SLIPPAGE_EXCEEDED check).
     function unwind(
@@ -141,10 +144,9 @@ contract UniswapV3Adapter is ILPAdapter {
             })
         );
 
-        // Collect decreased liquidity + accumulated fees.
-        // Fees are intentionally included — they are part of the collateral value
-        // (priced by oracle at 50% discount + 20% cap).
-        // This matches Aave/Revert where the entire NFT is liquidatable collateral.
+        // Collect the tokens owed. During liquidation, fees were already swept by the engine,
+        // so this returns only the freshly-decreased principal. The type(uint128).max caps are
+        // safe: nothing beyond what decreaseLiquidity just credited is owed.
         (amount0, amount1) = nftManager.collect(
             INonfungiblePositionManager.CollectParams({
                 tokenId: tokenId, recipient: msg.sender, amount0Max: type(uint128).max, amount1Max: type(uint128).max

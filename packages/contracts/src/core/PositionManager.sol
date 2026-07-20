@@ -200,13 +200,9 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
 
         // Get oracle price to validate position has value
         ILPOracleHub.PriceResult memory price = oracleHub.getPrice(lpToken, tokenId, amount, lpType);
+        // Under principal-only valuation, totalValue == principalValue, so this also rejects
+        // liquidity-less (fee-only) V3 positions as collateral.
         require(price.totalValue > 0, "ZERO_VALUE");
-        // Reject liquidity-less collateral (e.g. a fee-only V3 NFT with principalValue == 0).
-        // V2 always reports principalValue == totalValue, so only zero-liquidity V3 positions
-        // are blocked. Keeps the oracle's uncapped fee valuation reserved for positions that
-        // degrade into fee-only WHILE inside the system (needed for liquidation), never for
-        // freshly deposited collateral.
-        require(price.principalValue > 0, "NO_PRINCIPAL");
 
         // RiskManager: validate deposit caps
         {
