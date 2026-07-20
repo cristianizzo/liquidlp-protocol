@@ -13,8 +13,12 @@ interface IMarket {
         uint256 liquidationThreshold; // Liquidation trigger in bps
         uint256 liquidationBonus; // Bonus for liquidators in bps
         uint256 borrowCap; // Max total borrows
-        uint256 minPoolTvl; // Min underlying pool TVL required
-        uint256 minPoolAge; // Min pool age in seconds
+        // ADVISORY listing metadata — NOT enforced on-chain (on-chain pool TVL is flash-manipulable
+        // and V3 exposes no cheap creation-time). The manipulation-resistant TVL floor is enforced
+        // OFF-CHAIN by the keeper-driven PriceValidator (which pauses the pool via CircuitBreaker);
+        // a minimum age is implicitly required by the oracle's 30-min TWAP history requirement.
+        uint256 minPoolTvl; // Min underlying pool TVL (advisory — see note above)
+        uint256 minPoolAge; // Min pool age in seconds (advisory — see note above)
     }
 
     struct MarketState {

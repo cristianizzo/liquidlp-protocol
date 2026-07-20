@@ -693,6 +693,9 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
         require(adapterAddr != address(0), "NO_ADAPTER");
         ILPAdapter adapter = ILPAdapter(adapterAddr);
 
+        // Snapshot value before compounding so we can record the reinvested principal delta.
+        uint256 valueBefore = getPositionValue(params.positionId);
+
         // Step 1: Collect fees from NFT → tokens to this contract
         (fees0, fees1) = adapter.collectFees(pos.lpToken, pos.tokenId);
         if (fees0 == 0 && fees1 == 0) return (0, 0, 0);
@@ -717,6 +720,18 @@ contract PositionManager is IPositionManager, Initializable, UUPSUpgradeable, Re
             maxSlippageBps: params.maxSlippageBps
         });
         addedLiquidity = _distributeFees(adapter, cp);
+
+        // Compounding reinvests the position's own fees into principal, growing the market's
+        // tracked collateral. Record the delta so RiskManager.marketCurrentSupply stays accurate
+        // (track-only — not cap-enforced; see RiskManager.recordCompoundReinvest).
+        {
+            address rmAddr = core.riskManagerAddr();
+            if (rmAddr != address(0)) {
+                uint256 valueAfter = getPositionValue(params.positionId);
+                uint256 delta = valueAfter > valueBefore ? valueAfter - valueBefore : 0;
+                if (delta > 0) RiskManager(rmAddr).recordCompoundReinvest(delta, pos.marketId);
+            }
+        }
 
         emit FeesCompoundedInternal(params.positionId, fees0, fees1, addedLiquidity);
     }
