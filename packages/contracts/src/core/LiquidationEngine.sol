@@ -117,6 +117,25 @@ contract LiquidationEngine is ILiquidationEngine, Initializable, UUPSUpgradeable
     // --- Core Logic ---
 
     /// @inheritdoc ILiquidationEngine
+    /// @dev Flow:
+    ///   1. Accrue interest, verify the position is liquidatable, cap repay at maxRepay.
+    ///   2. Pull repayAmount from the liquidator and repay the debt (no fee taken from repayment).
+    ///   3. Compute collateralToSeize = repay + liquidationBonus (in USD).
+    ///   4. FEE SWEEP: for a V3 position, collect all uncollected fees into the engine FIRST.
+    ///      Fees are the borrower's yield, not collateral, so the subsequent unwind seizes
+    ///      PRINCIPAL ONLY — a partial liquidation can never over-collect fees.
+    ///   5. Unwind liquidity proportional to collateralToSeize; take the protocol fee (% of the
+    ///      bonus) to the FeeCollector; send the remaining principal to the liquidator.
+    ///   6. If debt is fully cleared: return the residual LP/NFT to the borrower. If underwater
+    ///      with no collateral left: write the remaining debt off as bad debt.
+    ///   7. Route the swept fees: to the borrower on a normal liquidation, to the FeeCollector
+    ///      on a bad-debt writeoff (a defaulting borrower shouldn't keep fees while lenders lose).
+    /// @param positionId The position to liquidate
+    /// @param repayAmount Borrow-asset amount the liquidator repays (<= maxRepay)
+    /// @param deadline Unix timestamp after which the call reverts (EXPIRED)
+    /// @param minAmount0 Min token0 the liquidator accepts from the seized principal (slippage)
+    /// @param minAmount1 Min token1 the liquidator accepts from the seized principal (slippage)
+    /// @return profit Always 0 here (liquidator receives two tokens; see LiquidationExecuted event)
     function liquidate(
         uint256 positionId,
         uint256 repayAmount,

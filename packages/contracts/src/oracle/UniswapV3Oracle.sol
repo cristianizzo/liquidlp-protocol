@@ -218,6 +218,22 @@ contract UniswapV3Oracle is ILPOracle {
 
     // --- Internal: Core Pricing Logic ---
 
+    /// @notice Value a Uniswap V3 NFT position — principal only, manipulation-resistant.
+    /// @dev A V3 position is concentrated liquidity in [tickLower, tickUpper]; its token
+    ///      composition depends on the current price, so it can't be valued like a fungible LP.
+    ///      Methodology:
+    ///        1. Read the position's range + liquidity from the NFT (uncollected fees ignored —
+    ///           they are not collateral; they are swept to the borrower at liquidation).
+    ///        2. Take a 30-min TWAP tick from the pool (NOT spot) → flash-loan resistant.
+    ///        3. Convert liquidity → underlying token0/token1 amounts AT the TWAP price via
+    ///           Uniswap's LiquidityAmounts math (below range → all token0; above → all token1;
+    ///           in range → a mix).
+    ///        4. Price those amounts with Chainlink (18-dec USD).
+    ///        5. Cross-check the TWAP-implied ratio against Chainlink (maxDeviationBps) → rejects
+    ///           pool manipulation / stale TWAP.
+    ///      Result: totalValue == principalValue (underlying tokens' USD value), feeValue == 0.
+    /// @param tokenId The Uniswap V3 position NFT id
+    /// @return result Price result with totalValue == principalValue and feeValue == 0
     function _computePrice(uint256 tokenId) internal view returns (ILPOracleHub.PriceResult memory result) {
         // Step 1: Read position data from NFT manager.
         // Uncollected fees (tokensOwed) are intentionally NOT read — they are not collateral.
